@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +141,59 @@ func TestReadCommandsStopsBlockedBurstOnCancel(t *testing.T) {
 	case <-writeDone:
 	case <-time.After(time.Second):
 		t.Fatal("writer remained blocked after reader shutdown")
+	}
+}
+
+func TestReadCommandsStopsAtQuitWithoutEOF(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	commands := make(chan string, 1)
+	done := make(chan struct{})
+	go readCommands(t.Context(), reader, commands, done)
+	if _, err := io.WriteString(writer, "  quit  \n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case command := <-commands:
+		if strings.TrimSpace(command) != "quit" {
+			t.Fatalf("command = %q", command)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reader did not deliver quit")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reader attempted another read after quit while input remained open")
+	}
+}
+
+func TestNativeStdinCancellationDoesNotWaitForEOF(t *testing.T) {
+	if os.Getenv("OTGO_TEST_NATIVE_STDIN") == "1" {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		_, stop := startCommandReader(ctx, os.Stdin)
+		<-ctx.Done()
+		stop()
+		return
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- Runs this test binary, never a caller-selected executable.
+	command := exec.CommandContext(ctx, executable, "-test.run=^TestNativeStdinCancellationDoesNotWaitForEOF$")
+	command.Env = append(os.Environ(), "OTGO_TEST_NATIVE_STDIN=1")
+	command.Stdin = reader
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("native stdin shutdown: %v: %s", err, output)
 	}
 }
 

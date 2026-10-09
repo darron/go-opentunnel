@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -335,18 +336,8 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 			}
 		}
 	}
-	commands := make(chan string, 1)
-	readerCtx, stopReader := context.WithCancel(ctx)
-	readerDone := make(chan struct{})
-	closer, canClose := in.(io.Closer)
-	defer func() {
-		stopReader()
-		if canClose {
-			_ = closer.Close()
-			<-readerDone
-		}
-	}()
-	go readCommands(readerCtx, in, commands, readerDone)
+	commands, stopReader := startCommandReader(ctx, in)
+	defer stopReader()
 	for {
 		select {
 		case event, ok := <-connection.Events():
@@ -374,14 +365,40 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 	}
 }
 
+func startCommandReader(ctx context.Context, in io.Reader) (<-chan string, func()) {
+	commands := make(chan string, 1)
+	readerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go readCommands(readerCtx, in, commands, done)
+	return commands, func() {
+		cancel()
+		file, isFile := in.(*os.File)
+		if isFile && file == os.Stdin {
+			// Inherited stdin may be a blocking descriptor: closing it does not
+			// reliably interrupt an in-flight Read. It belongs to the CLI process,
+			// which exits after joining the tunnel. quit stops scanning directly.
+			return
+		}
+		if closer, ok := in.(io.Closer); ok {
+			_ = closer.Close()
+			<-done
+		}
+	}
+}
+
 func readCommands(ctx context.Context, in io.Reader, commands chan<- string, done chan<- struct{}) {
 	defer close(done)
 	defer close(commands)
 	scanner := bufio.NewScanner(in)
 	for scanner.Scan() {
+		line := scanner.Text()
 		select {
-		case commands <- scanner.Text():
+		case commands <- line:
 		case <-ctx.Done():
+			return
+		}
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "quit" {
 			return
 		}
 	}

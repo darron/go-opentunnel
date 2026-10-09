@@ -71,8 +71,10 @@ certificates are generated during tests. Build artifacts and local profile
 directories are ignored. The project includes an MIT license, and copied
 upstream vectors retain their upstream MIT notice and commit provenance.
 
-No deployed public API, ACME issuance, or public relay session was exercised.
-No repository was published or pushed. The CLI and embedding example are ready
-for the deliberate live sequence in [TESTING.md](TESTING.md). Confidence is high
-in the covered local behaviors; deployed-service interoperability remains
-unverified until that exercise is completed.
+The initial local acceptance was followed on 2026-10-09 by a deliberate live
+exercise of the deployed API, certificate issuance, relay, CLI, and embedding
+example. [LIVE_TESTING.md](LIVE_TESTING.md) records those results, the CLI stdin
+bug found and fixed, and cleanup of both temporary tunnels. The complete local
+check and race suite were rerun after the fix. Confidence is high in the covered
+local and live behaviors; long-term renewal, production server drain, and runtime
+behavior on other operating systems remain outside this short live exercise.

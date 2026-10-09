@@ -60,7 +60,12 @@ The integrated review and regression tests identified and addressed these cases:
   accepting one sample subdomain certificate.
 - API deadlines must remain active until the response body is consumed.
 - Route changes during session publication must retain the final route names.
+- Interactive CLI shutdown must not wait for EOF on inherited stdin. The live
+  exercise found that closing a native stdin file did not interrupt its blocked
+  read. `quit` now stops the scanner directly; cancellation leaves process-owned
+  stdin to process exit while still joining the SDK's workers.
 
 See [TESTING.md](TESTING.md) for reproducible commands and the live exercise,
 [VERIFICATION.md](VERIFICATION.md) for the recorded local results, and
+[LIVE_TESTING.md](LIVE_TESTING.md) for the public-service checks. See
 [SECURITY.md](SECURITY.md) for the encryption and trust boundaries.

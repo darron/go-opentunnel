@@ -53,3 +53,8 @@ For a CLI exercise, run `go run ./examples/webapp --local-only --addr 127.0.0.1:
 The example also demonstrates embedding: omit `--local-only` and it starts the loopback server and owns a `Client.Connect` session itself, using `--profile`, `--api`, and `--data-dir` when supplied. Stopping its local HTTP server only causes `upstream_connect_failed` for new visitor connections; it does not test relay reconnection. A bridge reconnect requires a relay transport loss or server drain.
 
 This sequence is a live service test, separate from the local test suite. See [docs/TESTING.md](docs/TESTING.md) for what each check establishes and [docs/SECURITY.md](docs/SECURITY.md) for the TLS and trust model.
+
+The deployed service was exercised on 2026-10-09: provisioning/resume,
+public HTTPS and WSS, streaming, large/concurrent transfers, route replacement,
+reconnection, embedding, shutdown, and deletion passed. The results and remaining
+coverage limits are recorded in [docs/LIVE_TESTING.md](docs/LIVE_TESTING.md).
