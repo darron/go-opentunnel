@@ -32,6 +32,9 @@ A related channel check also reproduced a write-deadline update failing to
 interrupt an already pending send. Deadline changes now wake a per-call watcher;
 the watcher is joined before the write returns and does not cancel the socket.
 
+Implementation and regressions were committed as
+[`556b16f`](https://github.com/darron/go-opentunnel/commit/556b16f5998e0d0047ff95e9e277749be3d04f7e).
+
 ## Regression evidence
 
 The primary regressions failed on the reviewed behavior before their fixes.
@@ -64,7 +67,9 @@ passed five race repetitions after being added to the repository.
 
 [`commands_test.go`](../cmd/otgo/commands_test.go) exercises invalid targets,
 invalid names, and route conflicts, followed by a successful next command.
-Existing real-TLS, half-close, route-isolation, renewal, and lifecycle tests remain
+[`redaction_test.go`](../redaction_test.go) also verifies that recovery errors
+keep their pending token/key out of ordinary formatting, hex formatting, and
+JSON. Existing real-TLS, half-close, route-isolation, renewal, and lifecycle tests remain
 part of the complete suite.
 
 ## Validation status
@@ -82,6 +87,10 @@ Lint reported **0 issues**, including package, tests, CLI, and example. Focused
 fix regressions passed ten race repetitions; Amp's additional retained probes
 passed five. Linux and Windows amd64 package/CLI test compilation and example
 builds passed; Windows runtime behavior remains untested.
+
+[Hosted CI for `556b16f`](https://github.com/darron/go-opentunnel/actions/runs/37991416328)
+also passed: Go 1.25 tests, vet, and CLI/example builds on Linux and macOS,
+Linux race tests, and repository-wide formatting/lint.
 
 **The rebuilt CLI/app public workflow passed with exit 0.** It exercised new
 provisioning, cancellation/resume, all inspection commands, normal-trust HTTPS,
