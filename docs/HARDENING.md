@@ -21,6 +21,7 @@ SHA-256 is `20495594e5cb64451cf85d3b684f279060d37efbde3ff925e7bac65932619a3c`.
 | Check | Recorded result |
 | --- | --- |
 | `make check` | Passed: tests, vet, formatting, zero lint findings, and builds |
+| Hosted CI | [Implementation commit `7cbae9a`](https://github.com/darron/go-opentunnel/actions/runs/37985077768) passed Go 1.25 tests/vet/builds on Linux and macOS, Linux race tests, and repository-wide lint |
 | Full race suite | Fresh `go test -race -count=1 ./...` passed |
 | Go baseline | `GOTOOLCHAIN=go1.25.0 go test ./... -count=1` passed |
 | Cross-compilation | Linux and Windows amd64 compilation passed; neither target was runtime-tested locally |

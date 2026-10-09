@@ -192,7 +192,10 @@ make fuzz
 All passed, with golangci-lint **0 issues**. Focused hardening races passed five
 repetitions; follow-up review's redirect/recovery races passed ten. Overflow
 and startup-lifetime cancellation regressions passed five repetitions each.
-Linux/Windows amd64 cross-compilation passed locally.
+Linux/Windows amd64 cross-compilation passed locally. Hosted
+[CI for implementation commit `7cbae9a`](https://github.com/darron/go-opentunnel/actions/runs/37985077768)
+also passed Go 1.25 tests, vet, and builds on Linux and macOS, Linux race tests,
+and repository-wide formatting/lint. Windows remains compile-only.
 
 Long-term renewal, malformed relay controls, overflow, fatal attachment codes,
 and forced server drain still rely on fixture evidence. A forced bridge loss
