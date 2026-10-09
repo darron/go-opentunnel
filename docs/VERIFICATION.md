@@ -1,32 +1,39 @@
 # Local verification record
 
-Verified on 2026-10-09, on macOS arm64 with Go 1.27.2 and
-golangci-lint 2.14.0. Compatibility baseline:
-OpenTunnel commit `22156aa6ab209515186c3ca4f111901b7cedc284`.
+**Passed:** local acceptance checks, race tests, parser fuzz smoke tests, and
+minimum-version/cross-platform compilation. **golangci-lint: 0 issues.**
 
-## Acceptance checks
+Verified on **2026-10-09**, macOS arm64, Go 1.27.2, golangci-lint 2.14.0.
+Upstream compatibility baseline: `22156aa6ab209515186c3ca4f111901b7cedc284`.
+Use [TESTING.md](TESTING.md) to rerun the checks.
+
+## Tests and analysis
 
 | Command | Result |
 | --- | --- |
 | `make check` | Tests, vet, lint, and CLI/example builds passed |
 | `go test -race -count=1 ./...` | Both tested packages passed; example built |
-| `go test -race -run 'TestLifecycle\|TestTunnelStalledChannel\|TestTunnelRoutesReconnect' -count=10 .` | All repeated stress regressions passed |
-| `golangci-lint run ./...` | 0 issues, across library, tests, CLI, and example |
+| `go test -race -run 'TestLifecycle\|TestTunnelStalledChannel\|TestTunnelRoutesReconnect' -count=10 .` | Repeated stress regressions passed |
+| `golangci-lint run ./...` | 0 issues across library, tests, CLI, and example |
 | `golangci-lint fmt --diff` | No formatting differences |
+
+## Compatibility and example
+
+| Command | Result |
+| --- | --- |
 | `GOTOOLCHAIN=go1.25.0 go test ./...` | Declared minimum Go version passed |
 | `GOOS=linux GOARCH=amd64 go build -o bin/otgo-linux-amd64 ./cmd/otgo` | Passed |
 | `GOOS=windows GOARCH=amd64 go build -o bin/otgo-windows-amd64.exe ./cmd/otgo` | Passed |
 | `./bin/otgo help` | All diagnostic commands available |
 
-The Linux/Windows results are compile checks, not runtime tests on those systems.
-The example's local-only server returned the expected root response and all
-three `/stream` chunks. Ctrl-C ended the process successfully.
+Linux and Windows were compile-checked, not runtime-tested. The local-only
+example returned the expected root response and all three `/stream` chunks.
+Ctrl-C exited successfully.
 
 ## Parser fuzz smoke
 
-Each command used `go test -run '^$' -fuzz '<name>' -fuzztime=5s .`.
-All completed without failure. Execution counts include the local fuzz cache
-and may differ on subsequent runs.
+Each run used `go test -run '^$' -fuzz '<name>' -fuzztime=5s .` and completed
+without failure. Counts include the local fuzz cache and can vary on later runs.
 
 | Parser | Executions |
 | --- | ---: |
@@ -34,47 +41,74 @@ and may differ on subsequent runs.
 | `FuzzDecodeControl` | 591,655 |
 | `FuzzRouteForSNI` | 196,736 |
 
-## Coverage of meaningful behaviors
+## Behaviors covered by local fixtures
 
-The tests use real WebSocket connections, real TLS handshakes, and generated
-test certificates against a local fake API and relay. They cover:
+The fixture uses real WebSockets, real TLS handshakes, and generated test
+certificates against a fake API/relay.
 
-- Upstream shared vectors; strict HTTP statuses, authentication, ID escaping,
-  response bounds, cancellation, delayed bodies, and redacted error messages.
-- Local key/CSR generation, exact and wildcard certificate SANs, mismatched
-  keys, validity periods, provisioning interruptions, resume, and failed-issuance
-  recovery using the original key.
-- Memory/file storage, upstream file layout, permissions, corruption,
-  cancellation, copy isolation, traversal, symlinks, and pending transitions.
-- Root/named routes, concurrent large transfers, TLS ciphertext at the relay,
-  HTTP streaming, application WebSocket upgrade, half-close, rejected upstreams,
-  bad TLS, duplicate IDs, limits, unknown controls, heartbeat, drain, reconnect,
-  route updates, renewal, and deletion.
-- Cancellation before attachment, reset of a blocked upstream, stalled-channel
-  isolation, renewal racing deletion, final route names racing teardown,
-  bounded outbound queue cancellation, concurrent snapshots/close, and lossy
+### API, certificates, and storage
+
+- **API/protocol:** upstream vectors, strict HTTP statuses, authentication,
+  escaped IDs, bounded responses, cancellation, delayed bodies, and redacted errors.
+- **Certificates:** local key/CSR generation, exact and wildcard SANs, mismatched
+  keys, validity, interrupted provisioning, resume, and failed issuance using
+  the original key.
+- **Storage:** memory/file implementations, upstream layout, permissions,
+  corruption, cancellation, copies, traversal, symlinks, and pending transitions.
+
+### Forwarding, lifecycle, and CLI
+
+- **Forwarding:** root/named routes, concurrent large transfers, ciphertext at
+  the relay, HTTP streaming, application WebSocket upgrades, and half-close.
+- **Relay failures:** refused upstreams, bad TLS, duplicate IDs, connection
+  limits, unknown controls, heartbeat, drain, and reconnection.
+- **Lifecycle races:** route updates, renewal/deletion, cancellation before attach,
+  blocked-upstream reset, stalled-channel isolation, renewal racing deletion,
+  route names racing teardown, and bounded outbound queue cancellation.
+- **Snapshots/events:** concurrent status and close, copy isolation, and lossy
   event buffering.
-- CLI help, flag validation, cancellation, JSON null/results, credential
-  redaction, remote inspection, terminal sanitization, and interactive-reader
-  shutdown.
+- **CLI:** help, flags, cancellation, JSON null/results, redaction, remote
+  inspection, terminal sanitization, and interactive-reader shutdown.
 
 An independent integrated code review found lifecycle issues that were fixed
 with regression tests. Follow-up review found no remaining important code blocker.
-This is a development review, not an independent security audit.
+This was a development review, not an independent security audit.
 
-## Public artifact checks and remaining gap
+## Public artifact checks
 
-Source, docs, and the initial design commit were checked for private filesystem
-paths and common credential patterns. The only committed private-key-shaped
-fixture is explicitly invalid text containing `KEY`; functional test keys and
-certificates are generated during tests. Build artifacts and local profile
-directories are ignored. The project includes an MIT license, and copied
-upstream vectors retain their upstream MIT notice and commit provenance.
+- Source, docs, and the initial design commit were checked for private filesystem
+  paths and common credential patterns.
+- The only committed private-key-shaped fixture is invalid text containing
+  `KEY`. Working test keys and certificates are generated at runtime.
+- Build artifacts and local profile directories are ignored.
+- The project carries an MIT license. Copied upstream vectors retain their MIT
+  notice and commit provenance.
 
-The initial local acceptance was followed on 2026-10-09 by a deliberate live
-exercise of the deployed API, certificate issuance, relay, CLI, and embedding
-example. [LIVE_TESTING.md](LIVE_TESTING.md) records those results, the CLI stdin
-bug found and fixed, and cleanup of both temporary tunnels. The complete local
-check and race suite were rerun after the fix. Confidence is high in the covered
-local and live behaviors; long-term renewal, production server drain, and runtime
-behavior on other operating systems remain outside this short live exercise.
+## Live evidence and confidence
+
+The **2026-10-09** [live exercise](LIVE_TESTING.md) checked the deployed API,
+certificate issuance, relay, CLI, and embedding example. It found a CLI stdin
+shutdown bug; the fix passed a repeated live sequence, full local checks, and
+fresh race tests. Both temporary tunnels were deleted.
+
+**Confidence: high** for the behaviors covered by these local and live checks.
+Long-term renewal, hosted server drain, and runtime behavior on Linux/Windows
+remain outside the short live exercise. The hosted service's deployed source
+revision was not established.
+
+## Documentation and comment cleanup
+
+The 2026-10-09 cleanup applied the
+[i-have-adhd skill](https://github.com/ayghri/i-have-adhd/blob/main/skills/i-have-adhd/SKILL.md)
+to all eight Markdown files and reviewed comments throughout the package, tests,
+CLI, example, and lint configuration.
+
+- `make check` passed again: tests, vet, formatting, lint (**0 issues**), and builds.
+- All 20 tracked Go files retained identical non-comment token streams.
+- Lint/compiler directives, lint configuration values, licenses, and upstream
+  vector data were unchanged.
+- The README embedding snippet compiled as an external package consumer.
+- All 26 local Markdown links and heading anchors resolved.
+
+The edits changed documentation and comments only. Earlier race, fuzz, and live
+results above remain the records of those checks.

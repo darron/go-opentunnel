@@ -1,71 +1,80 @@
 # Implementation
 
-The public package is an OpenTunnel client; `cmd/otgo` is a consumer of the same
-API exposed to embedding applications. The module is
-`github.com/darron/go-opentunnel`, requires Go 1.25 or newer, and is MIT licensed.
-Its sole external module is `github.com/coder/websocket v1.8.15`.
+Start with `client.go` for lifecycle operations and `connection.go` for a running
+tunnel. `cmd/otgo` and `examples/webapp` both consume the public package.
 
-## Components
+The module is `github.com/darron/go-opentunnel`, requires Go 1.25 or newer, and
+is MIT licensed. Its sole external module is `github.com/coder/websocket v1.8.15`.
 
-- `api.go` implements the HTTP lifecycle endpoints with finite request deadlines,
-  bounded responses, escaped endpoint IDs, typed errors, and response-body ownership.
-- `protocol.go` validates routes and control messages and encodes the four-byte,
-  big-endian connection ID used in binary bridge frames. Shared upstream vectors
-  and their license/provenance are under `testdata/vectors/`.
-- `certificate.go` generates P-256 keys and CSRs locally and verifies returned
-  certificates against the key, validity period, exact hostname, and wildcard SAN.
-- `storage.go` implements concurrent memory storage and the upstream-compatible
-  file layout. File writes use private temporary files and atomic replacement,
-  with metadata last. Profile and credential symlinks are rejected. The file
-  format does not provide a cross-process transaction or lock.
-- `client.go` serializes lifecycle mutations per profile, persists pending state
-  before certificate submission, resumes provisioning, and owns cancellation of
-  its operations and connections. A confirmed remote deletion uses a bounded
-  cleanup context to remove local credentials even if its caller cancels.
-- `connection.go` owns reconnects, route snapshots, status, bounded events, and
-  certificate refresh. Name changes trigger a new attachment; target changes
-  apply to newly opened channels. Empty replacement routes suspend attachment.
-- `session.go` owns bridge attachment, framing, heartbeats, channel dispatch,
-  and a bounded write queue. `channel.go` terminates visitor TLS locally and
-  forwards bidirectional streams, including half-close, to the selected target.
-  Per-channel cancellation closes blocked upstream sockets independently.
+## Lifecycle and persistence
 
-## Ownership and resource bounds
+| File | Responsibility |
+| --- | --- |
+| `api.go` | HTTP endpoints, finite deadlines, 1 MiB response limit, escaped IDs, typed errors, and response-body ownership |
+| `certificate.go` | Local P-256 keys/CSRs; certificate checks for key, validity, exact hostname, and wildcard SAN |
+| `storage.go` | Concurrent memory storage and compatible file layout; private temporary files, atomic replacement, metadata last, and symlink rejection |
+| `client.go` | Per-profile lifecycle lock, pending state before issuance, recovery, owned cancellation, and bounded local cleanup after confirmed remote deletion |
 
-The connection context lasts for the entire bridge lifetime. `Connection.Close`
-cancels and joins its workers; `Client.Close` cancels and joins the operations and
-connections it owns. Low-level calls through `Client.API()` retain their own
-context ownership. Custom storage must honor cancellation.
+File replacement is atomic per file. The store does not provide a cross-process
+transaction or lock.
 
-Default limits are 256 channels, 8 MiB of pending inbound bytes per channel,
-256 queued events, a 32-message outbound queue, and 32 KiB outbound chunks.
-The aggregate inbound budget can therefore reach approximately 2 GiB before
-TLS, socket, and other overhead; lower `MaxConnections` and `MaxInboundBytes`
-for smaller applications. A slow event consumer loses events, counted by
-`Status().DroppedEvents`. A channel exceeding its inbound budget is reset.
-Sustained outbound pressure can delay other channels because the upstream
-protocol has no per-channel flow-control mechanism.
+## Transport
 
-## Review findings addressed
+| File | Responsibility |
+| --- | --- |
+| `protocol.go` | Route/control validation and four-byte big-endian connection IDs; upstream fixtures are in `testdata/vectors/` |
+| `connection.go` | Reconnects, copied routes/status, bounded events, certificate refresh, and route-change attachment |
+| `session.go` | Attachment, framing, heartbeat, channel dispatch, and bounded write queue |
+| `channel.go` | Local visitor TLS, bidirectional TCP forwarding, half-close, and cancellation of blocked upstream sockets |
 
-The integrated review and regression tests identified and addressed these cases:
+Target changes apply to new channels. Name changes reattach. Empty replacement
+routes suspend attachment.
 
-- Resetting or overflowing a channel must cancel its upstream socket; aborting
-  only the virtual TLS connection can leave an upstream write blocked.
-- Confirmed remote deletion must finish local cleanup after caller cancellation.
-- Renewal and deletion must share a profile lock so a late renewal cannot
-  recreate deleted credentials.
-- Retrying failed certificate issuance must reuse the stored private key.
-- Certificate validation must require the wildcard SAN itself, rather than
-  accepting one sample subdomain certificate.
-- API deadlines must remain active until the response body is consumed.
-- Route changes during session publication must retain the final route names.
-- Interactive CLI shutdown must not wait for EOF on inherited stdin. The live
-  exercise found that closing a native stdin file did not interrupt its blocked
-  read. `quit` now stops the scanner directly; cancellation leaves process-owned
-  stdin to process exit while still joining the SDK's workers.
+## Ownership
 
-See [TESTING.md](TESTING.md) for reproducible commands and the live exercise,
-[VERIFICATION.md](VERIFICATION.md) for the recorded local results, and
-[LIVE_TESTING.md](LIVE_TESTING.md) for the public-service checks. See
-[SECURITY.md](SECURITY.md) for the encryption and trust boundaries.
+- The connection context lasts for the entire bridge lifetime.
+- `Connection.Close` cancels and joins its workers.
+- `Client.Close` cancels and joins its owned operations and connections.
+- `Client.API()` calls use their own contexts.
+- Custom storage must honor cancellation; coordinate shared-profile provisioning
+  across separate clients or processes.
+
+## Default resource limits
+
+| Resource | Limit |
+| --- | ---: |
+| Active channels | 256 |
+| Pending inbound bytes per channel | 8 MiB |
+| Queued events | 256 |
+| Outbound queue | 32 messages |
+| Outbound payload per message | 32 KiB |
+
+The maximum aggregate inbound budget is **2 GiB**, before TLS, socket, and other
+memory overhead. Lower `TransportOptions.MaxConnections` and `MaxInboundBytes`
+for smaller applications.
+
+An inbound overflow resets that channel. Slow event consumers lose events;
+`Status().DroppedEvents` counts them. Sustained outbound pressure can delay other
+channels because the wire protocol has no per-channel flow control.
+
+## Review fixes covered by regressions
+
+Lifecycle and credentials:
+
+- Finish local cleanup after confirmed remote deletion, even if the caller cancels.
+- Share a profile lock between renewal and deletion to prevent credential recreation.
+- Reuse the stored key when retrying failed issuance.
+- Require the wildcard SAN itself, rather than accepting a sample subdomain.
+
+I/O and shutdown:
+
+- Cancel blocked upstream sockets on channel reset or overflow.
+- Keep API deadlines active through response-body consumption.
+- Preserve route-name changes that race session publication.
+- Stop interactive CLI shutdown from waiting for EOF on inherited stdin. `quit`
+  stops scanning; cancellation leaves native stdin to process exit after SDK cleanup.
+
+Use [TESTING.md](TESTING.md) to rerun checks. Read
+[VERIFICATION.md](VERIFICATION.md) for local evidence,
+[LIVE_TESTING.md](LIVE_TESTING.md) for hosted-service evidence, and
+[SECURITY.md](SECURITY.md) for trust boundaries.

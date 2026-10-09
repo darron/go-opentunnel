@@ -94,8 +94,8 @@ func (ch *channel) reset(code string) {
 	}
 }
 
-// bridgeConn is a bounded, half-closeable virtual TCP connection. push never
-// blocks the bridge reader behind a slow TLS channel.
+// bridgeConn provides bounded buffering and TCP half-close semantics. push does
+// not block the bridge reader when a TLS channel is slow.
 type bridgeConn struct {
 	session       *session
 	id            uint32

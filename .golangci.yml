@@ -19,10 +19,10 @@ linters:
   settings:
     gosec:
       excludes:
-        # Route targets are deliberately caller-selected host:port endpoints.
+        # The SDK forwards to caller-selected host:port targets.
         - G704
-        # The profile store deliberately uses runtime paths, validates profile
-        # labels, and rejects symlinked profiles/files before filesystem access.
+        # Storage validates runtime profile paths and rejects symlinked
+        # profiles/files before filesystem access.
         - G304
     errcheck:
       check-type-assertions: true

@@ -1,5 +1,5 @@
-// Package opentunnel creates blind TLS tunnels compatible with OpenTunnel.
-// TLS terminates in the embedding process; see docs/SECURITY.md for trust boundaries.
+// Package opentunnel forwards visitor TLS through OpenTunnel and terminates it
+// in the embedding process. See docs/SECURITY.md for the operator trust boundary.
 package opentunnel
 
 import (
@@ -21,7 +21,7 @@ var (
 
 type Routes map[string]string
 
-// Identity contains credentials. Token and PrivateKey are excluded from JSON.
+// Identity holds tunnel credentials. JSON omits Token and PrivateKey.
 type Identity struct {
 	ID                string    `json:"id"`
 	Hostname          string    `json:"hostname"`
@@ -45,8 +45,8 @@ type StoredTunnel struct {
 	Tunnel  Identity `json:"tunnel"`
 }
 
-// Storage implementations must be safe for concurrent use and honor cancellation.
-// Missing data is represented by a nil pointer and nil error.
+// Storage implementations must support concurrent calls and cancellation.
+// Missing identities return (nil, nil).
 type Storage interface {
 	Profiles(context.Context) ([]string, error)
 	Load(context.Context, string) (*Identity, error)
@@ -65,8 +65,8 @@ type ClientOptions struct {
 	Transport      TransportOptions
 }
 
-// TransportOptions zero values select defaults. Positive overrides enable bounded
-// resource use and deterministic integration tests without global settings.
+// TransportOptions sets resource limits and timeouts. Zero values select defaults;
+// positive values override them.
 type TransportOptions struct {
 	MaxConnections             int
 	EventBuffer                int
@@ -95,7 +95,8 @@ const (
 	StageReady                 ProvisionStage = "ready"
 )
 
-// OnProgress runs synchronously; callbacks must not reenter the same profile.
+// ProvisionOptions configures progress reporting. OnProgress runs synchronously;
+// callbacks must not reenter operations on the same profile.
 type ProvisionOptions struct{ OnProgress func(ProvisionStage) }
 type ConnectOptions struct {
 	Profile string
@@ -151,7 +152,7 @@ type CertificateState struct {
 	Reason      string    `json:"reason,omitempty"`
 }
 
-// APIError preserves the remote HTTP status and error tag without exposing bodies.
+// APIError reports the remote HTTP status and error tag without the response body.
 type APIError struct {
 	StatusCode int
 	Tag        string

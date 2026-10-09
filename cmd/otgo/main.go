@@ -1,4 +1,4 @@
-// otgo is a small diagnostic consumer of the opentunnel package.
+// otgo exercises the public opentunnel package for testing and diagnostics.
 package main
 
 import (
@@ -27,7 +27,7 @@ func mainExitCode() int {
 	return 0
 }
 
-// run is separated from main so command parsing and cancellation are testable.
+// run keeps command parsing and cancellation testable without process exit.
 func run(ctx context.Context, args []string, in io.Reader, out, errout io.Writer) error {
 	return runCommand(ctx, args, in, out, errout)
 }

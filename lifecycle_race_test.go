@@ -16,8 +16,8 @@ import (
 	"github.com/coder/websocket"
 )
 
-// renewalSaveGate holds only a renewal Save. Its wait observes context
-// cancellation so a failing test cannot strand the connection refresh worker.
+// renewalSaveGate blocks renewal Save until released or cancelled, so a failing
+// test cannot strand the refresh worker.
 type renewalSaveGate struct {
 	Storage
 	armed   atomic.Bool
@@ -100,8 +100,7 @@ func TestLifecycleRenewalSaveCannotResurrectRemovedIdentity(t *testing.T) {
 
 	removed := make(chan error, 1)
 	go func() { removed <- c.Remove(context.Background(), "") }()
-	// The refresh holds the per-profile lock while Save is blocked. Remove must
-	// therefore remain live until the barrier is released.
+	// Refresh holds the profile lock during Save. Remove must wait for release.
 	select {
 	case err := <-removed:
 		t.Fatalf("Remove completed while renewal Save was blocked: %v", err)
@@ -204,8 +203,7 @@ func TestLifecycleFinalRouteNamesWinSessionTeardownRace(t *testing.T) {
 func TestLifecycleOutboundQueueCancellationWhenRelayStopsReading(t *testing.T) {
 	f := newRelay(t)
 	paused := make(chan struct{})
-	// After attach this server deliberately stops reading client-to-relay frames,
-	// but only after TLS has completed and the test sends its pause marker.
+	// Stop reading bridge frames after TLS completes and the pause marker arrives.
 	f.api.bridge = func(w http.ResponseWriter, r *http.Request) {
 		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"opentunnel"}})
 		if err != nil {

@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// Connection reconnects until its lifetime context is cancelled, Close is
-// called, or a fatal attach error occurs. Events are bounded and may be dropped;
-// Status is an authoritative snapshot. Done closes after every worker exits.
+// Connection reconnects until context cancellation, Close, or a fatal attach error.
+// Events are bounded and lossy; Status gives the current state. Done closes after
+// all workers exit.
 type Connection struct {
 	client     *Client
 	profile    string
@@ -63,7 +63,7 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 		unlock()
 		return nil, e
 	}
-	// The lifetime is the caller's context, not the temporary provisioning context.
+	// Keep the caller's context for the full lifetime, including reconnects.
 	life, cancel := context.WithCancel(ctx)
 	x := &Connection{client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	x.status = Status{State: "connecting", Hostname: id.Hostname, Routes: copyRoutes(o.Routes)}
@@ -119,8 +119,8 @@ func (x *Connection) Status() Status {
 }
 func (x *Connection) Close() error { x.cancel(); <-x.done; return nil }
 
-// SetRoutes applies targets immediately to new channels. Changing names causes
-// asynchronous reattachment; existing channels close when the session changes.
+// SetRoutes updates targets for new channels. Name changes reattach asynchronously
+// and close existing channels when the session changes.
 func (x *Connection) SetRoutes(routes Routes) error {
 	if e := ValidateRoutes(routes); e != nil {
 		return e
@@ -193,7 +193,7 @@ func (x *Connection) run() {
 		s := newSession(x, routes)
 		x.mu.Lock()
 		x.session = s
-		// A name change between the snapshot and publication must not be lost.
+		// Recheck names to preserve updates that raced session publication.
 		if !sameRouteNames(routes, x.routes) {
 			s.routesChanged.Store(true)
 			s.cancel()

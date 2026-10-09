@@ -1,5 +1,7 @@
-The JSON content in this directory is copied from OpenTunnel shared protocol
-vectors at https://github.com/anomalyco/opentunnel commit
-22156aa6ab209515186c3ca4f111901b7cedc284 (2026-10-09).
+# Upstream protocol vectors
 
-They are distributed under the upstream MIT License; see MIT-LICENSE.
+The JSON files are copied from [OpenTunnel shared vectors](https://github.com/anomalyco/opentunnel/tree/22156aa6ab209515186c3ca4f111901b7cedc284/spec/vectors).
+
+- Source commit: `22156aa6ab209515186c3ca4f111901b7cedc284`.
+- Copy date: 2026-10-09.
+- License: upstream MIT; the original notice is in [MIT-LICENSE](MIT-LICENSE).

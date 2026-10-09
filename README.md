@@ -1,60 +1,123 @@
 # go-opentunnel
 
-`go-opentunnel` is an embeddable Go client for [OpenTunnel](https://opentunnel.xyz). It provisions tunnel identities, stores credentials, connects the multiplexed relay bridge, terminates visitor TLS in your process, and forwards the resulting local connections to named `host:port` routes.
-
-The only runtime dependency outside the Go standard library is `github.com/coder/websocket`. Go 1.25 or newer is required.
-
-## Library
-
-```go
-store, err := opentunnel.NewXDGStorage()
-if err != nil { log.Fatal(err) }
-client, err := opentunnel.NewClient(opentunnel.ClientOptions{Storage: store})
-if err != nil { log.Fatal(err) }
-defer client.Close()
-
-ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-defer cancel()
-connection, err := client.Connect(ctx, opentunnel.ConnectOptions{
-    Profile: "demo",
-    Routes:  opentunnel.Routes{"@": "127.0.0.1:8080"},
-})
-if err != nil { log.Fatal(err) }
-defer connection.Close()
-<-connection.Done()
-```
-
-`Connect` uses its context for the whole connection lifetime, including reconnects. Cancel it to stop the bridge. `Client.Close` stops connections created by that client; `Connection.Close` stops one bridge. `Create`, `Resume`, and `Ensure` return snapshots whose credential fields are deliberately excluded from JSON. `Client.API().Get` supports diagnostic remote inspection when you already hold a stored identity.
-
-The SDK maps OpenTunnel operations directly to Go methods: `Profiles`, `List`, `Get`, `Pending`, `Create`, `Resume`, `Ensure`, `Remove`, and `Connect` are methods on `Client`; `Connection` provides `Identity`, `Events`, `Status`, `SetRoutes`, `Done`, `Err`, and `Close`. [The design document](docs/DESIGN.md#public-package-and-api) records the full upstream-to-Go mapping.
-
-Storage is explicit: `NewFileStorage(root)` uses the directory you supply, while `NewXDGStorage()` uses the upstream-compatible XDG data location. Memory storage is process-only. File storage is safe within the implementation’s operations, but provisioning the same profile concurrently from separate processes is not a transaction.
-
-Bridge traffic and event delivery are bounded. The event channel is lossy under a slow consumer; inspect `Status().DroppedEvents` and use `Status()` as the authoritative state snapshot. The relay protocol has no per-channel flow control, so sustained backpressure on a shared bridge can delay unrelated channels. Keep route targets responsive and consume events without blocking application shutdown.
-
-## CLI
-
-Build the diagnostic CLI with `make build`; it is deliberately only a consumer of the public package.
+Embed an [OpenTunnel](https://opentunnel.xyz) client in your Go application. Run
+an HTTP server on loopback, then use the package to expose it over public HTTPS.
+Visitor TLS terminates in your process.
 
 ```sh
-./bin/otgo create --profile demo
-./bin/otgo connect --profile demo --route @=127.0.0.1:8080 --interactive
-# in interactive mode: status; routes @=127.0.0.1:8080 api=127.0.0.1:8081; quit
-./bin/otgo inspect --profile demo --json
-./bin/otgo remove --profile demo
+go get github.com/darron/go-opentunnel
 ```
 
-Flags appear after the command. All commands accept `--api`, `--data-dir`, `--profile`, `--json`, and `--request-timeout`; zero request timeout selects the library default and positive values override it. Provisioning commands also accept `--timeout` (default two minutes). `connect --timeout 0` is the default and leaves the connection running until Ctrl-C; a nonzero value limits the whole connection lifetime. Negative durations are rejected. Repeat `--route name=host:port` for each route. The CLI never prints tokens or private keys.
+Requires Go 1.25 or newer. The sole dependency outside the standard library is
+`github.com/coder/websocket`. Licensed under [MIT](LICENSE).
 
-## Local example and live exercise
+## Embed the client
 
-For a CLI exercise, run `go run ./examples/webapp --local-only --addr 127.0.0.1:8080` to start a loopback HTTP and WebSocket echo target. In another terminal, connect it with `./bin/otgo connect --profile live-check --route @=127.0.0.1:8080 --interactive`. Visit the printed HTTPS URL, use `/stream` for a streaming response, and connect a WebSocket client to `/ws`. Add a named route with the `routes` interactive command, then run `./bin/otgo remove --profile live-check`.
+This function connects an existing server at `127.0.0.1:8080`. Pass your
+application's shutdown context. The `demo` profile persists across restarts.
 
-The example also demonstrates embedding: omit `--local-only` and it starts the loopback server and owns a `Client.Connect` session itself, using `--profile`, `--api`, and `--data-dir` when supplied. Stopping its local HTTP server only causes `upstream_connect_failed` for new visitor connections; it does not test relay reconnection. A bridge reconnect requires a relay transport loss or server drain.
+```go
+package example
 
-This sequence is a live service test, separate from the local test suite. See [docs/TESTING.md](docs/TESTING.md) for what each check establishes and [docs/SECURITY.md](docs/SECURITY.md) for the TLS and trust model.
+import (
+    "context"
 
-The deployed service was exercised on 2026-10-09: provisioning/resume,
-public HTTPS and WSS, streaming, large/concurrent transfers, route replacement,
-reconnection, embedding, shutdown, and deletion passed. The results and remaining
-coverage limits are recorded in [docs/LIVE_TESTING.md](docs/LIVE_TESTING.md).
+    opentunnel "github.com/darron/go-opentunnel"
+)
+
+func serveTunnel(ctx context.Context) error {
+    store, err := opentunnel.NewXDGStorage()
+    if err != nil {
+        return err
+    }
+    client, err := opentunnel.NewClient(opentunnel.ClientOptions{Storage: store})
+    if err != nil {
+        return err
+    }
+    defer client.Close()
+
+    connection, err := client.Connect(ctx, opentunnel.ConnectOptions{
+        Profile: "demo",
+        Routes:  opentunnel.Routes{"@": "127.0.0.1:8080"},
+    })
+    if err != nil {
+        return err
+    }
+    defer connection.Close()
+    <-connection.Done()
+    return connection.Err()
+}
+```
+
+The [webapp example](examples/webapp/main.go) includes an HTTP server, event
+handling, signal cancellation, streaming responses, and a WebSocket echo endpoint.
+Run it with `go run ./examples/webapp`; it creates and owns its tunnel connection.
+
+Use these contracts when embedding:
+
+- **Lifetime:** `Connect` returns after its first successful attachment. Its
+  context controls provisioning, reconnects, and shutdown. `Client.Close` joins
+  all work it owns; `Connection.Close` joins one connection's workers.
+- **Storage:** `NewFileStorage(root)` uses your directory; `NewXDGStorage()` uses
+  the upstream-compatible data directory. Memory storage lasts only for the
+  process. Coordinate same-profile provisioning across clients or processes.
+- **Events:** delivery is bounded and lossy. Use `Status()` for current state
+  and `Status().DroppedEvents` to detect missed events.
+- **Traffic:** buffers are bounded. The relay protocol has no per-channel flow
+  control, so sustained outbound backpressure can delay other channels.
+- **Credentials:** identity JSON omits tokens and private keys. Keep the stored
+  files private. Read the [security model](docs/SECURITY.md) before exposing an app.
+
+See the [API mapping](docs/DESIGN.md#public-package-and-api) for lifecycle,
+connection, storage, and remote-inspection operations.
+
+## Exercise the package with otgo
+
+`otgo` is a diagnostic CLI built from the public package.
+
+1. Build it and start a loopback test server in one terminal:
+
+   ```sh
+   make build
+   ./bin/webapp --local-only --addr 127.0.0.1:8080
+   ```
+
+2. In another terminal, create a dedicated profile and connect it:
+
+   ```sh
+   ./bin/otgo create --profile demo
+   ./bin/otgo connect --profile demo --route @=127.0.0.1:8080 --interactive
+   ```
+
+3. Visit the printed HTTPS URL. Enter `status` or `quit` in the CLI. After
+   disconnecting, delete the test tunnel:
+
+   ```sh
+   ./bin/otgo inspect --profile demo --json
+   ./bin/otgo remove --profile demo
+   ```
+
+Put flags **after the command**. Repeat `--route name=host:port` for each route.
+Common flags are `--api`, `--data-dir`, `--profile`, `--json`, and
+`--request-timeout`. The CLI omits tokens and private keys from output.
+
+Provisioning defaults to a two-minute timeout. `connect --timeout 0` runs until
+Ctrl-C; a positive timeout limits its entire lifetime. See
+[testing instructions](docs/TESTING.md) for all timeout rules, interactive route
+changes, and a live test using isolated storage.
+
+## Validation
+
+```sh
+make check
+make race
+make fuzz
+```
+
+Local tests cover the API, storage, protocol, TLS forwarding, concurrency, and CLI.
+The public service was also exercised on **2026-10-09**: provisioning, HTTPS/WSS,
+streaming, large and concurrent transfers, route changes, reconnection, embedding,
+shutdown, and deletion passed.
+
+Read the [local results](docs/VERIFICATION.md) and
+[live results and limits](docs/LIVE_TESTING.md) for the evidence.

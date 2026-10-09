@@ -1,47 +1,121 @@
-# Testing and verification
+# Run the tests
 
-Run the local suite and build checks with:
+## Local checks
+
+These commands do not create a public tunnel.
+
+1. Check tests, vet, formatting, lint, and builds:
+
+   ```sh
+   make check
+   ./bin/otgo help
+   ```
+
+2. Check concurrent behavior:
+
+   ```sh
+   make race
+   go test -race -run 'TestLifecycle|TestTunnelStalledChannel|TestTunnelRoutesReconnect' -count=10 .
+   ```
+
+3. Run a five-second fuzz smoke test for each parser:
+
+   ```sh
+   make fuzz
+   ```
+
+Local fixtures use a fake API/relay with real WebSockets, TLS handshakes, and
+generated test certificates. They cover request encoding, redaction,
+cancellation, storage, routes, framing, forwarding, and CLI dispatch. Hosted
+API, certificate issuance, and relay interoperability have a separate
+[live test record](LIVE_TESTING.md). Recorded local results are in
+[VERIFICATION.md](VERIFICATION.md).
+
+## Lint scope and exceptions
+
+`make lint` runs `golangci-lint fmt --diff` and `golangci-lint run ./...`.
+It includes the package, tests, CLI, and example. There are no excluded package
+or file patterns.
+
+The version-2 [configuration](../.golangci.yml) enables standard linters plus
+`bodyclose`, `durationcheck`, `errorlint`, `gocritic`, `gosec`, `nilerr`, `nilnil`,
+`noctx`, `prealloc`, `unconvert`, and `wastedassign`.
+
+| Exception | Reason and scope |
+| --- | --- |
+| `gosec G704` | Disabled in configuration: caller-selected TCP destinations are the SDK's purpose |
+| `gosec G304` | Disabled in configuration: the storage implementation validates profile paths and rejects symlinks |
+| `nilnil` | Local annotations: missing identities return `(nil, nil)` by the storage contract |
+| `gosec G302` / `G404` | Local annotations: owner-executable private directories / non-cryptographic retry jitter |
+| `gosec G204` | Local test annotation: `os.Executable()` selects the current test binary, never a caller-selected program |
+
+The temporary-file cleanup also has a local `errcheck` annotation for best-effort
+removal. These are documented exceptions; static analysis is not a security audit.
+
+## Repeat a basic live test
+
+This sequence creates a public tunnel. Use a dedicated profile and isolated
+storage; keep its credentials until remote deletion succeeds.
+
+1. In terminal A, build and start the loopback target. Leave it running:
+
+   ```sh
+   make build
+   ./bin/webapp --local-only --addr 127.0.0.1:8080
+   ```
+
+2. In terminal B, create private test storage, provision, and connect:
+
+   ```sh
+   OTGO_TEST_DIR=$(mktemp -d)
+   ./bin/otgo create --data-dir "$OTGO_TEST_DIR" --profile live-check --timeout 5m
+   ./bin/otgo connect --data-dir "$OTGO_TEST_DIR" --profile live-check \
+     --route @=127.0.0.1:8080 --interactive
+   ```
+
+3. Visit the printed HTTPS URL. Check `/stream` and a WebSocket connection to
+   `/ws`. In the interactive CLI, run these commands in order. Check both public
+   hostnames after adding `api`; check HTTPS again after restoring the root:
+
+   ```text
+   status
+   routes @=127.0.0.1:8080 api=127.0.0.1:8080
+   routes
+   routes @=127.0.0.1:8080
+   quit
+   ```
+
+4. In terminal B, delete the remote identity and check local cleanup. Then stop
+   terminal A with Ctrl-C:
+
+   ```sh
+   ./bin/otgo remove --data-dir "$OTGO_TEST_DIR" --profile live-check
+   ./bin/otgo profiles --data-dir "$OTGO_TEST_DIR" --json
+   ```
+
+Stopping the target server tests failed upstream connections for new visitors.
+A bridge reconnect requires loss of the relay transport or a relay drain.
+
+## Timeout rules
+
+Put flags after the command. Negative durations are rejected.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| Provisioning `--timeout` | `2m` | Bounds the full provisioning operation; `0` disables this CLI deadline |
+| `connect --timeout` | `0` | Runs until Ctrl-C; a positive value bounds the full lifetime, including reconnects |
+| `--request-timeout` | `0` | Selects the API's finite default of `15s`; a positive value overrides it |
+
+## Interactive stdin shutdown
+
+`quit` stops scanning immediately without requiring EOF. On cancellation, the CLI
+leaves inherited `os.Stdin` to process exit because closing it may not interrupt
+a blocked native read. Tunnel/client cleanup still finishes before exit.
+
+Other supplied closable readers are closed and joined; they must interrupt a
+pending read. Regression tests use an open pipe and a child process whose native
+stdin writer stays open:
 
 ```sh
-make check
-make race
-make fuzz
-./bin/otgo help
+go test -race ./cmd/otgo -run 'TestReadCommands|TestNativeStdin' -count=3
 ```
-
-The local tests use fake API/relay components. They establish request encoding, credential redaction, cancellation, storage behavior, route validation, bridge framing, TLS forwarding, and CLI command dispatch without creating a public tunnel. They do not demonstrate interoperability with the deployed API, certificate authority, or relay.
-
-`make lint` checks formatting and runs `golangci-lint` across `./...`, including tests, the CLI, and the embedding example. The version-2 configuration enables the standard linters plus additional security, context, resource, and error checks. It has no excluded package or file patterns. Two security analyzer rules are disabled with reasons in `.golangci.yml`: runtime-selected TCP destinations are the SDK's purpose (`G704`), and profile file paths are validated by the storage implementation (`G304`). Local source suppressions explain missing-value storage results, owner-executable directory permissions, and non-cryptographic retry jitter. These are reviewed exceptions, not claims that static analysis proves security.
-
-The lifecycle regressions can be repeated independently:
-
-```sh
-go test -race -run 'TestLifecycle|TestTunnelStalledChannel|TestTunnelRoutesReconnect' -count=10 .
-```
-
-See [VERIFICATION.md](VERIFICATION.md) for local results and
-[LIVE_TESTING.md](LIVE_TESTING.md) for the completed public-service exercise.
-
-For a deliberate live exercise, start the loopback target in one terminal:
-
-```sh
-go run ./examples/webapp --local-only --addr 127.0.0.1:8080
-```
-
-Then use a dedicated profile in another terminal:
-
-```sh
-./bin/otgo create --profile live-check
-./bin/otgo connect --profile live-check --route @=127.0.0.1:8080 --interactive
-```
-
-Visit the printed HTTPS address. Check the normal response, `/stream`, and a WebSocket connection to `/ws`. In interactive mode run `status`, then `routes @=127.0.0.1:8080 api=127.0.0.1:8080`, and verify the named public hostname. Stopping the local server tests a failed local upstream for new visitors, not bridge reconnection. Test a reconnect only by inducing a relay transport loss or observing a relay drain. Finish with `./bin/otgo remove --profile live-check`.
-
-`connect` retains its context for the entire bridge. By default `--timeout 0` means Ctrl-C or the calling context controls shutdown. A positive `connect --timeout` bounds the full connection lifetime; it is not merely a startup deadline. Provisioning defaults to two minutes and accepts its own `--timeout` override. A zero `--request-timeout` selects the API client's finite default; positive values override it.
-
-Interactive `quit` stops scanning without requiring stdin EOF. The CLI treats
-inherited `os.Stdin` as process-owned: cancellation does not wait for a native
-stdin read that the OS may not interrupt. Tunnel/client cleanup still completes
-before process exit. Other supplied closable readers are closed and joined;
-they must support interruption of a pending read. Regression tests use both an
-open pipe and a child process with its native stdin writer held open.

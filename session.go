@@ -296,8 +296,8 @@ func (s *session) finished(ch *channel, err error) {
 	s.owner.emit(event)
 }
 
-// TLS is terminated by Go rather than by the relay. ECDSA certificate keys
-// restrict TLS 1.2 to forward-secret ECDHE; TLS 1.3 uses ephemeral key exchange.
+// Terminate visitor TLS locally. ECDSA keys restrict TLS 1.2 to forward-secret
+// ECDHE suites; TLS 1.3 uses ephemeral key exchange.
 func channelTLS(cert *tls.Certificate) *tls.Config {
 	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{*cert}, NextProtos: []string{"http/1.1"}}
 }

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// NewMemoryStorage returns a process-local, concurrency-safe Storage.
+// NewMemoryStorage returns a concurrent store that lasts for this process only.
 func NewMemoryStorage() Storage {
 	return &memoryStorage{identities: make(map[string]Identity), pending: make(map[string]PendingIdentity)}
 }
@@ -146,11 +146,11 @@ func (s *memoryStorage) List(ctx context.Context) ([]StoredTunnel, error) {
 	return result, nil
 }
 
-// NewFileStorage returns a Storage rooted at root, whose immediate children are profiles.
+// NewFileStorage stores profiles directly below root.
 func NewFileStorage(root string) Storage { return &fileStorage{root: root} }
 
-// NewXDGStorage returns a Storage under $XDG_DATA_HOME/opentunnel, or the
-// upstream-compatible ~/.local/share/opentunnel fallback.
+// NewXDGStorage uses $XDG_DATA_HOME/opentunnel, falling back to
+// ~/.local/share/opentunnel for upstream compatibility.
 func NewXDGStorage() (Storage, error) {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome == "" {
@@ -293,7 +293,7 @@ func (s *fileStorage) Save(ctx context.Context, profile string, identity Identit
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// The pending marker is removed only after the complete marker is durable.
+	// Remove pending metadata only after writing the completed identity marker.
 	if err := removeRegular(filepath.Join(dir, "pending.json")); err != nil {
 		return err
 	}
@@ -375,7 +375,7 @@ func (s *fileStorage) SavePending(ctx context.Context, profile string, pending P
 			return ErrExists
 		}
 	}
-	// Existing completed credentials are never replaced while saving recovery metadata.
+	// Keep completed credentials when saving recovery metadata.
 	if completed {
 		metadata, err := json.MarshalIndent(pendingMetadata{ID: pending.ID, Hostname: pending.Hostname, CSR: pending.CSR}, "", "  ")
 		if err != nil {

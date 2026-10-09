@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// testAuthority creates keys at test runtime: no test credentials are committed.
+// testAuthority generates keys at runtime; no working credentials are committed.
 type testAuthority struct {
 	cert  *x509.Certificate
 	key   *ecdsa.PrivateKey

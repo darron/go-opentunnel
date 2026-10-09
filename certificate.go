@@ -68,8 +68,8 @@ func parseCertificate(identity Identity) (*tls.Certificate, error) {
 	return &cert, nil
 }
 
-// requestForExistingKey lets recovery preserve the identity's key and active
-// channels instead of replacing credentials before an issuance succeeds.
+// requestForExistingKey reuses the stored key during recovery, preserving
+// credentials and active channels until issuance succeeds.
 func requestForExistingKey(hostname, privateKey string) (string, error) {
 	b, _ := pem.Decode([]byte(privateKey))
 	if b == nil {

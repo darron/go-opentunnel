@@ -109,8 +109,8 @@ type controlMessage struct {
 	Reason        string      `json:"reason,omitempty"`
 }
 
-// MarshalJSON writes only the fields defined for each wire message. Required
-// zero values (notably conn=0 and open.alpn="") must remain on the wire.
+// MarshalJSON writes each message's schema fields, including required zero values
+// such as conn=0 and open.alpn="".
 func (m controlMessage) MarshalJSON() ([]byte, error) {
 	routes := m.Routes
 	if routes == nil {
@@ -231,8 +231,8 @@ func decodeControl(data []byte) (controlMessage, bool) {
 }
 
 func safeControlCode(code string) bool {
-	// The wire schema permits arbitrary strings. Bound diagnostic memory while
-	// preserving future codes; AttachError.Error quotes them for safe rendering.
+	// Accept future codes within the diagnostic size limit. AttachError.Error
+	// quotes them for safe rendering.
 	if len(code) > 256 {
 		return false
 	}

@@ -196,8 +196,8 @@ func printValue[T any](out io.Writer, asJSON bool, value T, err error) error {
 	if asJSON {
 		return json.NewEncoder(out).Encode(value)
 	}
-	// Do not use fmt's default struct formatting here: Identity contains
-	// credentials even though its JSON representation intentionally omits them.
+	// Use explicit public fields: default struct formatting would expose
+	// credentials that JSON omits.
 	switch v := any(value).(type) {
 	case []string:
 		for _, profile := range v {
@@ -374,9 +374,8 @@ func startCommandReader(ctx context.Context, in io.Reader) (<-chan string, func(
 		cancel()
 		file, isFile := in.(*os.File)
 		if isFile && file == os.Stdin {
-			// Inherited stdin may be a blocking descriptor: closing it does not
-			// reliably interrupt an in-flight Read. It belongs to the CLI process,
-			// which exits after joining the tunnel. quit stops scanning directly.
+			// Closing native stdin may not interrupt Read. Leave it to process exit
+			// after tunnel cleanup; quit stops scanning directly.
 			return
 		}
 		if closer, ok := in.(io.Closer); ok {

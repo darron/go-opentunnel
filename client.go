@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// Client owns provisioning operations and connections. Close cancels and joins
-// them. Stores may be shared, but provisioning across clients/processes must be
-// coordinated by the embedding application.
+// Client owns provisioning operations and connections; Close cancels and joins
+// them. Applications must coordinate same-profile provisioning across clients
+// or processes, even when sharing a store.
 type Client struct {
 	api         *API
 	store       Storage
@@ -47,7 +47,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 }
 
 // API returns the low-level HTTP client for remote inspection and custom workflows.
-// Low-level calls are governed by their own contexts rather than Client.Close.
+// Its calls use their own contexts; Client.Close does not cancel them.
 func (c *Client) API() *API { return c.api }
 
 func transportDefaults(o TransportOptions) (TransportOptions, error) {
@@ -381,8 +381,8 @@ func (c *Client) Remove(ctx context.Context, profile string) error {
 			return e
 		}
 	}
-	// Stop renewal before removing credentials. Refresh persistence takes this
-	// same profile lock, so it cannot resurrect a deleted identity afterwards.
+	// Stop renewal before deleting credentials. Refresh shares this profile lock,
+	// so it cannot recreate the identity after deletion.
 	c.mu.Lock()
 	conns := make([]*Connection, 0, len(c.connections))
 	for conn, profile := range c.connections {
@@ -392,13 +392,13 @@ func (c *Client) Remove(ctx context.Context, profile string) error {
 		}
 	}
 	c.mu.Unlock()
-	// Waiting renewal operations use the cancelled connection context to leave
-	// the profile lock queue, so joining them while holding it is safe.
+	// Cancellation releases renewal workers waiting for this lock. Joining them
+	// while holding it cannot deadlock.
 	for _, conn := range conns {
 		_ = conn.Close()
 	}
-	// Remote deletion is already confirmed. Finish local reconciliation even if
-	// the caller cancelled meanwhile; use a finite cleanup deadline.
+	// Remote deletion succeeded. Finish local cleanup with a finite deadline,
+	// even if the caller has cancelled.
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.api.timeout)
 	defer cancel()
 	return c.store.Remove(cleanup, p)

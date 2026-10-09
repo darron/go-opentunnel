@@ -1,54 +1,32 @@
-# Native Go OpenTunnel client and otgo verification CLI
+# Package and protocol reference
 
-## Intended outcome
+Use package `opentunnel` from `github.com/darron/go-opentunnel` to manage tunnel
+identities and forward visitor TLS to local services. Start with the
+[embedding example](../README.md#embed-the-client); use this document for API,
+wire, and persistence contracts.
 
-Build a Go package that applications can embed to create and manage OpenTunnel
-tunnels and forward public TLS connections to local services. Match the
-capabilities of the upstream TypeScript SDK and the HTTP, WebSocket, certificate,
-and storage protocols shared with the Rust client. Build a small `otgo` CLI to
-exercise the exported package; the CLI is a testing and diagnostic consumer,
-not the architecture the library depends on.
-
-Success requires a usable public API, deterministic local integration tests,
-race-detector checks, an embedding example, and a CLI ready for a subsequent
-live test with the user. Local test success does not establish interoperability
-with the deployed public service; report that separately.
+The client uses Go's HTTP, P-256, X.509, TLS, and TCP implementations plus one
+WebSocket dependency. Applications need no Node, Bun, Rust, or background process.
+`otgo` is a consumer of the package.
 
 ## Compatibility baseline
 
 Inspected upstream commit: `22156aa6ab209515186c3ca4f111901b7cedc284`.
 
-Source references:
-
 - [Protocol specification](https://github.com/anomalyco/opentunnel/blob/22156aa6ab209515186c3ca4f111901b7cedc284/docs/protocol.md)
-- [SDK API](https://github.com/anomalyco/opentunnel/blob/22156aa6ab209515186c3ca4f111901b7cedc284/packages/client/src/promise/client.ts)
+- [TypeScript SDK API](https://github.com/anomalyco/opentunnel/blob/22156aa6ab209515186c3ca4f111901b7cedc284/packages/client/src/promise/client.ts)
 - [SDK types](https://github.com/anomalyco/opentunnel/blob/22156aa6ab209515186c3ca4f111901b7cedc284/packages/client/src/effect/types.ts)
 - [Shared vectors](https://github.com/anomalyco/opentunnel/tree/22156aa6ab209515186c3ca4f111901b7cedc284/spec/vectors)
 
-The upstream JavaScript distribution is compiled from the TypeScript SDK; the
-other native implementation is Rust. This project implements the client, not
-the hosted relay or certificate authority.
-
-## Approach and tradeoffs
-
-Recommended: native Go with standard-library HTTP, P-256 key generation, X.509
-CSR creation, TLS termination, and TCP forwarding, plus one maintained WebSocket
-dependency. This supports embedding, cancellation, and Go deployment without
-requiring Bun, Node, Rust, or a background process.
-
-A wrapper around the upstream CLI would reduce initial protocol work, but would
-add executable deployment and process supervision to every embedding app.
-Implementing a new relay would expand the task and would not demonstrate client
-compatibility with OpenTunnel. Neither alternative is selected.
+The JavaScript distribution is compiled from the TypeScript SDK. Rust is the
+other native implementation. This package implements the client; it does not
+implement the hosted relay or certificate authority.
 
 ## Public package and API
 
-Use package `opentunnel` at the module root. The provisional module path is
-`github.com/darron/go-opentunnel`, consistent with the checkout name; publishing
-and creating a remote repository are outside this task.
+Go methods map directly to the upstream SDK operations.
 
-Expose a flat, idiomatic Go API with a documented mapping from the TypeScript
-SDK rather than reproducing JavaScript namespaces or promises:
+### Construction and local inspection
 
 | TypeScript operation | Go operation |
 | --- | --- |
@@ -57,88 +35,122 @@ SDK rather than reproducing JavaScript namespaces or promises:
 | `tunnel.list()` | `Client.List(ctx)` |
 | `tunnel.get(options)` | `Client.Get(ctx, profile)` |
 | `tunnel.pending(options)` | `Client.Pending(ctx, profile)` |
+
+### Lifecycle
+
+| TypeScript operation | Go operation |
+| --- | --- |
 | `tunnel.create(options)` | `Client.Create(ctx, profile, provisionOptions)` |
 | `tunnel.resume(options)` | `Client.Resume(ctx, profile, provisionOptions)` |
 | `tunnel.ensure(options)` | `Client.Ensure(ctx, profile)` |
 | `tunnel.remove(options)` | `Client.Remove(ctx, profile)` |
-| `tunnel.connect(options)` | `Client.Connect(ctx, connectOptions)` |
 | `dispose()` | `Client.Close()` |
+
+### Connections
+
+| TypeScript operation | Go operation |
+| --- | --- |
+| `tunnel.connect(options)` | `Client.Connect(ctx, connectOptions)` |
+| `connection.setRoutes(routes)` | `Connection.SetRoutes(routes)` |
+| `connection.close()` | `Connection.Close()` |
+
+### Connection state
+
+| TypeScript operation | Go operation |
+| --- | --- |
 | `connection.tunnel` | `Connection.Identity()` |
 | `connection.events` | `Connection.Events()` |
 | `connection.status()` | `Connection.Status()` |
-| `connection.setRoutes(routes)` | `Connection.SetRoutes(routes)` |
 | `connection.closed` | `Connection.Done()` and `Connection.Err()` |
-| `connection.close()` | `Connection.Close()` |
 
-All fallible client operations return errors. `Get`, `Pending`, and `Resume`
-return a nil identity with a nil error for absent data. An empty profile option
-selects `default`; storage operations themselves validate explicit profile names.
+### Inputs and results
 
-`ClientOptions` accepts an API base URL, a `Storage` implementation, an HTTP
-client, and bounded transport settings. Defaults target `https://opentunnel.xyz`
-and XDG storage. Request, handshake, and local dial timeouts are finite and
-overridable. No logger, CLI output, signal handling, or process exit is required
-by the package. HTTP customization also applies to WebSocket dialing where
-supported by the chosen dependency.
+- Fallible operations return errors. Absent `Get`, `Pending`, and `Resume`
+  results return `(nil, nil)`.
+- An empty client profile option selects `default`. Storage validates explicit
+  profile names.
+- `ClientOptions` accepts an API base URL, storage, HTTP client, request timeout,
+  and bounded transport settings. Defaults use `https://opentunnel.xyz` and XDG
+  storage. Request, handshake, local dial, and write timeouts are finite.
+- `Routes` maps names to `host:port`. Caller maps are copied; identities, routes,
+  and status return snapshots. Events and typed errors support structured handling,
+  including `errors.Is`/`errors.As`, API status/tag, and attach code.
+- The package needs no logger, CLI output, signals, or process exit. HTTP-client
+  customization also applies to WebSocket dialing where supported by the dependency.
 
-Export `Routes` as a map from route name to `host:port`. Copy caller maps on entry
-and return copies in snapshots. Return identity snapshots rather than exposing
-mutable session state. Export structured events and typed errors usable with
-`errors.Is`/`errors.As`, including API status/tag and bridge attach code.
+### Connection lifetime
 
-`Connect` validates inputs before any provisioning side effect, ensures the
-identity, and returns after the first successful attach. Its context governs
-the connection lifetime, including provisioning and reconnection. An empty
-initial route set is rejected to avoid a call that waits forever before the
-caller has a connection on which to set routes. After startup, `SetRoutes` may
-set an empty map, entering `waiting-routes` until routes are added again.
+`Connect` validates inputs before provisioning, ensures an identity, and returns
+after the first successful attachment. Its context controls the entire lifetime,
+including provisioning and reconnects.
 
-The library supports multiple profiles and sessions in one process. Same-profile
-provisioning and deletion are serialized within a client. Closing a client
-cancels its owned work and waits for connections to stop. Closing a connection
-is idempotent, closes event delivery, and waits for its transport, certificate
-refresh, and forwarding goroutines. Calls after close return an explicit error.
+Initial routes must be nonempty. Once connected, `SetRoutes` can clear them;
+state becomes `waiting-routes` until routes are added.
 
-## Provisioning and HTTP API
+A client supports multiple profiles and sessions. Same-profile provisioning and
+deletion are serialized within that client. `Client.Close` cancels and joins its
+owned operations and connections. `Connection.Close` is idempotent and waits for
+transport, certificate refresh, and forwarding workers before completion.
+Events close on shutdown; `Done` closes after workers exit.
 
-Implement all HTTP endpoints, including remote tunnel inspection for diagnostics:
+Lifecycle calls after client close return an error. Connection snapshots remain
+readable. Low-level `Client.API()` calls retain their own context ownership.
 
-- `POST /api/tunnel` with `{}`; expect 201 and a tunnel/token.
-- `GET /api/tunnel/:id` with bearer authentication; expect 200.
-- `POST /api/tunnel/:id/certificate` with bearer authentication and a CSR;
-  expect 202.
-- `GET /api/tunnel/:id/certificate` with bearer authentication; expect 200.
-- `DELETE /api/tunnel/:id` with bearer authentication; expect 204.
+## HTTP API
 
-Limit HTTP response sizes, close response bodies, preserve upstream error tags,
-and reject malformed success responses. Escape identifiers in paths. Do not
-include bearer tokens or private keys in errors, logs, CLI output, or events.
+| Endpoint | Authentication | Success |
+| --- | --- | --- |
+| `POST /api/tunnel` with `{}` | None | 201, tunnel/token |
+| `GET /api/tunnel/:id` | Bearer token | 200, tunnel state |
+| `POST /api/tunnel/:id/certificate` with CSR | Bearer token | 202, issuance state |
+| `GET /api/tunnel/:id/certificate` | Bearer token | 200, issuance state |
+| `DELETE /api/tunnel/:id` | Bearer token | 204 |
 
-Generate a P-256 private key and an ECDSA-SHA256 PKCS#10 CSR locally with
-`CN=<hostname>` and SANs `<hostname>` and `*.<hostname>`. Persist the PKCS#8
-private key, token, and pending CSR before requesting issuance. Poll every two
-seconds, interruptibly, until ready or failed. A certificate-in-progress conflict
-on resumed issuance is accepted. Other failures preserve pending state for retry.
+The API escapes IDs, caps response bodies at 1 MiB, rejects malformed success
+responses, and preserves upstream error tags. It closes response bodies and keeps
+request deadlines active through consumption. Errors and CLI output omit tokens,
+private keys, and raw error response bodies. `Client.API().Get` enables remote
+inspection using a stored identity's ID and token.
 
-Expose the upstream progress stages through an optional callback. Verify an
-issued certificate matches the local key and both expected hostname forms before
-saving or installing it. Never send the private key to the API.
+## Certificate provisioning
 
-`Create` refuses to overwrite a completed identity and resumes an existing pending
-identity. `Ensure` reuses an existing identity, picks up an offline renewal, or
-provisions as required. Recovering a failed issuance uses the same tunnel ID.
-`Remove` can delete either a complete or pending remote tunnel; only remove local
-credentials after confirmed deletion or remote not-found. Retain credentials
-when deletion fails. Deletion stops this client's sessions for that profile.
+1. Create a tunnel, then generate a local P-256 key and ECDSA-SHA256 PKCS#10 CSR.
+   Set `CN=<hostname>` and SANs `<hostname>` and `*.<hostname>`.
+2. Persist the PKCS#8 key, token, and pending CSR **before** requesting issuance.
+   The private key never goes to the API.
+3. Poll every two seconds until ready, failed, or cancelled. Resumed issuance
+   accepts a certificate-in-progress conflict; other failures retain pending state.
+4. Validate the issued certificate's key, validity, exact hostname, and wildcard
+   SAN before saving or installing it.
 
-## Storage and interoperability
+`ProvisionOptions.OnProgress` receives the upstream stages synchronously.
+Callbacks must not reenter operations on the same profile.
 
-Export a context-aware `Storage` interface providing `Profiles`, `Load`, `Save`,
-`LoadPending`, `SavePending`, `Remove`, and `List`. Provide concurrency-safe
-memory storage, a filesystem store rooted at an explicit directory, and XDG
-defaults. This lets an embedding app own persistence without importing the CLI.
+| Operation | Recovery behavior |
+| --- | --- |
+| `Create` | Rejects an existing completed identity with `ErrExists`; resumes pending state |
+| `Resume` | Continues pending issuance; absent pending state returns `(nil, nil)` |
+| `Ensure` | Reuses an identity, resumes offline renewal, or provisions as needed; failed issuance retains the same tunnel ID and key |
+| `Remove` | Deletes complete or pending remote identity; removes local credentials only after confirmed deletion or remote 404 |
 
-Use the upstream layout:
+Failed deletion retains credentials. Successful deletion stops and joins this
+client's sessions for that profile. Renewal and deletion share the profile lock
+so renewal cannot recreate a removed identity. Confirmed remote deletion uses a
+bounded cleanup context even if the caller cancels.
+
+## Storage
+
+The context-aware `Storage` interface provides `Profiles`, `Load`, `Save`,
+`LoadPending`, `SavePending`, `Remove`, and `List`. Implementations must support
+concurrent calls and cancellation.
+
+| Constructor | Persistence |
+| --- | --- |
+| `NewMemoryStorage()` | Process-local, independent copies |
+| `NewFileStorage(root)` | Profiles immediately below the supplied root |
+| `NewXDGStorage()` | `$XDG_DATA_HOME/opentunnel`, or `~/.local/share/opentunnel` when unset, including on macOS |
+
+The upstream-compatible layout is:
 
 ```text
 $XDG_DATA_HOME/opentunnel/<profile>/
@@ -150,169 +162,112 @@ $XDG_DATA_HOME/opentunnel/<profile>/
   chain.pem
 ```
 
-On systems without `XDG_DATA_HOME`, use `~/.local/share/opentunnel`, including
-macOS, to interoperate with upstream. Directory permissions are 0700 and secret
-files 0600 on Unix. Use temporary files and rename, writing metadata last so it
-acts as the completion marker. Remove pending metadata after a successful save.
-Distinguish missing identities from corrupt or incomplete ones. Reject profile
-traversal and symlinked profile directories. Do not silently overwrite malformed
-identities or create a replacement remote tunnel when storage cannot be read.
+Use the fallback root above when `XDG_DATA_HOME` is unset.
 
-Memory storage returns independent copies. Profiles and list results are sorted.
-Document that a memory-only identity cannot be recovered after process exit and
-must be deleted explicitly when intended to be temporary. File compatibility is
-required; simultaneous provisioning through different language clients is not
-a supported cross-process transaction and must be documented.
+- Unix directories use `0700`; files use `0600`.
+- Writes use private temporary files and atomic per-file replacement. Metadata
+  is written last as the completion marker; a completed save removes pending metadata.
+- Missing identities differ from corrupt or incomplete ones. Read failures do
+  not silently overwrite credentials or create replacement remote tunnels.
+- Profile traversal, symlinked profile directories, and symlinked credential
+  files are rejected. Writes also reject a symlinked storage root. Profile and
+  tunnel listings are sorted.
+- Provisioning across clients/processes requires caller coordination; the file
+  format has no cross-process transaction. Memory identities cannot be recovered
+  after exit: explicitly remove temporary remote tunnels before losing credentials.
 
-## Security model and confidentiality limits
+## Bridge framing and controls
 
-The intended TLS endpoints are the public visitor and the embedding Go process.
-The relay and Worker carry encrypted TLS records; terminating the bridge's outer
-WebSocket TLS does not decrypt the visitor's inner application TLS. The Go
-process owns the certificate private key. Ordinary passive observation at the
-relay does not disclose HTTP paths, queries, headers, cookies, bodies, or
-application WebSocket contents.
+The bridge connects with `ws`/`wss` at `/api/tunnel/:id/connect` using subprotocol
+`opentunnel`. Its first JSON `attach` message carries the token, sorted route
+names, Go client version, and default `max_conns` of 256. Attachment must succeed
+within ten seconds by default.
 
-This is not a protocol-level guarantee against an actively malicious operator
-of the hosted service. The upstream service controls DNS and performs ACME
-DNS-01 authorization for `*.opentunnel.xyz`. An operator with that authority
-could issue another browser-trusted certificate for a tunnel hostname using its
-own key and terminate future visitor connections, then proxy to the legitimate
-client. This is a threat-model inference from certificate/DNS authority, not a
-claim that the deployed service performs interception. Checking the certificate
-returned to the Go client against its private key does not prevent a different
-certificate being presented to visitors. Client-controlled, independently
-verified key pinning or a separately authenticated application encryption layer
-would be required to exclude this authority from the trust boundary; neither is
-provided by ordinary browser HTTPS to a provider-owned hostname.
+Binary frames contain a four-byte big-endian uint32 connection ID followed by
+payload bytes. Incoming frames are capped at 1 MiB; outbound payloads at 32 KiB.
+Control serialization retains required zero values such as `conn=0`, empty
+`open.alpn`, and empty route arrays.
 
-The service can observe source addresses, tunnel and route identities, SNI,
-ClientHello metadata, timing, connection counts, and encrypted byte volumes.
-The inspected upstream source logs routing metadata and emits byte/duration
-analytics. This system does not hide traffic metadata or provide anonymity.
+| Controls | Purpose |
+| --- | --- |
+| `attach`, `attached`, `attach_error` | Authenticate and establish or reject the session |
+| `open` | Open a multiplexed visitor connection |
+| `ping`, `pong` | Heartbeat |
+| `drain` | End the session and reconnect |
+| `end`, `reset` | Half-close or abort a channel |
 
-After TLS termination, forwarding to a plaintext `host:port` exposes application
-bytes on that local network segment. Examples bind loopback; forwarding to a
-different host extends the plaintext trust boundary. Endpoint processes, their
-logs, and a compromised endpoint can also expose plaintext.
+Unknown message types/fields are ignored. Malformed controls do not allocate
+channels. Future attach-error codes are accepted when at most 256 bytes and free
+of ASCII control characters. Negotiated durations must be positive and at most
+24 hours. Heartbeat execution uses minima of one second for interval and five
+seconds for idle timeout.
 
-Documentation must distinguish normal relay blindness, metadata visibility,
-endpoint trust, and active certificate-authority/domain-operator interception.
-Require TLS 1.2 or later, prefer TLS 1.3, and use forward-secret authenticated
-encryption suites. Do not disable upstream HTTPS certificate verification.
-Tests must check that forwarded relay payloads are TLS ciphertext, that invalid
-or mismatched certificates are rejected, and that credentials are absent from
-diagnostic output. These tests establish the implemented boundaries, not an
-independent security audit or verification of the production deployment.
+## Routes and TLS forwarding
 
-## Bridge, TLS, and forwarding
+| Input | Rule |
+| --- | --- |
+| Route name | `@` or a lowercase DNS label, at most 63 characters |
+| Profile name | Same label rule, without `@` |
+| Target | `host:port`; supports IPv4, DNS, and bracketed IPv6; ports 1–65535 |
+| Invalid target | Schemes, paths, missing host, or invalid port |
+| SNI | Case-insensitive; base hostname selects `@`, one label selects that route; deeper/unrelated names do not match |
 
-Use `ws`/`wss` at `/api/tunnel/:id/connect`, negotiate subprotocol `opentunnel`,
-and authenticate in the first JSON `attach` message. Advertise sorted route names,
-a Go client version, and a default `max_conns` of 256. Require successful attach
-within ten seconds.
+Each channel exposes an internal `net.Conn` to `tls.Server`, which terminates
+visitor TLS with the current certificate. Decrypted streams then go to the
+selected TCP target. ALPN advertises HTTP/1.1 rather than HTTP/2 for ordinary
+HTTP/1.1 targets. Streaming, application WebSocket upgrades, and arbitrary
+post-TLS application bytes are preserved.
 
-Binary frames contain a big-endian uint32 connection ID followed by bytes.
-Outbound payloads are at most 32 KiB. Implement attached, attach_error, open,
-ping, pong, drain, end, and reset. Ignore unknown message types and fields;
-ignore malformed controls without allocating channels. Bound incoming frame
-sizes. Honor negotiated heartbeat/idle timing with sensible positive minima.
+Handshake or upstream dial failure resets only that channel. Connection limits
+are enforced before allocating channel TLS state. Duplicate IDs abort the
+existing channel rather than silently replacing it.
 
-Route names are `@` or a lowercase DNS label up to 63 characters. Profile names
-use the same label rule without `@`. Resolve SNI case-insensitively: the base
-hostname selects `@`, a single label selects that route, and deeper/unrelated
-names do not match. Targets are host/port values; include IPv4, DNS, and bracketed
-IPv6 coverage, and reject schemes, paths, missing hosts, and invalid ports.
+A single ordered writer uses a 32-message queue of at most 32 KiB payloads,
+approximately 1 MiB. Each channel has an 8 MiB inbound cap. Overflow resets the
+channel without blocking the bridge reader; blocked writes stop local reads.
+Events use a bounded, lossy queue with a dropped-event counter.
 
-Represent each multiplexed connection as an internal `net.Conn` suitable for
-`tls.Server`. Terminate TLS locally using the current certificate, then forward
-decrypted bytes to the selected local TCP target. Do not advertise HTTP/2 when
-forwarding to an ordinary HTTP/1.1 target. Preserve streaming bodies, application
-WebSocket upgrades, and arbitrary application bytes after TLS termination.
-Handshake and upstream dial failures produce a channel reset and leave the
-bridge running. Enforce connection limits before allocating channel TLS state.
-Handle duplicate IDs without leaking or replacing live channels silently.
+The protocol has no per-channel flow control: sustained outbound pressure can
+delay unrelated channels. See [resource limits](IMPLEMENTATION.md#default-resource-limits)
+for aggregate memory costs and configurable limits.
 
-Use one ordered bridge writer, bounded outbound buffering of approximately
-1 MiB, and an 8 MiB per-channel inbound cap. Stop local reads when writes block;
-reset a stalled inbound channel rather than blocking the bridge reader behind
-it. Explicitly document the upstream limitation: there is no per-channel flow
-control on the wire, so a slow shared bridge can delay other channels. Event
-consumption must not block traffic or allow unbounded memory growth; expose a
-bounded event channel and a dropped-event counter in status.
+Inbound `end` yields EOF while preserving the other direction. Forwarding
+completion closes that direction without prematurely aborting its response.
+`reset` aborts both directions. Session shutdown cancels channels and joins their
+workers, including blocked upstream sockets.
 
-Preserve half-close semantics: inbound `end` yields EOF while leaving the other
-direction usable; completion in one forwarding direction closes that direction
-without prematurely aborting the response. Reset aborts both directions. Session
-shutdown cancels all channels and joins their goroutines.
+## Reconnection, route updates, and renewal
 
-## Reconnection, route changes, and renewal
+| Trigger | Behavior |
+| --- | --- |
+| `bad_token` / `cert_not_ready` attach code | Stops the connection with a typed error |
+| Other attach errors, socket loss, heartbeat timeout, drain | Retries with jittered exponential backoff, 250 ms to 30 s; successful attachment resets backoff; cancellation interrupts it |
+| Target-only route change | New channels use the new target; existing channels retain theirs |
+| Added/removed route name | Reattaches and closes the previous session's channels; `SetRoutes` returns before replacement attachment finishes |
+| Certificate refresh | Runs on connect, then every 12 hours, or every minute within the 30-day renewal window |
 
-Fatal attach codes `bad_token` and `cert_not_ready` stop the connection and return
-a typed error. Retry other attach errors, socket loss, heartbeat timeout, and
-server drain with jittered exponential backoff from 250 ms to 30 seconds. Reset
-backoff after successful attach; cancellation interrupts retries immediately.
+Renewal reuses the existing key, validates and saves the new certificate, and
+emits an event. New TLS connections use it; established connections continue.
+Transient refresh failures remain observable and retain the last valid
+certificate. Shutdown stops refresh work.
 
-Changing only route targets affects newly opened channels without reattaching or
-retargeting existing ones. Adding/removing route names reattaches. Applying a
-route update is synchronous; it does not promise the replacement session has
-already attached. Status/events expose that transition.
+## CLI, examples, and verification
 
-Refresh certificates on connect and every 12 hours, or every minute within the
-30-day renewal window. Install a validated renewed certificate for new TLS
-connections without disrupting established ones; save it and emit a renewal
-event. Transient polling failures keep the last valid certificate and are
-observable. Stop refresh work on shutdown. Renewal reuses the existing key.
+`otgo` provides `profiles`, `list`, `get`, `pending`, `create`, `resume`, `ensure`,
+`remove`, `inspect`, and `connect`. It displays public metadata, accepts common
+API/storage/profile/JSON/timeout flags, and supports interactive `status`,
+`routes`, and `quit`. It does not daemonize or install services.
 
-## otgo and embedding example
+The webapp example runs a loopback server, embeds `Client.Connect`, consumes
+events, and shuts down through context cancellation. `--local-only` starts just
+the test target. See [TESTING.md](TESTING.md) for runnable commands,
+[VERIFICATION.md](VERIFICATION.md) for local evidence, and
+[LIVE_TESTING.md](LIVE_TESTING.md) for hosted interoperability results and gaps.
+The [security model](SECURITY.md) distinguishes relay encryption, metadata,
+endpoint plaintext, and active domain/certificate operator impersonation.
 
-Create `cmd/otgo` as a thin consumer of public APIs. Provide `profiles`, `list`,
-`get`, `pending`, `create`, `resume`, `ensure`, `remove`, and `connect` commands.
-Provide `--api`, `--data-dir`, `--profile`, request/provision timeout controls,
-and `--json` where useful. Display public metadata only.
+## Scope
 
-`connect` accepts repeated `--route name=host:port`, prints public URLs, and emits
-connection events. With an explicit `--interactive` option, accept stdin commands
-for `status`, `routes name=host:port ...`, and `quit`, so route changes can be
-tested on a running session. Ctrl-C shuts down cleanly. Default CLI persistence
-is compatible filesystem storage. The CLI does not daemonize, install services,
-or become a runtime dependency of the package.
-
-Include an example Go web app that starts a loopback HTTP server, embeds the
-package, connects a route, consumes events, and shuts down through context
-cancellation. It must compile as a normal Go consumer. Document a live CLI
-sequence using a dedicated profile, HTTP requests, a streaming request,
-application WebSocket traffic, route changes, restart/reconnect, and cleanup.
-
-## Verification and acceptance
-
-1. Vendor the four shared upstream JSON vector files with provenance and the
-   upstream MIT notice. Tests must validate framing, controls, names, and SNI.
-2. Unit tests validate CSR signature/SAN/key properties, storage layout and
-   permissions, corruption and traversal errors, HTTP auth/status/error handling,
-   cancellation, and interrupted provisioning/resumption.
-3. A local fake API/relay uses real WebSocket framing and real TLS handshakes,
-   with a locally trusted test CA. Exercise root/named routes, concurrent clients
-   and channels, large transfers, HTTP streaming, application WebSocket upgrades,
-   upstream refusal, reset and half-close, bad TLS, unknown routes, channel limits,
-   attach rejection, reconnect, heartbeat timeout, drain, route changes,
-   certificate renewal, blocked readers, and cleanup.
-4. Race-detector tests cover concurrent status, route updates, event consumption,
-   identity refresh, and close. Time-sensitive tests use bounded deadlines and
-   explicit synchronization instead of relying on arbitrary sleeps.
-5. Fuzz frame/control/name parsers; verify inputs cannot panic or allocate without
-   bounds. CLI tests exercise dispatch, flags, exit status, public JSON output,
-   and interactive route updates against the local fixture.
-6. Run `go test ./...`, `go test -race ./...`, `go vet ./...`, build `otgo` and the
-   embedding example, and report actual evidence and remaining gaps.
-7. Live testing with the public service follows once the CLI is ready. Record
-   which public-service paths were actually checked; do not substitute local
-   fixture results for live certificate/relay interoperability.
-
-## Scope limits
-
-No server implementation, daemon, system service installer, authentication layer
-for tunneled apps, direct HTTP-handler integration, or tunnel-backed public
-`net.Listener` is required for SDK parity. Applications can embed the client and
-forward to their own loopback server. No production deployment, publishing,
-GitHub push, or background live tunnel is part of this task.
+The package forwards to an application's local TCP server. It supplies no
+hosted relay, daemon, installer, app authentication layer, direct HTTP-handler
+adapter, or tunnel-backed public `net.Listener`.

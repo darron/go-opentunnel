@@ -1,4 +1,4 @@
-// webapp is a loopback target suitable for exercising an opentunnel route.
+// webapp embeds opentunnel and serves a loopback HTTP/WebSocket test target.
 package main
 
 import (

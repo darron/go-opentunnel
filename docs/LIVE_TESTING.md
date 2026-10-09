@@ -1,72 +1,109 @@
 # Public-service validation
 
-Date: 2026-10-09. Service: `https://opentunnel.xyz`.
-Client platform: macOS arm64, Go 1.27.2. The public service's deployed source
-revision was not established; the implementation's source compatibility baseline
-remains upstream commit `22156aa6ab209515186c3ca4f111901b7cedc284`.
+**Passed:** provisioning, HTTPS/WSS, streaming, large/concurrent transfers,
+route updates, reconnection, embedding, shutdown, and deletion. Both temporary
+tunnels were deleted; all test server/bridge processes stopped.
 
-The exercise used the built `otgo`, the actual webapp embedding example,
-an external Go program importing the public package, and Python standard-library
-HTTP clients/loopback echo targets. No production application or existing user
-profile was exposed. Two dedicated temporary identities were created: one was
-fully provisioned; the other was removed while pending. Credentials were stored
-in a private temporary directory outside the repository.
+Tested **2026-10-09** against `https://opentunnel.xyz`, from macOS arm64 with
+Go 1.27.2. The deployed server revision was not established. The client's source
+compatibility baseline is `22156aa6ab209515186c3ca4f111901b7cedc284`.
 
-## Results
+To repeat the basic sequence, use [TESTING.md](TESTING.md#repeat-a-basic-live-test).
 
-| Path | Actual check and result |
+## Test setup
+
+The exercise used the built `otgo`, the webapp embedding example, an external Go
+program importing the public package, and Python standard-library HTTP clients
+and loopback echo targets.
+
+Two dedicated temporary identities were used: one fully provisioned, one deleted
+while pending. Credentials stayed in private temporary storage outside the repo.
+No production app or existing user profile was exposed.
+
+## Provisioning and inspection
+
+| Check | Result |
 | --- | --- |
-| Create and interrupted provisioning | Stopped `otgo create` at `requesting-certificate`; pending identity was already persisted and the cancelled process exited normally |
-| Resume and certificate issuance | `otgo resume` completed against the real API; the returned certificate matched the locally generated key and required SANs |
-| Completed/pending views | `profiles`, `list`, `get`, and `pending` returned the expected identities or empty results; JSON omitted tokens and private keys |
-| Ensure and create conflict | `ensure` reused the existing tunnel ID; a repeated `create` returned `ErrExists` |
-| Empty resume | `resume` after completion returned JSON `null` |
-| Remote inspection | `inspect` reported offline before attachment, online while connected, and offline after orderly disconnection |
-| Public HTTPS | Root responses matched the loopback example using normal public certificate verification; no insecure TLS option or test CA was used |
-| Streaming | `/stream` returned three expected chunks incrementally, with more than 250 ms between receipt of the first and final chunks |
-| Application WebSocket | Public WSS echoed both text and binary messages, each 16,000 bytes, then completed a normal WebSocket close |
-| Named routes | Adding `api` triggered reattachment; both the root and named hostname forwarded correctly |
-| Large transfer | A 2,097,152-byte HTTP POST was echoed exactly through the public named route |
-| Concurrent transfers | Eight concurrent 262,144-byte HTTP POST/echo operations preserved their contents |
-| Target-only replacement | Changing `api` to a second loopback target delivered that target's distinguishable response while status remained connected |
-| Refused upstream | Replacing the named target with a closed loopback port failed that visitor request; the root route remained usable |
-| Empty routes | The interactive `routes` command with no entries suspended attachment in `waiting-routes` |
-| Restore routes | Restoring the root route reattached and served public HTTPS again |
-| Interactive quit | With the input pipe writer still open, `quit` exited with status 0 and the service subsequently reported offline |
-| CLI deadline | `connect --timeout 4s` exited with status 1 and `context deadline exceeded`, with stdin still open |
-| CLI Ctrl-C | SIGINT stopped an interactive CLI with open stdin and exited with status 0 |
-| SDK embedding | An external Go executable imported the package, connected using file storage, and served public HTTPS |
-| Actual bridge reconnection | The importing program closed only its own upgraded bridge transport; it observed `reconnecting`, then a new `connected` event and a successful new HTTPS request |
-| SDK close | `Client.Close` returned after `Connection.Done` closed and status became stopped |
-| Actual webapp embedding | The example without `--local-only` owned its own SDK connection, served public HTTPS, and exited with status 0 on SIGINT |
-| Delete while active | `Client.Remove` stopped and joined its owned active session, removed the local identity, and authenticated remote inspection returned HTTP 404 |
-| Pending deletion | A second creation was interrupted before completion; `otgo remove` deleted that pending remote tunnel and its local files |
-| File permissions | The live pending profile directory was 0700; its stored files were 0600 |
-| Idempotent cleanup | A repeated `remove` succeeded; final profile/tunnel lists were empty and `get`/`pending` returned JSON `null` |
+| Interrupted create | Stopped at `requesting-certificate`; pending identity was persisted and the cancelled process exited normally |
+| Resume and issuance | Real API issuance completed; certificate matched the local key and required SANs |
+| Local views and redaction | `profiles`, `list`, `get`, and `pending` returned expected results; JSON omitted tokens/private keys; completed `resume` returned `null` |
+| Ensure and create conflict | `ensure` reused the tunnel ID; repeated `create` returned `ErrExists` |
+| Remote inspection | `inspect` reported offline before attachment, online while connected, and offline after disconnection |
 
-The 2 MiB transfer's SHA-256 was
-`bc2c7f3922bfe264439943832357087870faedd70bea44b518fd7856c6c234a1`.
-Both temporary tunnels were deleted and all test server/bridge processes stopped.
+## Public traffic
+
+| Check | Result |
+| --- | --- |
+| HTTPS | Root response matched the loopback target using normal public certificate verification; no insecure TLS option or test CA |
+| Streaming | Three expected `/stream` chunks arrived incrementally; more than 250 ms elapsed between first and final receipt |
+| WebSocket | WSS echoed text and binary messages of 16,000 bytes each, then closed normally |
+| Large transfer | A 2,097,152-byte HTTP POST was echoed exactly through the named route |
+| Concurrent transfers | Eight concurrent 262,144-byte HTTP POST/echo operations preserved their contents |
+
+SHA-256 of the 2 MiB transfer:
+
+```text
+bc2c7f3922bfe264439943832357087870faedd70bea44b518fd7856c6c234a1
+```
+
+## Route changes
+
+| Check | Result |
+| --- | --- |
+| Add a name | Adding `api` reattached; root and named hostnames both forwarded correctly |
+| Replace a target | A second loopback target returned its distinguishable response; status stayed connected |
+| Refused target | A closed named-target port failed that visitor request; root stayed usable |
+| Empty routes | Interactive `routes` with no entries suspended attachment in `waiting-routes` |
+| Restore routes | Restoring root reattached and served HTTPS again |
+
+## Embedding and reconnection
+
+| Check | Result |
+| --- | --- |
+| External SDK consumer | Imported the package, used file storage, and served public HTTPS |
+| Bridge reconnect | Closed only the program's own upgraded bridge transport; observed `reconnecting`, then a new `connected` event and successful HTTPS |
+| SDK close | `Client.Close` returned after `Connection.Done` closed and status became stopped |
+| Embedded webapp | Without `--local-only`, the example owned its SDK connection, served HTTPS, and exited 0 on SIGINT |
+
+## CLI shutdown
+
+| Check | Result |
+| --- | --- |
+| Interactive quit | Exited 0 with the stdin writer still open; service then reported offline |
+| Deadline | `connect --timeout 4s` exited 1 with `context deadline exceeded`, with stdin still open |
+| Ctrl-C | SIGINT stopped the interactive CLI with open stdin and exited 0 |
+
+## Deletion and cleanup
+
+| Check | Result |
+| --- | --- |
+| Delete while active | `Client.Remove` joined the active session, removed the local identity, and authenticated remote inspection returned 404 |
+| Delete pending identity | A second create was interrupted before completion; `otgo remove` deleted remote tunnel and local files |
+| File permissions | Pending profile directory was `0700`; stored files were `0600` |
+| Idempotent cleanup | Repeated `remove` succeeded; final profile/tunnel lists were empty and `get`/`pending` returned `null` |
+
 No real tokens, private keys, or raw credential-bearing artifacts were committed.
 
-## Bug found by the live exercise
+## Shutdown bug found and fixed
 
-The first interactive run completed the traffic checks but hung on `quit` when
-the stdin writer remained open. A native-process goroutine trace established
-that cleanup was waiting for the scanner, which had already entered its next
-blocking OS read. Closing the inherited stdin file did not release that read.
+The first interactive run passed traffic checks but hung on `quit` with the
+stdin writer open. A native-process goroutine trace showed cleanup waiting for
+a scanner already blocked in its next OS read. Closing inherited stdin did not
+release that read.
 
-The fix stops scanning immediately after enqueueing `quit`. On cancellation,
-the CLI does not close or join process-owned native stdin; its ordinary defers
-still stop and join the tunnel/client, then process exit ends the reader. This
-change is confined to the CLI, not the embeddable package.
+The CLI now stops scanning immediately after enqueueing `quit`. Cancellation
+does not close or join process-owned native stdin. SDK cleanup still joins the
+tunnel/client before process exit ends the reader. The change is confined to
+the CLI.
 
-`TestReadCommandsStopsAtQuitWithoutEOF` failed before the fix and passed after it.
-`TestNativeStdinCancellationDoesNotWaitForEOF` runs a real child test process with
-an inherited pipe whose writer stays open. The live traffic sequence was repeated
-after the fix, and quit, deadline, and SIGINT shutdown all passed.
+Regression evidence:
 
-The final acceptance checks also passed:
+- `TestReadCommandsStopsAtQuitWithoutEOF` failed before the fix and passed after it.
+- `TestNativeStdinCancellationDoesNotWaitForEOF` uses a child process with an
+  inherited pipe whose writer stays open.
+- The repeated live sequence passed quit, deadline, and SIGINT shutdown.
+
+Final acceptance checks passed:
 
 ```sh
 make check
@@ -74,50 +111,20 @@ go test -race -count=1 ./...
 go test -race ./cmd/otgo -run 'TestReadCommands|TestNativeStdin' -count=3
 ```
 
-The repository-wide golangci-lint result was **0 issues**. The test subprocess
-uses `os.Executable()` to select the current test binary; its localized `G204`
-annotation explains why that invocation is intentional.
+Repository-wide golangci-lint reported **0 issues**. The test subprocess selects
+its binary with `os.Executable()`; a local `G204` annotation explains that choice.
 
-## Repeating the basic live sequence
+## Coverage limits
 
-Use an isolated storage directory, and keep the local target running while
-the bridge is attached:
+These results establish the listed paths at the test date, not all inputs or
+long-running production behavior.
 
-```sh
-make build
-OTGO_TEST_DIR=$(mktemp -d)
-./bin/webapp --local-only --addr 127.0.0.1:8080
-```
+| Area | Evidence limit |
+| --- | --- |
+| Long-term renewal and server-initiated drain | Covered by local fixtures; not induced during this hosted-service exercise |
+| Malformed controls, fatal attach codes, heartbeat expiry | Local fixture coverage; not all induced live |
+| Queue/buffer overflow, TLS half-close, renewal racing deletion | Local fixture coverage; not all induced live |
+| Linux and Windows | Compile-checked; no runtime tests on those operating systems |
+| Hosted operator and infrastructure | No independent audit; deployed revision unknown |
 
-In a second terminal, use the same value of `OTGO_TEST_DIR`:
-
-```sh
-./bin/otgo create --data-dir "$OTGO_TEST_DIR" --profile live-check --timeout 5m
-./bin/otgo connect --data-dir "$OTGO_TEST_DIR" --profile live-check \
-  --route @=127.0.0.1:8080 --interactive
-```
-
-Visit the printed root HTTPS URL and `/stream`, and connect a WebSocket client
-to `/ws`. In interactive mode, use `status`, add a named route with
-`routes @=127.0.0.1:8080 api=127.0.0.1:8080`, suspend with `routes`, restore
-with `routes @=127.0.0.1:8080`, and finish with `quit`.
-
-Remove the temporary remote identity before discarding its credentials:
-
-```sh
-./bin/otgo remove --data-dir "$OTGO_TEST_DIR" --profile live-check
-./bin/otgo profiles --data-dir "$OTGO_TEST_DIR" --json
-```
-
-## Limits of this exercise
-
-The live run establishes the listed interoperability paths at this date. It
-does not establish every possible input or long-running production behavior.
-Automatic long-term certificate renewal, server-initiated drain, malformed relay
-messages, fatal attach codes, heartbeat expiry, bounded queue/buffer overflow,
-TLS half-close, and renewal racing deletion have deterministic local fixture
-coverage. Those conditions were not all induced against the hosted service.
-
-Linux and Windows were compile-checked, not runtime-tested. No independent audit
-of the hosted operator or infrastructure was performed. The domain/certificate
-operator trust boundary remains as documented in [SECURITY.md](SECURITY.md).
+Read [SECURITY.md](SECURITY.md) for the domain/certificate operator trust boundary.
