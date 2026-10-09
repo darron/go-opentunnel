@@ -124,7 +124,7 @@ func (ch *channel) forward() {
 func (ch *channel) abort(e error) { ch.raw.abort(e); ch.cancel() }
 func (ch *channel) reset(code string) {
 	if !ch.remoteReset.Load() && ch.session.ctx.Err() == nil {
-		_ = ch.session.control(controlMessage{Type: "reset", Conn: ch.id, Code: code})
+		ch.session.enqueueControl(controlMessage{Type: "reset", Conn: ch.id, Code: code})
 	}
 }
 
@@ -169,6 +169,8 @@ func (ch *channel) watchIdle(c *activityConn, idle time.Duration) {
 // bridgeConn provides bounded buffering and TCP half-close semantics. push does
 // not block the bridge reader when a TLS channel is slow.
 type bridgeConn struct {
+	ctx           context.Context
+	cancel        context.CancelFunc
 	session       *session
 	id            uint32
 	peer          string
@@ -178,6 +180,7 @@ type bridgeConn struct {
 	offset        int
 	bytes         int
 	notify        chan struct{}
+	writeNotify   chan struct{}
 	readEnd       bool
 	writeEnd      bool
 	closed        bool
@@ -187,9 +190,15 @@ type bridgeConn struct {
 }
 
 func newBridgeConn(s *session, id uint32, peer string, limit int) *bridgeConn {
-	return &bridgeConn{session: s, id: id, peer: peer, limit: limit, notify: make(chan struct{})}
+	ctx := context.Background()
+	if s != nil {
+		ctx = s.ctx
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	return &bridgeConn{ctx: ctx, cancel: cancel, session: s, id: id, peer: peer, limit: limit, notify: make(chan struct{}), writeNotify: make(chan struct{})}
 }
-func (b *bridgeConn) signal() { close(b.notify); b.notify = make(chan struct{}) }
+func (b *bridgeConn) signal()      { close(b.notify); b.notify = make(chan struct{}) }
+func (b *bridgeConn) signalWrite() { close(b.writeNotify); b.writeNotify = make(chan struct{}) }
 func (b *bridgeConn) push(data []byte) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -200,8 +209,17 @@ func (b *bridgeConn) push(data []byte) bool {
 		return false
 	}
 	if len(data) > 0 {
-		b.chunks = append(b.chunks, append([]byte(nil), data...))
 		b.bytes += len(data)
+		// Coalescing bounds allocation and slice metadata even for one-byte frames.
+		for len(data) > 0 {
+			if len(b.chunks) == 0 || len(b.chunks[len(b.chunks)-1]) == cap(b.chunks[len(b.chunks)-1]) {
+				b.chunks = append(b.chunks, make([]byte, 0, min(b.limit, 32768)))
+			}
+			last := len(b.chunks) - 1
+			n := min(len(data), cap(b.chunks[last])-len(b.chunks[last]))
+			b.chunks[last] = append(b.chunks[last], data[:n]...)
+			data = data[n:]
+		}
 		b.signal()
 	}
 	return true
@@ -214,10 +232,12 @@ func (b *bridgeConn) abort(err error) {
 		return
 	}
 	b.closed = true
+	b.cancel()
 	b.err = err
 	b.chunks = nil
 	b.bytes = 0
 	b.signal()
+	b.signalWrite()
 }
 func (b *bridgeConn) Read(p []byte) (int, error) {
 	if len(p) == 0 {
@@ -244,6 +264,9 @@ func (b *bridgeConn) Read(p []byte) (int, error) {
 			if b.offset == len(b.chunks[0]) {
 				b.chunks[0] = nil
 				b.chunks = b.chunks[1:]
+				if len(b.chunks) == 0 {
+					b.chunks = nil
+				}
 				b.offset = 0
 			}
 			b.mu.Unlock()
@@ -281,14 +304,13 @@ func (b *bridgeConn) Write(p []byte) (int, error) {
 		b.mu.Unlock()
 		return 0, net.ErrClosed
 	}
-	deadline := b.writeDeadline
-	b.mu.Unlock()
-	ctx := b.session.ctx
-	var cancel context.CancelFunc
-	if !deadline.IsZero() {
-		ctx, cancel = context.WithDeadline(ctx, deadline)
-		defer cancel()
+	if !b.writeDeadline.IsZero() && !time.Now().Before(b.writeDeadline) {
+		b.mu.Unlock()
+		return 0, os.ErrDeadlineExceeded
 	}
+	b.mu.Unlock()
+	ctx, stop := b.writeContext()
+	defer stop()
 	n := 0
 	for len(p) > 0 {
 		size := len(p)
@@ -296,12 +318,58 @@ func (b *bridgeConn) Write(p []byte) (int, error) {
 			size = 32768
 		}
 		if e := b.session.sendContext(ctx, websocket.MessageBinary, encodeFrame(b.id, p[:size])); e != nil {
+			if ctx.Err() != nil {
+				e = context.Cause(ctx)
+			}
 			return n, e
 		}
 		n += size
 		p = p[size:]
 	}
 	return n, nil
+}
+
+// Watch deadline changes during this write, as required by net.Conn. The watcher
+// belongs to this call and is joined before return; it never cancels the socket.
+func (b *bridgeConn) writeContext() (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(b.ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			b.mu.Lock()
+			deadline, notify := b.writeDeadline, b.writeNotify
+			closed := b.closed || b.writeEnd
+			b.mu.Unlock()
+			if closed {
+				cancel(net.ErrClosed)
+				return
+			}
+			if !deadline.IsZero() && !time.Now().Before(deadline) {
+				cancel(os.ErrDeadlineExceeded)
+				return
+			}
+			var timer *time.Timer
+			var timerC <-chan time.Time
+			if !deadline.IsZero() {
+				timer = time.NewTimer(time.Until(deadline))
+				timerC = timer.C
+			}
+			select {
+			case <-ctx.Done():
+				if timer != nil {
+					timer.Stop()
+				}
+				return
+			case <-notify:
+			case <-timerC:
+			}
+			if timer != nil {
+				timer.Stop()
+			}
+		}
+	}()
+	return ctx, func() { cancel(context.Canceled); <-done }
 }
 func (b *bridgeConn) Close() error { b.abort(net.ErrClosed); return nil }
 func (b *bridgeConn) CloseWrite() error {
@@ -311,8 +379,9 @@ func (b *bridgeConn) CloseWrite() error {
 		return nil
 	}
 	b.writeEnd = true
+	b.signalWrite()
 	b.mu.Unlock()
-	return b.session.control(controlMessage{Type: "end", Conn: b.id})
+	return b.session.controlContext(b.ctx, controlMessage{Type: "end", Conn: b.id})
 }
 
 type bridgeAddr string
@@ -327,6 +396,7 @@ func (b *bridgeConn) SetDeadline(t time.Time) error {
 	b.readDeadline = t
 	b.writeDeadline = t
 	b.signal()
+	b.signalWrite()
 	return nil
 }
 func (b *bridgeConn) SetReadDeadline(t time.Time) error {
@@ -341,6 +411,7 @@ func (b *bridgeConn) SetWriteDeadline(t time.Time) error {
 	defer b.mu.Unlock()
 	b.writeDeadline = t
 	b.signal()
+	b.signalWrite()
 	return nil
 }
 

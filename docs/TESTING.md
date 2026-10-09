@@ -24,6 +24,11 @@ These commands do not create a public tunnel.
    go test -run 'TestTunnelHandshakeRouteIsolation|TestConnectStartupContextDoesNotOwnLifetime' -count=1 .
    go test -run 'TestConnectExplicitLifetimeCancellation|TestConnectRejectsOverlappingRoutes' -count=1 .
    go test -run 'TestRuntimeFailedCertificateRecoversSameKey|TestExpiredIdentityAttachesToTriggerServerRenewal|TestFileStorage' -count=1 .
+   go test -run 'Test(ChannelAbort|ChannelReset|WriterDiscards|QueuedSend|WriteDeadline|CleanupQueueSaturation)' -count=1 .
+   go test -run 'Test(ForegroundCertificate|RemoveDuringForeground|DifferentExpiredRemote|Ambiguous|ResumeDoesNotRebind)' -count=1 .
+   go test -run 'Test(CancellationAfterRemote|PendingPersistence|MalformedKnownCreation|TinyInboundFragments)' -count=1 .
+   go test -run 'Test(APIErrorTag|RecognizedAPITags|AttachErrorCode)' -count=1 .
+   go test -run 'TestInteractiveInvalidRoutes' -count=1 ./cmd/otgo
    go test -run 'TestEstablishedChannelIdleLimit|TestActiveChannelRenewsIdleDeadline|TestJSONOmitsUnsetEventTimes|TestAPI|TestIdentityFormatting' -count=1 .
    ```
 
@@ -40,7 +45,8 @@ renewal, framing, forwarding, and CLI dispatch. Hosted API, certificate issuance
 and relay interoperability have a separate dated [live test record](LIVE_TESTING.md).
 That record does not prove later hardening changes were revalidated live.
 Recorded local results are in [VERIFICATION.md](VERIFICATION.md); current review
-changes and remaining limits are in [HARDENING.md](HARDENING.md).
+changes and remaining limits are in [HARDENING.md](HARDENING.md) and
+[AMP_REVIEW.md](AMP_REVIEW.md).
 
 ## Lint scope and exceptions
 

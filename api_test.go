@@ -211,7 +211,7 @@ func TestAPIStatusAuthEscapingAndRedaction(t *testing.T) {
 	}
 	_, err = api.Get(context.Background(), "a/b", "tok_secret")
 	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != 401 || apiErr.Tag != "Denied" {
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 401 || apiErr.Tag != "HttpError" {
 		t.Fatalf("error %#v", err)
 	}
 	if strings.Contains(err.Error(), "tok_secret") || strings.Contains(err.Error(), "private-key") {

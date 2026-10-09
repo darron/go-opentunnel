@@ -120,9 +120,12 @@ readable. Low-level `Client.API()` calls retain their own context ownership.
 | `DELETE /api/tunnel/:id` | Bearer token | 204 |
 
 The API escapes IDs, caps response bodies at 1 MiB, rejects malformed success
-responses, and preserves upstream error tags. It closes response bodies and keeps
-request deadlines active through consumption. Errors and CLI output omit tokens,
-private keys, and raw error response bodies. `Client.API().Get` enables remote
+responses, and preserves recognized upstream error tags. Unknown tags become
+`HttpError`; unknown attach-error codes render as `unknown`. This prevents a
+hostile error field from reflecting credentials into logs. It closes response
+bodies and keeps request deadlines active through consumption. Package-generated
+API errors discard raw error response bodies; CLI identity output omits tokens
+and private keys. `Client.API().Get` enables remote
 inspection using a stored identity's ID and token.
 
 Use HTTPS for remote API bases. Plain HTTP is accepted only for exact
@@ -138,10 +141,18 @@ transport, cookie jar, or hook is trusted with credentials.
    Set `CN=<hostname>` and SANs `<hostname>` and `*.<hostname>`.
 2. Persist the PKCS#8 key, token, and pending CSR **before** requesting issuance.
    The private key never goes to the API.
-3. Poll every two seconds until ready, failed, or cancelled. Resumed issuance
-   accepts a certificate-in-progress conflict; other failures retain pending state.
+3. Inspect certificate state before submitting. Resume polls an already active
+   issuance without rebinding. New or failed issuance submits at most once per
+   retry interval, including ambiguous request failures. Poll every two seconds
+   until ready, failed, or cancelled; release the profile lock between polls.
 4. Validate the issued certificate's key, validity, exact hostname, and wildcard
    SAN before saving or installing it.
+
+After a known create response, pending persistence has its own finite deadline,
+even if startup was cancelled. Failed persistence or key generation triggers a
+bounded remote deletion attempt. If persistence and deletion both fail,
+`ProvisioningError.Pending` retains the known secret credentials for explicit
+recovery. A lost create response can still leave an unknown remote allocation.
 
 `ProvisionOptions.OnProgress` receives the upstream stages synchronously.
 Callbacks must not reenter operations on the same profile.
@@ -161,11 +172,13 @@ bounded cleanup context even if the caller cancels.
 `Connect` can attach an expired stored identity because the hosted protocol uses
 attachment to trigger server-side renewal. It does not report startup success
 until refresh installs a valid certificate. Visitor handshakes reject expired or
-not-yet-valid certificates. A runtime `failed` issuance state resubmits a CSR
+not-yet-valid certificates. A `failed` issuance state resubmits a CSR
 with the existing tunnel ID and private key, at most once per hour per profile
-within this client by default (`CertificateRetryInterval`). Each background
-poll releases the profile lock; stuck issuance cannot hold it indefinitely and
-prevent removal. A merely near-expiry certificate
+within this client by default (`CertificateRetryInterval`). Foreground and
+background paths share that cooldown. Each issuance poll releases the profile lock; stuck issuance cannot hold it
+indefinitely and prevent removal. Foreground waiters recheck pending identity
+ownership after reacquiring the lock and return `ErrProfileChanged` if the
+profile was removed or replaced. A merely near-expiry certificate
 does not cause a CSR submission: the inspected upstream protocol expects the
 server to renew it.
 
@@ -252,7 +265,8 @@ Control serialization retains required zero values such as `conn=0`, empty
 
 Unknown message types/fields are ignored. Malformed controls do not allocate
 channels. Future attach-error codes are accepted when at most 256 bytes and free
-of ASCII control characters. Negotiated durations must be positive and at most
+of ASCII control characters; unfamiliar codes become `unknown` in public
+attachment errors. Negotiated durations must be positive and at most
 24 hours. Heartbeat execution uses minima of one second for interval and five
 seconds for idle timeout.
 
@@ -281,10 +295,21 @@ Handshake or upstream dial failure resets only that channel. Connection limits
 are enforced before allocating channel TLS state. Duplicate IDs abort the
 existing channel rather than silently replacing it.
 
-A single ordered writer uses a 32-message queue of at most 32 KiB payloads,
-approximately 1 MiB. Each channel has an 8 MiB inbound cap. Overflow resets the
-channel without blocking the bridge reader; blocked writes stop local reads.
-Events use a bounded, lossy queue with a dropped-event counter.
+A single writer uses a 32-message data queue of at most 32 KiB payloads,
+approximately 1 MiB, and a separate 32-message cleanup-control queue. Cleanup
+controls get priority; exhausting that queue closes the session rather than
+dropping resets. Logical sends have channel cancellation and a finite timeout
+that includes queue admission. Physical WebSocket writes use session cancellation
+and the transport timeout, so canceling one channel does not close the shared
+socket. Changes to a pending write deadline wake a joined per-call watcher.
+Canceled queued sends are discarded.
+
+Each channel has an 8 MiB inbound payload cap. Fragments coalesce into blocks of
+at most 32 KiB, bounding allocation and slice metadata independently of frame
+count. A partial head and spare tail can add up to 64 KiB of block capacity above
+the payload cap, plus bounded slice headers. Overflow resets the channel without
+blocking the bridge reader; blocked writes stop local reads. Events use a
+bounded, lossy queue with a dropped-event counter.
 
 Set `TransportOptions.IdleTimeout` to close a channel after that duration with no
 application bytes in either direction. Zero disables it. Use a value longer than

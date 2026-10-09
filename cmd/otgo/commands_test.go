@@ -176,6 +176,42 @@ type interactiveConnectionFixture struct {
 	routes []opentunnel.Routes
 }
 
+type validatingInteractiveConnection struct {
+	interactiveConnectionFixture
+	err error
+}
+
+func (c *validatingInteractiveConnection) SetRoutes(routes opentunnel.Routes) error {
+	if c.err != nil {
+		return c.err
+	}
+	if err := opentunnel.ValidateRoutes(routes); err != nil {
+		return err
+	}
+	return c.interactiveConnectionFixture.SetRoutes(routes)
+}
+
+func TestInteractiveInvalidRoutesAndConflictsAreNonfatal(t *testing.T) {
+	for _, line := range []string{"routes @=127.0.0.1:0", "routes UPPER=127.0.0.1:8080", "routes @=127.0.0.1:8080"} {
+		t.Run(line, func(t *testing.T) {
+			connection := &validatingInteractiveConnection{}
+			if line == "routes @=127.0.0.1:8080" {
+				connection.err = opentunnel.ErrRouteInUse
+			}
+			var stdout, stderr bytes.Buffer
+			quit, err := processInteractiveCommand(connection, line, true, &stdout, &stderr)
+			if err != nil || quit || stderr.Len() == 0 || stdout.Len() != 0 || len(connection.routes) != 0 {
+				t.Fatalf("bad route ended or altered tunnel: quit=%t err=%v stderr=%q", quit, err, stderr.String())
+			}
+			connection.err = nil
+			quit, err = processInteractiveCommand(connection, "routes @=127.0.0.1:8081", true, &stdout, &stderr)
+			if err != nil || quit || len(connection.routes) != 1 {
+				t.Fatalf("valid next command failed: quit=%t err=%v", quit, err)
+			}
+		})
+	}
+}
+
 func (c *interactiveConnectionFixture) Status() opentunnel.Status {
 	return opentunnel.Status{State: "connected"}
 }

@@ -130,6 +130,36 @@ func (c *Client) lockProfile(ctx context.Context, p string) (func(), error) {
 	}
 }
 
+// profileGuard can release ownership while issuance sleeps. Each poll reacquires
+// the lock and checks the persisted record before any write to storage.
+type profileGuard struct{ unlock func() }
+
+func (c *Client) guardProfile(ctx context.Context, p string) (*profileGuard, error) {
+	unlock, err := c.lockProfile(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	return &profileGuard{unlock: unlock}, nil
+}
+func (g *profileGuard) release() {
+	if g.unlock != nil {
+		g.unlock()
+		g.unlock = nil
+	}
+}
+func (g *profileGuard) pause(ctx context.Context, c *Client, p string) error {
+	g.release()
+	if err := sleepContext(ctx, c.options.CertificatePollInterval); err != nil {
+		return err
+	}
+	unlock, err := c.lockProfile(ctx, p)
+	if err != nil {
+		return err
+	}
+	g.unlock = unlock
+	return nil
+}
+
 // Profiles lists local profile names using the configured store.
 func (c *Client) Profiles(ctx context.Context) ([]string, error) {
 	ctx, end, e := c.begin(ctx)
@@ -183,7 +213,9 @@ func (c *Client) Pending(ctx context.Context, profile string) (*PendingIdentity,
 
 // Create provisions a tunnel or resumes pending issuance. A completed local
 // identity returns ErrExists. Empty profile selects "default". Cancellation
-// leaves persisted pending credentials available to Resume or Remove.
+// leaves persisted pending credentials available to Resume or Remove. After a
+// known remote creation, bounded persistence or cleanup completes even if ctx is
+// canceled. If both fail, ProvisioningError exposes credentials for manual recovery.
 func (c *Client) Create(ctx context.Context, profile string, options ProvisionOptions) (*Identity, error) {
 	ctx, end, e := c.begin(ctx)
 	if e != nil {
@@ -194,19 +226,19 @@ func (c *Client) Create(ctx context.Context, profile string, options ProvisionOp
 	if e != nil {
 		return nil, e
 	}
-	unlock, e := c.lockProfile(ctx, p)
+	guard, e := c.guardProfile(ctx, p)
 	if e != nil {
 		return nil, e
 	}
-	defer unlock()
-	return c.create(ctx, p, options)
+	defer guard.release()
+	return c.create(ctx, p, options, guard)
 }
 func progress(o ProvisionOptions, s ProvisionStage) {
 	if o.OnProgress != nil {
 		o.OnProgress(s)
 	}
 }
-func (c *Client) create(ctx context.Context, p string, o ProvisionOptions) (*Identity, error) {
+func (c *Client) create(ctx context.Context, p string, o ProvisionOptions, guard *profileGuard) (*Identity, error) {
 	id, e := c.store.Load(ctx, p)
 	if e != nil {
 		return nil, e
@@ -220,45 +252,93 @@ func (c *Client) create(ctx context.Context, p string, o ProvisionOptions) (*Ide
 	}
 	if pending != nil {
 		progress(o, StageResumingCertificate)
-		return c.complete(ctx, p, *pending, o)
+		return c.complete(ctx, p, *pending, o, guard, false)
 	}
 	progress(o, StageCreatingTunnel)
 	created, e := c.api.Create(ctx)
 	if e != nil {
+		if created.Tunnel.ID != "" && created.Token != "" {
+			pending := PendingIdentity{ID: created.Tunnel.ID, Hostname: created.Tunnel.Hostname, Token: created.Token}
+			return nil, c.compensateProvision(ctx, p, pending, e)
+		}
 		return nil, e
 	}
-	return c.provision(ctx, p, created.Tunnel.ID, created.Tunnel.Hostname, created.Token, o)
+	return c.provision(ctx, p, created.Tunnel.ID, created.Tunnel.Hostname, created.Token, o, guard)
 }
-func (c *Client) provision(ctx context.Context, p, id, host, token string, o ProvisionOptions) (*Identity, error) {
+func (c *Client) provision(ctx context.Context, p, id, host, token string, o ProvisionOptions, guard *profileGuard) (*Identity, error) {
+	pending := PendingIdentity{ID: id, Hostname: host, Token: token}
 	progress(o, StageGeneratingKey)
 	progress(o, StageGeneratingCSR)
 	key, csr, e := generateRequest(host)
 	if e != nil {
-		return nil, e
+		return nil, c.compensateProvision(ctx, p, pending, e)
 	}
-	pending := PendingIdentity{ID: id, Hostname: host, Token: token, PrivateKey: key, CSR: csr}
-	if e = c.store.SavePending(ctx, p, pending); e != nil {
-		return nil, fmt.Errorf("persist pending identity: %w", e)
-	}
-	return c.complete(ctx, p, pending, o)
-}
-func (c *Client) complete(ctx context.Context, p string, pending PendingIdentity, o ProvisionOptions) (*Identity, error) {
-	progress(o, StageRequestingCertificate)
-	_, e := c.api.BindCertificate(ctx, pending.ID, pending.Token, pending.CSR)
+	pending.PrivateKey, pending.CSR = key, csr
+	// The successful create response contains the only deletion credentials.
+	// Preserve them even when the startup context was just canceled.
+	persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.api.timeout)
+	e = c.store.SavePending(persist, p, pending)
+	cancel()
 	if e != nil {
+		return nil, c.compensateProvision(ctx, p, pending, fmt.Errorf("persist pending identity: %w", e))
+	}
+	return c.complete(ctx, p, pending, o, guard, false)
+}
+
+func (c *Client) compensateProvision(ctx context.Context, p string, pending PendingIdentity, cause error) error {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.api.timeout)
+	defer cancel()
+	if err := c.api.Remove(cleanup, pending.ID, pending.Token); err != nil {
 		var apiErr *APIError
-		if !errors.As(e, &apiErr) || apiErr.Tag != "CertificateInProgressError" {
-			return nil, e
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != 404 {
+			return &ProvisioningError{Pending: pending, Err: errors.Join(cause, fmt.Errorf("remove unpersisted tunnel: %w", err))}
 		}
 	}
+	if err := c.store.Remove(cleanup, p); err != nil {
+		return errors.Join(cause, fmt.Errorf("clean up failed provisioning: %w", err))
+	}
+	return cause
+}
+func (c *Client) complete(ctx context.Context, p string, pending PendingIdentity, o ProvisionOptions, guard *profileGuard, submitted bool) (*Identity, error) {
 	for {
 		if e := ctx.Err(); e != nil {
 			return nil, e
 		}
+		current, err := c.store.LoadPending(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		if current == nil {
+			// Another same-client waiter or refresh worker may have completed it.
+			id, err := c.store.Load(ctx, p)
+			if err != nil {
+				return nil, err
+			}
+			if id == nil || !matchesPending(*id, pending) {
+				return nil, ErrProfileChanged
+			}
+			if _, err := parseCertificate(*id); err != nil {
+				return nil, err
+			}
+			progress(o, StageReady)
+			return id, nil
+		}
+		if *current != pending {
+			return nil, ErrProfileChanged
+		}
 		progress(o, StageWaitingCertificate)
 		cert, e := c.api.Certificate(ctx, pending.ID, pending.Token)
 		if e != nil {
-			return nil, e
+			var apiErr *APIError
+			if submitted || !errors.As(e, &apiErr) || apiErr.Tag != "CertificateNotFoundError" {
+				return nil, e
+			}
+			progress(o, StageRequestingCertificate)
+			if err := c.submitCertificate(ctx, p, pending); err != nil {
+				return nil, err
+			}
+			submitted = true
+			continue
 		}
 		switch cert.State.Type {
 		case "ready":
@@ -272,15 +352,24 @@ func (c *Client) complete(ctx context.Context, p string, pending PendingIdentity
 			if e := c.store.Save(ctx, p, id); e != nil {
 				return nil, e
 			}
+			c.recoveryAfter.Delete(p)
 			progress(o, StageReady)
 			return &id, nil
 		case "failed":
-			return nil, ErrCertificateIssuance
+			if submitted {
+				return nil, ErrCertificateIssuance
+			}
+			progress(o, StageRequestingCertificate)
+			if err := c.submitCertificate(ctx, p, pending); err != nil {
+				return nil, err
+			}
+			submitted = true
+			continue
 		case "challenge", "issuing":
 		default:
 			return nil, errors.New("opentunnel: unknown certificate state")
 		}
-		if e := sleepContext(ctx, c.options.CertificatePollInterval); e != nil {
+		if e := guard.pause(ctx, c, p); e != nil {
 			return nil, e
 		}
 	}
@@ -298,17 +387,17 @@ func (c *Client) Resume(ctx context.Context, profile string, o ProvisionOptions)
 	if e != nil {
 		return nil, e
 	}
-	unlock, e := c.lockProfile(ctx, p)
+	guard, e := c.guardProfile(ctx, p)
 	if e != nil {
 		return nil, e
 	}
-	defer unlock()
+	defer guard.release()
 	pending, e := c.store.LoadPending(ctx, p)
 	if e != nil || pending == nil {
 		return nil, e
 	}
 	progress(o, StageResumingCertificate)
-	return c.complete(ctx, p, *pending, o)
+	return c.complete(ctx, p, *pending, o, guard, false)
 }
 
 // Ensure loads, resumes, or provisions a currently valid identity. Empty profile
@@ -324,20 +413,20 @@ func (c *Client) Ensure(ctx context.Context, profile string) (*Identity, error) 
 	if e != nil {
 		return nil, e
 	}
-	unlock, e := c.lockProfile(ctx, p)
+	guard, e := c.guardProfile(ctx, p)
 	if e != nil {
 		return nil, e
 	}
-	defer unlock()
-	return c.ensure(ctx, p, false)
+	defer guard.release()
+	return c.ensure(ctx, p, false, guard)
 }
-func (c *Client) ensure(ctx context.Context, p string, allowExpired bool) (*Identity, error) {
+func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard *profileGuard) (*Identity, error) {
 	id, e := c.store.Load(ctx, p)
 	if e != nil {
 		return nil, e
 	}
 	if id == nil {
-		return c.create(ctx, p, ProvisionOptions{})
+		return c.create(ctx, p, ProvisionOptions{}, guard)
 	}
 	cert, e := c.api.Certificate(ctx, id.ID, id.Token)
 	if e != nil {
@@ -353,18 +442,17 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool) (*Iden
 		return nil, e
 	}
 	if cert.State.Type == "failed" {
-		return c.recoverCertificate(ctx, p, *id)
+		pending, err := c.startCertificateRecovery(ctx, p, *id)
+		if err != nil {
+			return nil, err
+		}
+		return c.complete(ctx, p, *pending, ProvisionOptions{}, guard, true)
 	}
-	if cert.State.Type == "ready" && cert.State.Certificate != id.Certificate {
+	replacement := cert.State.Type == "ready" && (cert.State.Certificate != id.Certificate || cert.State.Chain != id.Chain)
+	if replacement {
 		id.Certificate = cert.State.Certificate
 		id.Chain = cert.State.Chain
 		id.CertificateExpiry = cert.State.Expiry
-		if _, e := parseCertificate(*id); e != nil {
-			return nil, e
-		}
-		if e := c.store.Save(ctx, p, *id); e != nil {
-			return nil, e
-		}
 	}
 	validated, e := parseCertificate(*id)
 	if e != nil {
@@ -377,10 +465,22 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool) (*Iden
 		}
 	}
 	id.CertificateExpiry = validated.Leaf.NotAfter
+	if replacement {
+		if e := c.store.Save(ctx, p, *id); e != nil {
+			return nil, e
+		}
+		if time.Now().Before(validated.Leaf.NotAfter) {
+			c.recoveryAfter.Delete(p)
+		}
+	}
 	return id, nil
 }
 
-func (c *Client) recoverCertificate(ctx context.Context, p string, id Identity) (*Identity, error) {
+// All replacement submissions require the profile lock and share one cooldown.
+func (c *Client) startCertificateRecovery(ctx context.Context, p string, id Identity) (*PendingIdentity, error) {
+	if time.Now().Before(c.recoveryDeadline(p)) {
+		return nil, ErrCertificateIssuance
+	}
 	csr, err := requestForExistingKey(id.Hostname, id.PrivateKey)
 	if err != nil {
 		return nil, err
@@ -389,7 +489,29 @@ func (c *Client) recoverCertificate(ctx context.Context, p string, id Identity) 
 	if err := c.store.SavePending(ctx, p, pending); err != nil {
 		return nil, err
 	}
-	return c.complete(ctx, p, pending, ProvisionOptions{})
+	if err := c.submitCertificate(ctx, p, pending); err != nil {
+		return nil, err
+	}
+	return &pending, nil
+}
+
+func (c *Client) submitCertificate(ctx context.Context, p string, pending PendingIdentity) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if time.Now().Before(c.recoveryDeadline(p)) {
+		return ErrCertificateIssuance
+	}
+	// A failed request can conceal an accepted CSR. Record before sending it.
+	c.recoveryAfter.Store(p, time.Now().Add(c.options.CertificateRetryInterval))
+	_, err := c.api.BindCertificate(ctx, pending.ID, pending.Token, pending.CSR)
+	if err != nil {
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Tag != "CertificateInProgressError" {
+			return err
+		}
+	}
+	return nil
 }
 
 // Remove releases the remote tunnel, stops this client's same-profile bridges,

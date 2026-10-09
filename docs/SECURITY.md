@@ -66,6 +66,12 @@ and redirect hook remain trusted code with access to credentials.
   `Identity` and `PendingIdentity` omit those fields from JSON and redact them
   through `fmt` and `slog`. Their exported fields still contain the secrets;
   explicit field access, reflection, or a custom serializer can expose them.
+- Unknown API error tags and attachment codes become generic diagnostics rather
+  than retaining arbitrary server text. Recognized protocol errors remain typed.
+- A `ProvisioningError` contains secret recovery credentials when persistence
+  and remote cleanup both fail. Handle it with `errors.As`, persist its pending
+  record securely, or use its ID/token with `API.Remove`. Ordinary error rendering
+  does not print the record.
 - Restrict storage to the account running the app. New Unix roots and profiles
   use `0700`; credential files written by the file store use `0600`. Existing
   roots are left unchanged if group/others cannot write them, while
@@ -94,4 +100,5 @@ Local tests check ciphertext at the relay, SNI route isolation,
 certificate/key/SAN validation, API redirect policy, credential redaction, and
 storage deletion boundaries. Those tests establish local behavior; they are not
 an independent audit or current live revalidation of the hosted service. See the
-[hardening guide](HARDENING.md) and the dated [live record](LIVE_TESTING.md).
+[hardening guide](HARDENING.md), [Amp review](AMP_REVIEW.md), and the dated
+[live record](LIVE_TESTING.md).

@@ -53,13 +53,15 @@ routes suspend attachment.
 | Active channels | 256 |
 | Pending inbound bytes per channel | 8 MiB |
 | Queued events | 256 |
-| Outbound queue | 32 messages |
+| Outbound data queue | 32 messages |
+| Cleanup-control queue | 32 messages; saturation closes the session |
 | Outbound payload per message | 32 KiB |
 | Per-channel idle timeout | Disabled unless `TransportOptions.IdleTimeout` is positive |
 
-The maximum aggregate inbound budget is **2 GiB**, before TLS, socket, and other
-memory overhead. Lower `TransportOptions.MaxConnections` and `MaxInboundBytes`
-for smaller applications.
+The maximum aggregate inbound payload budget is **2 GiB**. Coalesced 32 KiB
+blocks add at most 64 KiB capacity per channel plus bounded slice metadata; TLS,
+sockets, and other memory remain additional overhead. Lower
+`TransportOptions.MaxConnections` and `MaxInboundBytes` for smaller applications.
 
 An inbound overflow resets that channel. A large upload to a slow target can
 reach this limit even when the session is healthy. A configured idle timeout
@@ -84,6 +86,9 @@ channels because the wire protocol has no per-channel flow control.
 
 Lifecycle and credentials:
 
+- Preserve pending credentials after a known remote creation even if startup
+  cancels; attempt remote deletion on persistence failure and return
+  `ProvisioningError` if manual recovery remains necessary.
 - Finish local cleanup after confirmed remote deletion, even if the caller cancels.
 - Share a profile lock between renewal and deletion to prevent credential recreation.
 - Reuse the stored key when retrying failed issuance, with a shared per-profile
@@ -96,7 +101,12 @@ Lifecycle and credentials:
 
 I/O and shutdown:
 
-- Cancel blocked upstream sockets on channel reset or overflow.
+- Cancel blocked upstream sockets and logical outbound sends on channel reset or
+  overflow. Keep physical writes session-owned and discard canceled queued data.
+- Coalesce tiny inbound fragments to bound allocation overhead.
+- Normalize unknown API error tags and attachment codes to prevent credential
+  reflection into errors.
+- Keep invalid interactive route targets and route conflicts nonfatal.
 - Require ClientHello SNI to select the same route as the relay; reject missing
   SNI and expired certificates before dialing the target.
 - Allow an optional application-byte idle timeout; keep zero disabled.
@@ -111,5 +121,5 @@ Use [TESTING.md](TESTING.md) to rerun checks. Read
 [VERIFICATION.md](VERIFICATION.md) for local evidence,
 [LIVE_TESTING.md](LIVE_TESTING.md) for hosted-service evidence, and
 [SECURITY.md](SECURITY.md) for trust boundaries. Use
-[HARDENING.md](HARDENING.md) for the current hardening changes and unresolved
-limits.
+[HARDENING.md](HARDENING.md) and [AMP_REVIEW.md](AMP_REVIEW.md) for hardening
+changes, review dispositions, and unresolved limits.

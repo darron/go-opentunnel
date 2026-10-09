@@ -167,10 +167,7 @@ func (a *API) response(resp *http.Response, expected int, out any) error {
 			Tag string `json:"_tag"`
 		}
 		_ = json.Unmarshal(data, &remote)
-		if remote.Tag == "" {
-			remote.Tag = "HttpError"
-		}
-		return &APIError{StatusCode: resp.StatusCode, Tag: remote.Tag, Message: "request rejected"}
+		return &APIError{StatusCode: resp.StatusCode, Tag: diagnosticAPITag(remote.Tag), Message: "request rejected"}
 	}
 	if out == nil {
 		return nil

@@ -26,6 +26,7 @@ type session struct {
 	cancel        context.CancelFunc
 	ws            *websocket.Conn
 	queue         chan outbound
+	controls      chan outbound
 	mu            sync.Mutex
 	channels      map[uint32]*channel
 	wg            sync.WaitGroup
@@ -38,7 +39,7 @@ type session struct {
 
 func newSession(x *Connection, r Routes) *session {
 	ctx, cancel := context.WithCancel(x.ctx)
-	return &session{owner: x, routes: r, ctx: ctx, cancel: cancel, channels: make(map[uint32]*channel), queue: make(chan outbound, 32)}
+	return &session{owner: x, routes: r, ctx: ctx, cancel: cancel, channels: make(map[uint32]*channel), queue: make(chan outbound, 32), controls: make(chan outbound, 32)}
 }
 
 func (s *session) run() error {
@@ -103,7 +104,7 @@ func (s *session) run() error {
 			continue
 		}
 		if m.Type == "attach_error" {
-			return &AttachError{Code: m.Code}
+			return &AttachError{Code: diagnosticAttachCode(m.Code)}
 		}
 		if m.Type == "attached" {
 			reply = m
@@ -177,22 +178,37 @@ func (s *session) run() error {
 }
 func (s *session) writer() {
 	for {
+		var msg outbound
+		// Cleanup has a separate bounded queue so a blocked data producer cannot
+		// retain a channel slot while waiting to send its reset.
 		select {
-		case <-s.ctx.Done():
-			return
-		case msg := <-s.queue:
-			if e := msg.ctx.Err(); e != nil {
-				msg.result <- e
-				continue
-			}
-			ctx, cancel := context.WithTimeout(msg.ctx, s.owner.client.options.WriteTimeout)
-			e := s.ws.Write(ctx, msg.kind, msg.data)
-			cancel()
-			msg.result <- e
-			if e != nil {
-				s.cancel()
+		case msg = <-s.controls:
+		default:
+			select {
+			case <-s.ctx.Done():
 				return
+			case msg = <-s.controls:
+			case msg = <-s.queue:
 			}
+		}
+		if e := msg.ctx.Err(); e != nil {
+			if msg.result != nil {
+				msg.result <- e
+			}
+			continue
+		}
+		// A logical send may finish on channel cancellation. Once a physical
+		// write starts, only the session or transport timeout may interrupt it:
+		// coder/websocket closes the shared socket on write cancellation.
+		ctx, cancel := context.WithTimeout(s.ctx, s.owner.client.options.WriteTimeout)
+		e := s.ws.Write(ctx, msg.kind, msg.data)
+		cancel()
+		if msg.result != nil {
+			msg.result <- e
+		}
+		if e != nil {
+			s.cancel()
+			return
 		}
 	}
 }
@@ -200,6 +216,8 @@ func (s *session) send(kind websocket.MessageType, data []byte) error {
 	return s.sendContext(s.ctx, kind, data)
 }
 func (s *session) sendContext(ctx context.Context, kind websocket.MessageType, data []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, s.owner.client.options.WriteTimeout)
+	defer cancel()
 	msg := outbound{ctx: ctx, kind: kind, data: data, result: make(chan error, 1)}
 	select {
 	case s.queue <- msg:
@@ -214,11 +232,30 @@ func (s *session) sendContext(ctx context.Context, kind websocket.MessageType, d
 	}
 }
 func (s *session) control(m controlMessage) error {
+	return s.controlContext(s.ctx, m)
+}
+func (s *session) controlContext(ctx context.Context, m controlMessage) error {
 	b, e := json.Marshal(m)
 	if e != nil {
 		return e
 	}
-	return s.send(websocket.MessageText, b)
+	return s.sendContext(ctx, websocket.MessageText, b)
+}
+
+// enqueueControl never blocks channel teardown. Exhausting its fixed capacity
+// closes the session rather than dropping resets and leaving relay channels open.
+func (s *session) enqueueControl(m controlMessage) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		s.cancel()
+		return
+	}
+	select {
+	case <-s.ctx.Done():
+	case s.controls <- outbound{ctx: s.ctx, kind: websocket.MessageText, data: b}:
+	default:
+		s.cancel()
+	}
 }
 func (s *session) heartbeat(heartbeatMS, idleMS int) {
 	interval := time.Duration(heartbeatMS) * time.Millisecond

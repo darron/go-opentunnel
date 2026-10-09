@@ -66,6 +66,10 @@ Use these contracts when embedding:
 - **Storage:** `NewFileStorage(root)` uses your directory; `NewXDGStorage()` uses
   the upstream-compatible data directory. Memory storage lasts only for the
   process. Coordinate same-profile provisioning across clients or processes.
+- **Provisioning:** cancellation after a known creation preserves pending
+  credentials. If persistence and compensating deletion both fail, handle
+  `*opentunnel.ProvisioningError` and securely recover or delete its `Pending`
+  identity. Concurrent removal interrupts issuance with `ErrProfileChanged`.
 - **Events:** delivery is bounded and lossy. Use `Status()` for current state
   and `Status().DroppedEvents` to detect missed events.
 - **Traffic:** buffers are bounded. The relay protocol has no per-channel flow
@@ -132,5 +136,5 @@ changes; the earlier run also exercised a forced bridge reconnect.
 
 Read the [local results](docs/VERIFICATION.md) and
 [live results and limits](docs/LIVE_TESTING.md) for the evidence. See the
-[hardening guide](docs/HARDENING.md) for the current behavior and remaining
-limits.
+[hardening guide](docs/HARDENING.md) and [Amp review](docs/AMP_REVIEW.md) for
+current behavior, review dispositions, and remaining limits.

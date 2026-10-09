@@ -476,7 +476,13 @@ func interactiveCommand(connection interactiveConnection, line string, asJSON bo
 			}
 			routes[name] = target
 		}
-		return connection.SetRoutes(routes)
+		if err := connection.SetRoutes(routes); err != nil {
+			if errors.Is(err, opentunnel.ErrInvalid) || errors.Is(err, opentunnel.ErrRouteInUse) {
+				return interactiveInputError{err: err}
+			}
+			return err
+		}
+		return nil
 	default:
 		return interactiveInputError{err: fmt.Errorf("unknown interactive command %q (use status, routes, or quit)", fields[0])}
 	}

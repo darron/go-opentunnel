@@ -21,6 +21,8 @@ var (
 	ErrClosed = errors.New("opentunnel: closed")
 	// ErrExists reports an attempt to create a completed tunnel over an existing profile.
 	ErrExists = errors.New("opentunnel: profile already has a tunnel")
+	// ErrProfileChanged reports removal or replacement during provisioning.
+	ErrProfileChanged = errors.New("opentunnel: profile removed or replaced during provisioning")
 	// ErrInvalid reports invalid input or protocol/certificate data.
 	ErrInvalid = errors.New("opentunnel: invalid input")
 	// ErrRouteInUse reports overlapping routes on connections owned by one Client.
@@ -64,6 +66,23 @@ type PendingIdentity struct {
 	PrivateKey string `json:"-"`
 	CSR        string `json:"csr"`
 }
+
+// ProvisioningError means a known remote creation could neither be persisted nor
+// deleted. Pending contains secret credentials: persist them securely or pass
+// Pending.ID and Pending.Token to API.Remove. Key/CSR may be absent if generation
+// failed; such a record supports deletion, not Resume.
+type ProvisioningError struct {
+	Pending PendingIdentity
+	Err     error
+}
+
+func (e *ProvisioningError) Error() string {
+	return "opentunnel: provisioning recovery required: " + e.Err.Error()
+}
+func (e *ProvisioningError) Unwrap() error { return e.Err }
+
+// RecoveryIdentity returns the known credentials for secure recovery or deletion.
+func (e *ProvisioningError) RecoveryIdentity() PendingIdentity { return e.Pending }
 
 // StoredTunnel associates a stored completed identity with its profile name.
 type StoredTunnel struct {
@@ -242,7 +261,8 @@ type CertificateState struct {
 	Reason      string    `json:"reason,omitempty"`
 }
 
-// APIError reports the remote HTTP status and error tag without the response body.
+// APIError reports the remote HTTP status and a recognized protocol error tag.
+// Unknown tags become HttpError so reflected credentials cannot reach logs.
 type APIError struct {
 	StatusCode int
 	Tag        string
@@ -250,10 +270,30 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("opentunnel API: HTTP %d (%q): %s", e.StatusCode, e.Tag, e.Message)
+	return fmt.Sprintf("opentunnel API: HTTP %d (%q): %s", e.StatusCode, diagnosticAPITag(e.Tag), e.Message)
+}
+
+func diagnosticAPITag(tag string) string {
+	switch tag {
+	case "InvalidRequestError", "UnauthorizedError", "TunnelNotFoundError", "CertificateNotFoundError", "InvalidHostnameError", "HostnameUnavailableError", "CertificateInProgressError", "ServiceUnavailableError":
+		return tag
+	default:
+		return "HttpError"
+	}
 }
 
 // AttachError reports a relay bridge attachment failure code.
 type AttachError struct{ Code string }
 
-func (e *AttachError) Error() string { return fmt.Sprintf("opentunnel: attach failed: %q", e.Code) }
+func (e *AttachError) Error() string {
+	return fmt.Sprintf("opentunnel: attach failed: %q", diagnosticAttachCode(e.Code))
+}
+
+func diagnosticAttachCode(code string) string {
+	switch code {
+	case "bad_attach", "bad_token", "tunnel_not_bound", "cert_not_ready", "replaced", "upstream_connect_failed", "upstream_io_error", "client_io_error", "idle_timeout", "route_conflict", "invalid_route", "unknown_route", "too_many_connections":
+		return code
+	default:
+		return "unknown"
+	}
+}

@@ -1,5 +1,8 @@
 # Hardening disposition
 
+The subsequent [Amp and Oracle review](AMP_REVIEW.md) found additional defects
+in this baseline. That document records their fixes and post-review validation.
+
 This is the action record for the 2026-10-09 hardening pass. It maps every
 finding in [the preserved review](CLAUDE_REVIEW.md) to its current disposition.
 That review is a historical baseline, not a current statement of behavior: its

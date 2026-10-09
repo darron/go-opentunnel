@@ -1,11 +1,32 @@
 package opentunnel
 
 import (
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 )
+
+func TestProvisioningRecoveryErrorFormattingRedactsPendingSecrets(t *testing.T) {
+	const token = "recovery-token-secret-marker"
+	const key = "recovery-private-key-secret-marker"
+	err := &ProvisioningError{Pending: PendingIdentity{ID: "demo", Hostname: "demo.test", Token: token, PrivateKey: key}, Err: errors.New("persistence and cleanup failed")}
+	for _, format := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x"} {
+		text := fmt.Sprintf(format, err)
+		for _, secret := range []string{token, key, hex.EncodeToString([]byte(token)), hex.EncodeToString([]byte(key))} {
+			if strings.Contains(text, secret) {
+				t.Fatalf("recovery error format %q exposed credentials", format)
+			}
+		}
+	}
+	encoded, marshalErr := json.Marshal(err)
+	if marshalErr != nil || strings.Contains(string(encoded), token) || strings.Contains(string(encoded), key) {
+		t.Fatal("recovery error JSON exposed pending credentials")
+	}
+}
 
 func TestIdentityFormattingAndSlogRedactCredentials(t *testing.T) {
 	const token = "token-secret-marker"

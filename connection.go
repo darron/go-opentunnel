@@ -65,25 +65,26 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 		defer func() { stopLifetime(); cancelStartup() }()
 		opctx = startup
 	}
-	unlock, e := c.lockProfile(opctx, p)
+	guard, e := c.guardProfile(opctx, p)
 	if e != nil {
 		return nil, e
 	}
+	defer guard.release()
 	c.mu.Lock()
 	e = c.checkRouteClaims(p, o.Routes, nil)
 	c.mu.Unlock()
 	if e != nil {
-		unlock()
+		guard.release()
 		return nil, e
 	}
-	id, e := c.ensure(opctx, p, true)
+	id, e := c.ensure(opctx, p, true, guard)
 	if e != nil {
-		unlock()
+		guard.release()
 		return nil, e
 	}
 	cert, e := parseCertificateMaterial(*id)
 	if e != nil {
-		unlock()
+		guard.release()
 		return nil, e
 	}
 	parent := o.Lifetime
@@ -97,14 +98,14 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		unlock()
+		guard.release()
 		cancel()
 		x.stopParent()
 		return nil, ErrClosed
 	}
 	if e := c.checkRouteClaims(p, o.Routes, nil); e != nil {
 		c.mu.Unlock()
-		unlock()
+		guard.release()
 		cancel()
 		x.stopParent()
 		return nil, e
@@ -112,7 +113,7 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 	c.connections[x] = p
 	c.wg.Add(1)
 	c.mu.Unlock()
-	unlock()
+	guard.release()
 	go x.run()
 	select {
 	case <-x.ready:
@@ -477,25 +478,9 @@ func (x *Connection) refreshOnce() error {
 // startCertificateRecovery requires the profile lock. Submit once, then release
 // it; refresh polls on later iterations so stuck issuance cannot block Remove.
 func (x *Connection) startCertificateRecovery(id Identity) error {
-	if time.Now().Before(x.client.recoveryDeadline(x.profile)) {
-		return ErrCertificateIssuance
-	}
-	csr, err := requestForExistingKey(id.Hostname, id.PrivateKey)
+	_, err := x.client.startCertificateRecovery(x.ctx, x.profile, id)
 	if err != nil {
 		return err
-	}
-	pending := PendingIdentity{ID: id.ID, Hostname: id.Hostname, Token: id.Token, PrivateKey: id.PrivateKey, CSR: csr}
-	if err := x.client.store.SavePending(x.ctx, x.profile, pending); err != nil {
-		return err
-	}
-	// Record even an unsuccessful request: a timeout may hide a successful bind.
-	x.client.recoveryAfter.Store(x.profile, time.Now().Add(x.client.options.CertificateRetryInterval))
-	_, err = x.client.api.BindCertificate(x.ctx, id.ID, id.Token, csr)
-	if err != nil {
-		var apiErr *APIError
-		if !errors.As(err, &apiErr) || apiErr.Tag != "CertificateInProgressError" {
-			return err
-		}
 	}
 	x.recoveryPending.Store(true)
 	x.emit(Event{Type: "certificate-recovery-started"})

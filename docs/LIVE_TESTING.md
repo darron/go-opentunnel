@@ -202,3 +202,49 @@ and forced server drain still rely on fixture evidence. A forced bridge loss
 was exercised in the earlier record, not re-induced in this final live pass.
 The hosted service's deployed revision remains unknown. See
 [HARDENING.md](HARDENING.md) for dispositions and remaining limits.
+
+
+## Post-Amp review retest
+
+**Passed on 2026-10-09, with recorded driver exit 0**, after all accepted Amp
+fixes and the pending-write-deadline correction. The final source was rebuilt
+with `make check`; no functional changes followed this live exercise.
+
+A temporary Python standard-library driver launched `bin/otgo` and
+`bin/webapp` against the public service, using three new profiles in private
+storage. Small Go consumers checked WSS and authenticated deletion status through
+the package API. Credentials stayed in private storage or process stdin and did
+not appear in command arguments, this document, or committed artifacts.
+
+| Area | Checks passed |
+| --- | --- |
+| Provisioning | Cancel create at `requesting-certificate`; exit 0 with pending credentials; resume issuance; reuse the same ID through get/ensure |
+| Inspection | Profiles/list match; subsequent pending/resume return null; repeated create exits 1; inspect follows offline/online/offline; JSON views omit token/key |
+| Public traffic | Normal HTTPS trust; exact root response; three incremental stream lines spanning more than 250 ms; exact 16,000-byte text and binary WSS echoes and normal closure |
+| Uploads | Exact 2 MiB named-route POST echo; eight concurrent 256 KiB echoes |
+| Routes | Add named route; replace its target; closed named backend fails while root stays usable; empty routes suspend; restoring root reattaches |
+| Invalid input | Typos, malformed route syntax, port 0, and uppercase route names report on stderr while the tunnel remains alive and HTTPS keeps serving |
+| CLI shutdown | Quit with stdin open exits 0; 3-second deadline exits 1 with context deadline exceeded; SIGINT with stdin open exits 0; remote state becomes offline |
+| Embedded app | App provisions its own new identity and tunnel; public HTTPS, streaming, and WSS pass; SIGINT exits 0 and remote state becomes offline |
+| Pending deletion | Cancel another creation; remove its pending remote/local identity; authenticated Go API returns 404 |
+| Final cleanup | All three identities removed; repeated removal succeeds; authenticated Go API confirms 404 for the completed identities; get/pending return null; profiles/list are empty; all owned processes stop |
+
+The tool server interrupted the first post-Amp command session before its final
+result could be retrieved. Inspection showed no surviving test processes or
+local profiles. The complete workflow was repeated with stdout and exit status
+saved to files; that recorded run provides the results above. Its deletion
+checks used the Go API consumer from the start, avoiding the earlier Python
+transport-probe mismatch.
+
+Final local validation passed `make check` (golangci-lint 0 issues), the full
+race suite, Go 1.25 compatibility tests, parser fuzz smoke tests, ten repetitions
+of focused fix races, and five repetitions of the retained Amp confirmation
+probes. Linux and Windows amd64 package/CLI test compilation and example builds
+passed. The [Amp review record](AMP_REVIEW.md) describes accepted findings,
+confirmation, and remaining boundaries.
+
+Long-term renewal, malformed controls, overflow, cleanup saturation, forced
+drain, and cancellation under bridge backpressure use local fixture evidence;
+they were not all induced against the hosted service. Windows remains
+compile-only. The hosted deployment revision and provider infrastructure were
+not audited.

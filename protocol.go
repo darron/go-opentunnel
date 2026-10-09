@@ -231,8 +231,8 @@ func decodeControl(data []byte) (controlMessage, bool) {
 }
 
 func safeControlCode(code string) bool {
-	// Accept future codes within the diagnostic size limit. AttachError.Error
-	// quotes them for safe rendering.
+	// Accept future wire codes within the diagnostic size limit. Public
+	// attachment errors normalize unknown values instead of retaining raw text.
 	if len(code) > 256 {
 		return false
 	}

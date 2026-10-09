@@ -112,3 +112,19 @@ CLI, example, and lint configuration.
 
 The edits changed documentation and comments only. Earlier race, fuzz, and live
 results above remain the records of those checks.
+
+
+## Amp hardening verification, 2026-10-09
+
+The subsequent [Amp/Oracle review](AMP_REVIEW.md) reproduced additional defects
+in the prior baseline. All seven were fixed; Amp's focused confirmation passed.
+New tests are in `amp_regression_test.go`, `amp_confirmation_test.go`, and the CLI
+command tests. The full test/race suites, Go 1.25 tests, formatting, vet, builds,
+and repository-wide golangci-lint passed with 0 issues. Focused fixes passed ten
+race repetitions; four retained confirmation probes passed five. Parser fuzz
+smokes and Linux/Windows amd64 compilation passed.
+
+The rebuilt CLI and app also passed the [recorded post-Amp public workflow](LIVE_TESTING.md#post-amp-review-retest)
+with exit 0 and remote/local cleanup verified. These results cover the listed
+cases; they do not establish all inputs, Windows runtime behavior, long-term
+production renewal, or hosted operator security.
