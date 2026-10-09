@@ -107,12 +107,124 @@ func TestNegativeDurationsAreRejected(t *testing.T) {
 
 func TestPlainOutputSanitizesTerminalControls(t *testing.T) {
 	var out bytes.Buffer
-	identity := opentunnel.Identity{ID: "id\x1b[2J", Hostname: "host\rname", CertificateExpiry: time.Now()}
+	identity := opentunnel.Identity{ID: "id\x1b[2J\u0085", Hostname: "host\rname", CertificateExpiry: time.Now()}
 	if err := printValue(&out, false, identity, nil); err != nil {
 		t.Fatal(err)
 	}
-	if strings.ContainsAny(out.String(), "\x1b\r") {
+	if strings.ContainsAny(out.String(), "\x1b\r\u0085") {
 		t.Fatalf("terminal control leaked in %q", out.String())
+	}
+}
+
+func TestFormatEventIncludesOperationalDetailsAndSanitizesControls(t *testing.T) {
+	expiry := time.Date(2030, time.January, 2, 3, 4, 5, 0, time.UTC)
+	event := opentunnel.Event{
+		Type:    "reconnecting",
+		Attempt: 3,
+		Delay:   2 * time.Second,
+		Session: "session\u0085",
+		Conn:    17,
+		Route:   "api",
+		Peer:    "peer\x1b[31m",
+		Reason:  "retrying",
+		Error:   "bridge\rfailed",
+		Expiry:  expiry,
+	}
+	got := formatEvent(event)
+	for _, want := range []string{
+		"reconnecting", "attempt=3", "delay=2s", "session=session?", "conn=17", "route=api",
+		"peer=peer?[31m", "reason=retrying", "error=bridge?failed", "expiry=2030-01-02T03:04:05Z",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatEvent() = %q, missing %q", got, want)
+		}
+	}
+	if strings.ContainsAny(got, "\x1b\r\u0085") {
+		t.Fatalf("terminal control leaked in %q", got)
+	}
+}
+
+func TestPrintInteractiveErrorUsesStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := printInteractiveError(&stderr, errors.New("bad\u0085 route")); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if got, want := stderr.String(), "interactive: bad? route\n"; got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestProvisionProgressReporterWritesOnlyStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	report, reportErr := provisionProgressReporter(&stderr)
+	report(opentunnel.StageCreatingTunnel)
+	if err := reportErr(); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if got, want := stderr.String(), "creating-tunnel\n"; got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
+}
+
+type interactiveConnectionFixture struct {
+	routes []opentunnel.Routes
+}
+
+func (c *interactiveConnectionFixture) Status() opentunnel.Status {
+	return opentunnel.Status{State: "connected"}
+}
+func (c *interactiveConnectionFixture) SetRoutes(routes opentunnel.Routes) error {
+	c.routes = append(c.routes, routes)
+	return nil
+}
+
+func TestInteractiveCommandErrorKeepsSessionAndJSONStdoutClean(t *testing.T) {
+	connection := &interactiveConnectionFixture{}
+	var stdout, stderr bytes.Buffer
+	quit, err := processInteractiveCommand(connection, "routes malformed", true, &stdout, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quit {
+		t.Fatal("malformed route quit the session")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("malformed command wrote stdout: %q", stdout.String())
+	}
+	if got := stderr.String(); !strings.Contains(got, "interactive:") || !strings.Contains(got, "name=host:port") {
+		t.Fatalf("stderr = %q", got)
+	}
+	quit, err = processInteractiveCommand(connection, "routes @=127.0.0.1:8080", true, &stdout, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quit || len(connection.routes) != 1 {
+		t.Fatalf("post-error command quit=%t routes=%v", quit, connection.routes)
+	}
+}
+
+func TestInteractiveQuitIsClean(t *testing.T) {
+	quit, err := processInteractiveCommand(&interactiveConnectionFixture{}, "quit", false, io.Discard, io.Discard)
+	if err != nil || !quit {
+		t.Fatalf("quit=%t err=%v", quit, err)
+	}
+}
+
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestInteractiveOutputFailurePropagates(t *testing.T) {
+	want := errors.New("stdout unavailable")
+	_, err := processInteractiveCommand(&interactiveConnectionFixture{}, "status", false, failingWriter{err: want}, io.Discard)
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want %v", err, want)
 	}
 }
 

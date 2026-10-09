@@ -43,20 +43,55 @@ Route targets define where plaintext travels. `127.0.0.1:port` stays on the loca
 host; a LAN or Internet target exposes application bytes on that network path.
 Endpoint processes, logs, and compromised endpoints can expose plaintext too.
 
+The relay proposes a route for each channel, but the client verifies it against
+the visitor's TLS ClientHello. SNI must select the same route name. Missing
+SNI, a mismatched route, or an unrelated hostname is rejected before plaintext
+reaches a target. Expired and not-yet-valid certificates are also rejected at
+the visitor handshake.
+
+## API transport
+
+Use HTTPS for any non-local API. Plain HTTP is accepted only for exact
+`localhost` or a literal loopback IP. Names that merely resolve to loopback do
+not qualify. Redirects must remain at the initial origin: scheme, case-insensitive hostname,
+and effective port. Cross-origin redirects, subdomains, port changes, and HTTPS
+downgrades are rejected before another request, including after a caller hook
+changes the URL. A supplied `http.Client` is cloned. Its transport, cookie jar,
+and redirect hook remain trusted code with access to credentials.
+
 ## Credential and TLS safeguards
 
 - Generate private keys locally; never send them to the API.
 - Keep tokens and private keys out of logs, shared files, and struct formatting.
-  `Identity` and `PendingIdentity` omit those fields from JSON.
-- Restrict storage to the account running the app. Unix directories use `0700`
-  and credential files use `0600`. A profile name is not a security boundary.
+  `Identity` and `PendingIdentity` omit those fields from JSON and redact them
+  through `fmt` and `slog`. Their exported fields still contain the secrets;
+  explicit field access, reflection, or a custom serializer can expose them.
+- Restrict storage to the account running the app. New Unix roots and profiles
+  use `0700`; credential files written by the file store use `0600`. Existing
+  roots are left unchanged if group/others cannot write them, while
+  group/other-writable roots are rejected. Profiles secured by a write are
+  `0700`, so a read/traverse-only `0755` parent does not expose their credentials.
+  A load does not repair imported file modes; audit existing storage first. A
+  profile name is not a security boundary.
 - Use normal HTTPS certificate verification for the API and bridge. The client
   has no flag to disable it.
 - Visitor TLS requires TLS 1.2 or newer. ECDSA keys restrict TLS 1.2 to
   forward-secret ECDHE suites; TLS 1.3 uses ephemeral key exchange.
 
 Use `NewFileStorage` for an application-owned protected directory, or
-`NewXDGStorage` for the compatible default. Local tests check ciphertext at the
-relay, certificate/key/SAN validation, and credential redaction. Those tests
-establish the implemented boundaries; they are not an independent security audit
-of the hosted service.
+`NewXDGStorage` for the compatible default. On Windows, Unix mode bits do not
+provide this protection; configure an appropriate ACL for the application
+account.
+
+`Storage.Remove` requires a regular completion or pending marker and removes
+only known credential filenames. It preserves unmarked directories and unrelated
+contents. The file store still uses path-based check-then-use operations, leaving
+a same-user race, and replaces credential files individually, leaving a crash
+consistency window. Do not treat it as protection from another process running as
+the same account.
+
+Local tests check ciphertext at the relay, SNI route isolation,
+certificate/key/SAN validation, API redirect policy, credential redaction, and
+storage deletion boundaries. Those tests establish local behavior; they are not
+an independent audit or current live revalidation of the hosted service. See the
+[hardening guide](HARDENING.md) and the dated [live record](LIVE_TESTING.md).

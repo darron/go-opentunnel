@@ -199,7 +199,7 @@ func (s *relaySession) nextControl(t *testing.T, kind string) controlMessage {
 	}
 }
 
-func (s *relaySession) public(t *testing.T, id uint32, sni string) *tls.Conn {
+func (s *relaySession) publicRaw(t *testing.T, id uint32, sni string) net.Conn {
 	t.Helper()
 	listener, e := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if e != nil {
@@ -260,7 +260,13 @@ func (s *relaySession) public(t *testing.T, id uint32, sni string) *tls.Conn {
 			}
 		}
 	}()
-	secure := tls.Client(public, &tls.Config{RootCAs: s.fixture.api.authority.roots, ServerName: sni, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}})
+	t.Cleanup(func() { _ = public.Close() })
+	return public
+}
+
+func (s *relaySession) public(t *testing.T, id uint32, sni string) *tls.Conn {
+	t.Helper()
+	secure := tls.Client(s.publicRaw(t, id, sni), &tls.Config{RootCAs: s.fixture.api.authority.roots, ServerName: sni, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}})
 	_ = secure.SetDeadline(time.Now().Add(5 * time.Second))
 	if e := secure.HandshakeContext(t.Context()); e != nil {
 		_ = secure.Close()
@@ -721,6 +727,21 @@ func TestTunnelStalledChannelDoesNotBlockHealthyChannel(t *testing.T) {
 	}
 	if x.Status().State != "connected" {
 		t.Fatal("overflow killed bridge")
+	}
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case event := <-x.Events():
+			if event.Type == "connection-closed" && event.Conn == 1 {
+				if event.Error != ErrInboundLimit.Error() {
+					t.Fatalf("overflow diagnostic: %+v", event)
+				}
+				return
+			}
+		case <-timer.C:
+			t.Fatal("overflow closure event missing")
+		}
 	}
 }
 

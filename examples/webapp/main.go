@@ -57,7 +57,7 @@ func run() error {
 		return err
 	}
 	defer func() { _ = client.Close() }()
-	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: *profile, Routes: opentunnel.Routes{"@": *addr}})
+	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: *profile, Routes: opentunnel.Routes{"@": *addr}, Lifetime: ctx})
 	if err != nil {
 		return err
 	}

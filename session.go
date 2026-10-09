@@ -30,6 +30,7 @@ type session struct {
 	channels      map[uint32]*channel
 	wg            sync.WaitGroup
 	workers       sync.WaitGroup
+	attachedAt    time.Time
 	attached      atomic.Bool
 	routesChanged atomic.Bool
 	lastReceived  atomic.Int64
@@ -110,6 +111,7 @@ func (s *session) run() error {
 		}
 	}
 	cancel()
+	s.attachedAt = time.Now()
 	s.attached.Store(true)
 	s.lastReceived.Store(time.Now().UnixNano())
 	s.owner.mu.Lock()
@@ -119,7 +121,7 @@ func (s *session) run() error {
 	s.owner.status.ConnectedAt = time.Now()
 	s.owner.mu.Unlock()
 	s.owner.emit(Event{Type: "connected", Session: reply.Session, Routes: append([]string(nil), reply.Routes...)})
-	s.owner.readyOnce.Do(func() { close(s.owner.ready) })
+	s.owner.markReady()
 	s.workers.Add(2)
 	go func() { defer s.workers.Done(); s.writer() }()
 	go func() { defer s.workers.Done(); s.heartbeat(reply.HeartbeatMS, reply.IdleTimeoutMS) }()
@@ -141,7 +143,7 @@ func (s *session) run() error {
 			ch := s.channels[id]
 			s.mu.Unlock()
 			if ch != nil && !ch.raw.push(payload) {
-				ch.abort(errors.New("inbound channel buffer limit exceeded"))
+				ch.abort(ErrInboundLimit)
 			}
 			continue
 		}

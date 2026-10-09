@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,25 +15,31 @@ import (
 // Events are bounded and lossy; Status gives the current state. Done closes after
 // all workers exit.
 type Connection struct {
-	client     *Client
-	profile    string
-	ctx        context.Context
-	cancel     context.CancelFunc
-	stopParent func() bool
-	mu         sync.Mutex
-	identity   Identity
-	cert       *tls.Certificate
-	routes     Routes
-	status     Status
-	session    *session
-	events     chan Event
-	ready      chan struct{}
-	readyOnce  sync.Once
-	done       chan struct{}
-	wake       chan struct{}
-	err        error
+	client          *Client
+	profile         string
+	ctx             context.Context
+	cancel          context.CancelFunc
+	stopParent      func() bool
+	mu              sync.Mutex
+	identity        Identity
+	cert            *tls.Certificate
+	routes          Routes
+	status          Status
+	session         *session
+	events          chan Event
+	ready           chan struct{}
+	readyOnce       sync.Once
+	done            chan struct{}
+	wake            chan struct{}
+	err             error
+	closeRequested  atomic.Bool
+	recoveryPending atomic.Bool
 }
 
+// Connect provisions and attaches a tunnel. ctx bounds startup only; cancel it
+// after return without stopping the tunnel. Set Lifetime for context-owned shutdown.
+// Expired identities attach to trigger server renewal, but readiness waits for a
+// valid certificate. Overlapping routes within one client return ErrRouteInUse.
 func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, error) {
 	if len(o.Routes) == 0 {
 		return nil, fmt.Errorf("%w: at least one initial route is required", ErrInvalid)
@@ -49,22 +56,41 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 		return nil, e
 	}
 	defer end()
+	if o.Lifetime != nil {
+		if err := o.Lifetime.Err(); err != nil {
+			return nil, err
+		}
+		startup, cancelStartup := context.WithCancel(opctx)
+		stopLifetime := context.AfterFunc(o.Lifetime, cancelStartup)
+		defer func() { stopLifetime(); cancelStartup() }()
+		opctx = startup
+	}
 	unlock, e := c.lockProfile(opctx, p)
 	if e != nil {
 		return nil, e
 	}
-	id, e := c.ensure(opctx, p)
+	c.mu.Lock()
+	e = c.checkRouteClaims(p, o.Routes, nil)
+	c.mu.Unlock()
 	if e != nil {
 		unlock()
 		return nil, e
 	}
-	cert, e := parseCertificate(*id)
+	id, e := c.ensure(opctx, p, true)
 	if e != nil {
 		unlock()
 		return nil, e
 	}
-	// Keep the caller's context for the full lifetime, including reconnects.
-	life, cancel := context.WithCancel(ctx)
+	cert, e := parseCertificateMaterial(*id)
+	if e != nil {
+		unlock()
+		return nil, e
+	}
+	parent := o.Lifetime
+	if parent == nil {
+		parent = c.ctx
+	}
+	life, cancel := context.WithCancel(parent)
 	x := &Connection{client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	x.status = Status{State: "connecting", Hostname: id.Hostname, Routes: copyRoutes(o.Routes)}
 	x.stopParent = context.AfterFunc(c.ctx, cancel)
@@ -76,6 +102,13 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 		x.stopParent()
 		return nil, ErrClosed
 	}
+	if e := c.checkRouteClaims(p, o.Routes, nil); e != nil {
+		c.mu.Unlock()
+		unlock()
+		cancel()
+		x.stopParent()
+		return nil, e
+	}
 	c.connections[x] = p
 	c.wg.Add(1)
 	c.mu.Unlock()
@@ -83,6 +116,10 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 	go x.run()
 	select {
 	case <-x.ready:
+		if e := opctx.Err(); e != nil {
+			_ = x.Close()
+			return nil, e
+		}
 		if e := x.Err(); e != nil {
 			_ = x.Close()
 			return nil, e
@@ -106,10 +143,21 @@ func copyRoutes(r Routes) Routes {
 	}
 	return out
 }
-func (x *Connection) Identity() Identity    { x.mu.Lock(); defer x.mu.Unlock(); return x.identity }
-func (x *Connection) Events() <-chan Event  { return x.events }
+
+// Identity returns a copy of the current identity, including credentials.
+func (x *Connection) Identity() Identity { x.mu.Lock(); defer x.mu.Unlock(); return x.identity }
+
+// Events returns the bounded, lossy event stream, closed when Done closes.
+func (x *Connection) Events() <-chan Event { return x.events }
+
+// Done closes after bridge, channel, and certificate-refresh workers exit.
 func (x *Connection) Done() <-chan struct{} { return x.done }
-func (x *Connection) Err() error            { x.mu.Lock(); defer x.mu.Unlock(); return x.err }
+
+// Err reports the terminal error after Done closes. Requested Close returns nil;
+// explicit Lifetime cancellation returns its context error.
+func (x *Connection) Err() error { x.mu.Lock(); defer x.mu.Unlock(); return x.err }
+
+// Status returns a snapshot with a copied route map. LastError is diagnostic text.
 func (x *Connection) Status() Status {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -117,12 +165,19 @@ func (x *Connection) Status() Status {
 	s.Routes = copyRoutes(x.routes)
 	return s
 }
-func (x *Connection) Close() error { x.cancel(); <-x.done; return nil }
+
+// Close stops the connection and joins its workers. A requested close leaves Err nil.
+func (x *Connection) Close() error { x.closeRequested.Store(true); x.cancel(); <-x.done; return nil }
 
 // SetRoutes updates targets for new channels. Name changes reattach asynchronously
 // and close existing channels when the session changes.
 func (x *Connection) SetRoutes(routes Routes) error {
 	if e := ValidateRoutes(routes); e != nil {
+		return e
+	}
+	x.client.mu.Lock()
+	defer x.client.mu.Unlock()
+	if e := x.client.checkRouteClaims(x.profile, routes, x); e != nil {
 		return e
 	}
 	x.mu.Lock()
@@ -218,7 +273,7 @@ func (x *Connection) run() {
 			terminal = err
 			break
 		}
-		if s.attached.Load() {
+		if s.attached.Load() && time.Since(s.attachedAt) >= x.client.options.BackoffMax {
 			attempt = 0
 		}
 		if err == nil {
@@ -237,8 +292,11 @@ func (x *Connection) run() {
 		}
 		timer.Stop()
 	}
-	if terminal == nil && x.ctx.Err() != nil {
+	if terminal == nil {
 		terminal = x.ctx.Err()
+		if errors.Is(terminal, context.Canceled) && (x.closeRequested.Load() || x.client.ctx.Err() != nil) {
+			terminal = nil
+		}
 	}
 	x.cancel()
 	<-refreshDone
@@ -289,55 +347,157 @@ func (x *Connection) backoff(attempt int) time.Duration {
 	return d/2 + time.Duration(rand.Float64()*float64(d-d/2))
 }
 
+// checkRouteClaims requires c.mu. SetRoutes takes c.mu before any connection lock.
+func (c *Client) checkRouteClaims(profile string, routes Routes, except *Connection) error {
+	for other, p := range c.connections {
+		if p != profile || other == except || other.ctx.Err() != nil {
+			continue
+		}
+		other.mu.Lock()
+		var conflict string
+		for name := range routes {
+			if _, ok := other.routes[name]; ok {
+				conflict = name
+				break
+			}
+		}
+		other.mu.Unlock()
+		if conflict != "" {
+			return fmt.Errorf("%w: %q", ErrRouteInUse, conflict)
+		}
+	}
+	return nil
+}
+
+func (x *Connection) markReady() {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if x.session == nil || !x.session.attached.Load() || x.session.ctx.Err() != nil {
+		return
+	}
+	if !time.Now().Before(x.cert.Leaf.NotAfter) {
+		x.status.State = "waiting-certificate"
+		x.status.LastError = ErrCertificateExpired.Error()
+		return
+	}
+	x.status.State = "connected"
+	x.status.LastError = ""
+	x.readyOnce.Do(func() { close(x.ready) })
+}
+
 func (x *Connection) refresh() {
+	var warned, expired string
 	for x.ctx.Err() == nil {
+		id := x.Identity()
+		untilExpiry := time.Until(id.CertificateExpiry)
+		if untilExpiry <= 30*24*time.Hour && warned != id.Certificate {
+			warned = id.Certificate
+			x.emit(Event{Type: "certificate-expiring", Expiry: id.CertificateExpiry})
+		}
+		if untilExpiry <= 0 && expired != id.Certificate {
+			expired = id.Certificate
+			x.markReady()
+			x.emit(Event{Type: "certificate-expired", Expiry: id.CertificateExpiry, Error: ErrCertificateExpired.Error()})
+		}
 		if err := x.refreshOnce(); err != nil && x.ctx.Err() == nil {
 			x.emit(Event{Type: "certificate-refresh-failed", Error: err.Error()})
 		}
-		id := x.Identity()
+		id = x.Identity()
+		untilExpiry = time.Until(id.CertificateExpiry)
 		interval := x.client.options.CertificateRefreshInterval
-		if time.Until(id.CertificateExpiry) <= 30*24*time.Hour {
-			interval = x.client.options.CertificateDueInterval
+		if untilExpiry <= 0 {
+			interval = x.client.options.CertificatePollInterval
+		} else {
+			if untilExpiry <= 30*24*time.Hour {
+				interval = x.client.options.CertificateDueInterval
+			}
+			if interval > untilExpiry {
+				interval = untilExpiry
+			}
+		}
+		if x.recoveryPending.Load() && interval > x.client.options.CertificatePollInterval {
+			interval = x.client.options.CertificatePollInterval
+		}
+		if retry := time.Until(x.client.recoveryDeadline(x.profile)); retry > 0 && interval > retry {
+			interval = retry
 		}
 		if sleepContext(x.ctx, interval) != nil {
 			return
 		}
 	}
 }
+
 func (x *Connection) refreshOnce() error {
-	un, t := x.client.lockProfile(x.ctx, x.profile)
-	if t != nil {
-		return t
+	unlock, err := x.client.lockProfile(x.ctx, x.profile)
+	if err != nil {
+		return err
 	}
-	defer un()
-	if e := x.ctx.Err(); e != nil {
-		return e
+	defer unlock()
+	if err := x.ctx.Err(); err != nil {
+		return err
 	}
 	id := x.Identity()
-	remote, e := x.client.api.Certificate(x.ctx, id.ID, id.Token)
-	if e != nil {
-		return e
+	remote, err := x.client.api.Certificate(x.ctx, id.ID, id.Token)
+	if err != nil {
+		return err
 	}
-	if remote.State.Type != "ready" {
+	if remote.State.Type == "failed" {
+		x.recoveryPending.Store(false)
+		return x.startCertificateRecovery(id)
+	}
+	if remote.State.Type == "challenge" || remote.State.Type == "issuing" {
+		x.recoveryPending.Store(true)
 		return nil
 	}
+	x.recoveryPending.Store(false)
 	if remote.State.Certificate == id.Certificate {
 		return nil
 	}
 	id.Certificate = remote.State.Certificate
 	id.Chain = remote.State.Chain
 	id.CertificateExpiry = remote.State.Expiry
-	cert, e := parseCertificate(id)
-	if e != nil {
-		return e
+	cert, err := parseCertificate(id)
+	if err != nil {
+		return err
 	}
-	if e := x.client.store.Save(x.ctx, x.profile, id); e != nil {
-		return e
+	id.CertificateExpiry = cert.Leaf.NotAfter
+	if err := x.client.store.Save(x.ctx, x.profile, id); err != nil {
+		return err
 	}
 	x.mu.Lock()
 	x.identity = id
 	x.cert = cert
 	x.mu.Unlock()
+	x.client.recoveryAfter.Delete(x.profile)
+	x.markReady()
 	x.emit(Event{Type: "certificate-renewed", Expiry: id.CertificateExpiry})
+	return nil
+}
+
+// startCertificateRecovery requires the profile lock. Submit once, then release
+// it; refresh polls on later iterations so stuck issuance cannot block Remove.
+func (x *Connection) startCertificateRecovery(id Identity) error {
+	if time.Now().Before(x.client.recoveryDeadline(x.profile)) {
+		return ErrCertificateIssuance
+	}
+	csr, err := requestForExistingKey(id.Hostname, id.PrivateKey)
+	if err != nil {
+		return err
+	}
+	pending := PendingIdentity{ID: id.ID, Hostname: id.Hostname, Token: id.Token, PrivateKey: id.PrivateKey, CSR: csr}
+	if err := x.client.store.SavePending(x.ctx, x.profile, pending); err != nil {
+		return err
+	}
+	// Record even an unsuccessful request: a timeout may hide a successful bind.
+	x.client.recoveryAfter.Store(x.profile, time.Now().Add(x.client.options.CertificateRetryInterval))
+	_, err = x.client.api.BindCertificate(x.ctx, id.ID, id.Token, csr)
+	if err != nil {
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Tag != "CertificateInProgressError" {
+			return err
+		}
+	}
+	x.recoveryPending.Store(true)
+	x.emit(Event{Type: "certificate-recovery-started"})
 	return nil
 }

@@ -128,3 +128,74 @@ long-running production behavior.
 | Hosted operator and infrastructure | No independent audit; deployed revision unknown |
 
 Read [SECURITY.md](SECURITY.md) for the domain/certificate operator trust boundary.
+
+
+## Post-hardening CLI and app retest
+
+**Passed the listed functional checks on 2026-10-09**, after the final redirect
+and certificate-recovery changes. `make check` rebuilt both binaries. These
+checks supplement the earlier exercise above; they used dedicated profiles in
+private temporary storage and did not touch existing applications.
+
+Two complete CLI/app traffic runs each used three new identities: a CLI identity
+resumed after cancellation, an identity provisioned by the embedded app, and an
+identity deleted while pending. All six were removed. All test processes stopped,
+local `profiles`/`list` were empty, and `get`/`pending` returned `null`.
+
+### Provisioning and CLI
+
+| Check | Result |
+| --- | --- |
+| Cancel create | Stopped at `requesting-certificate`; exited 0 and preserved pending credentials |
+| Resume and reuse | `resume` completed issuance; `get` and `ensure` retained the tunnel ID; subsequent `resume`/`pending` returned null |
+| Inspection and conflict | `profiles`/`list` matched storage; repeated `create` exited 1; `inspect` tracked offline/online/offline |
+| JSON and input errors | Public views omitted token/key fields; `stauts` and malformed `routes` reported to stderr while HTTPS stayed usable |
+| Open-stdin shutdown | `quit` and SIGINT exited 0; a 3-second command deadline exited 1 with `context deadline exceeded`; remote state became offline |
+
+### Traffic and routes
+
+| Check | Result |
+| --- | --- |
+| HTTPS and streaming | Root matched the loopback app with normal public trust; all three stream lines arrived incrementally, more than 250 ms from first to last |
+| WSS | Text and binary messages of 16,000 bytes each echoed exactly, then closed normally |
+| POST echo | Named target returned an exact 2 MiB payload and eight concurrent 256 KiB payloads |
+| Route updates | Named attachment, target-only replacement, empty-route suspension, and restored root all worked |
+| Failed backend isolation | A closed named-target port failed that request while root kept serving |
+
+### Embedded app and cleanup
+
+| Check | Result |
+| --- | --- |
+| Local-only app | Root served correctly; SIGINT exited 0 |
+| App-owned tunnel | Without `--local-only`, the rebuilt app provisioned its own identity, served public HTTPS/stream/WSS, and exited 0 on SIGINT |
+| Pending deletion | `remove` released the pending identity and removed its local credentials |
+| Repeated removal | Every dedicated profile removed successfully; repeated removal was idempotent |
+| Remote confirmation | A Go API consumer returned HTTP 404 for each of the four completed IDs after deletion |
+
+The temporary Python harness initially reported a failure in its extra cleanup
+probe: raw Python API requests returned HTTP 403 when it expected 404. CLI
+removal had already succeeded and storage was empty. The confirmation was rerun
+through the package's Go API transport and returned 404 for every completed
+identity. The reason for the Python-specific rejection was not established;
+this is a harness correction, not evidence of a package failure.
+
+### Final local checks
+
+```sh
+make check
+go test -race ./... -count=1
+GOTOOLCHAIN=go1.25.0 go test ./... -count=1
+go test -race ./cmd/otgo -count=3
+make fuzz
+```
+
+All passed, with golangci-lint **0 issues**. Focused hardening races passed five
+repetitions; follow-up review's redirect/recovery races passed ten. Overflow
+and startup-lifetime cancellation regressions passed five repetitions each.
+Linux/Windows amd64 cross-compilation passed locally.
+
+Long-term renewal, malformed relay controls, overflow, fatal attachment codes,
+and forced server drain still rely on fixture evidence. A forced bridge loss
+was exercised in the earlier record, not re-induced in this final live pass.
+The hosted service's deployed revision remains unknown. See
+[HARDENING.md](HARDENING.md) for dispositions and remaining limits.

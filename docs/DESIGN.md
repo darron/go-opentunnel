@@ -72,25 +72,38 @@ Go methods map directly to the upstream SDK operations.
 - `ClientOptions` accepts an API base URL, storage, HTTP client, request timeout,
   and bounded transport settings. Defaults use `https://opentunnel.xyz` and XDG
   storage. Request, handshake, local dial, and write timeouts are finite.
+  `TransportOptions.IdleTimeout` is optional and defaults to disabled.
 - `Routes` maps names to `host:port`. Caller maps are copied; identities, routes,
   and status return snapshots. Events and typed errors support structured handling,
   including `errors.Is`/`errors.As`, API status/tag, and attach code.
 - The package needs no logger, CLI output, signals, or process exit. HTTP-client
   customization also applies to WebSocket dialing where supported by the dependency.
+- JSON omits zero `Event.Expiry`, `Status.ConnectedAt`, and
+  `CertificateState.Expiry`. `Event.Delay` is a `time.Duration`; JSON encodes it
+  as integer nanoseconds.
 
 ### Connection lifetime
 
-`Connect` validates inputs before provisioning, ensures an identity, and returns
-after the first successful attachment. Its context controls the entire lifetime,
-including provisioning and reconnects.
+`Connect` validates inputs, ensures an identity, and returns after the first
+successful attachment with a valid certificate. The `ctx` argument bounds this
+startup sequence only. Cancelling it after `Connect` returns does not stop the
+connection.
+
+Set `ConnectOptions.Lifetime` to make another context own the running tunnel.
+When it is nil, stop the tunnel with `Connection.Close` or `Client.Close`.
+Cancelling an explicit lifetime closes `Done` and records the cancellation in
+`Err`.
 
 Initial routes must be nonempty. Once connected, `SetRoutes` can clear them;
 state becomes `waiting-routes` until routes are added.
 
-A client supports multiple profiles and sessions. Same-profile provisioning and
-deletion are serialized within that client. `Client.Close` cancels and joins its
-owned operations and connections. `Connection.Close` is idempotent and waits for
-transport, certificate refresh, and forwarding workers before completion.
+A client supports multiple profiles and sessions. It may run multiple
+connections for one profile when their route-name sets are disjoint. An overlap
+at `Connect` or `SetRoutes` returns `ErrRouteInUse`; a rejected update leaves the
+old route snapshot active. Same-profile provisioning and deletion are serialized
+within that client. `Client.Close` cancels and joins its owned operations and
+connections. `Connection.Close` is idempotent, returns with `Err() == nil` for a
+normal requested close, and joins transport, refresh, and forwarding workers.
 Events close on shutdown; `Done` closes after workers exit.
 
 Lifecycle calls after client close return an error. Connection snapshots remain
@@ -111,6 +124,13 @@ responses, and preserves upstream error tags. It closes response bodies and keep
 request deadlines active through consumption. Errors and CLI output omit tokens,
 private keys, and raw error response bodies. `Client.API().Get` enables remote
 inspection using a stored identity's ID and token.
+
+Use HTTPS for remote API bases. Plain HTTP is accepted only for exact
+`localhost` or a literal loopback IP such as `127.0.0.1` or `::1`; loopback-like
+DNS names are rejected without resolution. The package clones a supplied
+`http.Client`, requires every redirect to stay at the initial origin (scheme, hostname, effective
+port), both before and after invoking the caller's redirect hook. A supplied
+transport, cookie jar, or hook is trusted with credentials.
 
 ## Certificate provisioning
 
@@ -138,6 +158,17 @@ client's sessions for that profile. Renewal and deletion share the profile lock
 so renewal cannot recreate a removed identity. Confirmed remote deletion uses a
 bounded cleanup context even if the caller cancels.
 
+`Connect` can attach an expired stored identity because the hosted protocol uses
+attachment to trigger server-side renewal. It does not report startup success
+until refresh installs a valid certificate. Visitor handshakes reject expired or
+not-yet-valid certificates. A runtime `failed` issuance state resubmits a CSR
+with the existing tunnel ID and private key, at most once per hour per profile
+within this client by default (`CertificateRetryInterval`). Each background
+poll releases the profile lock; stuck issuance cannot hold it indefinitely and
+prevent removal. A merely near-expiry certificate
+does not cause a CSR submission: the inspected upstream protocol expects the
+server to renew it.
+
 ## Storage
 
 The context-aware `Storage` interface provides `Profiles`, `Load`, `Save`,
@@ -164,7 +195,14 @@ $XDG_DATA_HOME/opentunnel/<profile>/
 
 Use the fallback root above when `XDG_DATA_HOME` is unset.
 
-- Unix directories use `0700`; files use `0600`.
+- Profile directories secured by a write use `0700`; credential files written
+  by the file store use `0600`. Loading imported files does not validate or
+  repair their modes, so audit existing storage before use.
+- A newly created storage root is `0700`. A pre-existing Unix root is never
+  chmod'd: read/traverse-only group or other access is allowed because profiles
+  created or secured by a write are `0700`, while group/other write access is
+  rejected. Windows does not enforce these Unix mode bits; the caller must apply
+  suitable ACLs.
 - Writes use private temporary files and atomic per-file replacement. Metadata
   is written last as the completion marker; a completed save removes pending metadata.
 - Missing identities differ from corrupt or incomplete ones. Read failures do
@@ -172,9 +210,25 @@ Use the fallback root above when `XDG_DATA_HOME` is unset.
 - Profile traversal, symlinked profile directories, and symlinked credential
   files are rejected. Writes also reject a symlinked storage root. Profile and
   tunnel listings are sorted.
+- `Remove` requires a regular `tunnel.json` or `pending.json` marker. It removes
+  only the six known credential files and removes the profile directory only
+  when empty. Unmarked label-shaped directories and unrelated contents inside a
+  marked profile are preserved; unsafe markers fail before deletion.
 - Provisioning across clients/processes requires caller coordination; the file
   format has no cross-process transaction. Memory identities cannot be recovered
   after exit: explicitly remove temporary remote tunnels before losing credentials.
+
+Custom `Storage` implementations must preserve the same state transition:
+`Save` successfully stores the completed identity, then clears pending state
+for that profile. Do not use `json.Marshal` on an `Identity` as a persistence
+format: JSON intentionally omits `Token` and `PrivateKey`. Persist every required
+field explicitly, honor cancellation and concurrent calls, and return `(nil,
+nil)` for missing loads.
+
+File access remains path-based. The symlink checks reduce accidental traversal
+but retain a same-user check-then-use race. Saves replace files individually, so
+a process or machine crash can leave a mixed credential generation. These limits
+require an `os.OpenRoot`-style conversion and a transactional format to remove.
 
 ## Bridge framing and controls
 
@@ -218,6 +272,11 @@ selected TCP target. ALPN advertises HTTP/1.1 rather than HTTP/2 for ordinary
 HTTP/1.1 targets. Streaming, application WebSocket upgrades, and arbitrary
 post-TLS application bytes are preserved.
 
+The relay-selected route does not authorize the channel by itself. During the
+TLS handshake, the visitor's ClientHello SNI must map to that same route. A
+missing SNI, a different route name, a deeper hostname, or an unrelated hostname
+fails the handshake before the local target is dialed.
+
 Handshake or upstream dial failure resets only that channel. Connection limits
 are enforced before allocating channel TLS state. Duplicate IDs abort the
 existing channel rather than silently replacing it.
@@ -226,6 +285,12 @@ A single ordered writer uses a 32-message queue of at most 32 KiB payloads,
 approximately 1 MiB. Each channel has an 8 MiB inbound cap. Overflow resets the
 channel without blocking the bridge reader; blocked writes stop local reads.
 Events use a bounded, lossy queue with a dropped-event counter.
+
+Set `TransportOptions.IdleTimeout` to close a channel after that duration with no
+application bytes in either direction. Zero disables it. Use a value longer than
+valid quiet periods for streaming or long-lived protocols. Independently, a
+large upload to a slow local target can fill `MaxInboundBytes` and be reset even
+while the bridge and other channels remain healthy.
 
 The protocol has no per-channel flow control: sustained outbound pressure can
 delay unrelated channels. See [resource limits](IMPLEMENTATION.md#default-resource-limits)
@@ -241,15 +306,25 @@ workers, including blocked upstream sockets.
 | Trigger | Behavior |
 | --- | --- |
 | `bad_token` / `cert_not_ready` attach code | Stops the connection with a typed error |
-| Other attach errors, socket loss, heartbeat timeout, drain | Retries with jittered exponential backoff, 250 ms to 30 s; successful attachment resets backoff; cancellation interrupts it |
+| Other attach errors, socket loss, heartbeat timeout, drain | Retries with jittered exponential backoff, 250 ms to 30 s; an attached session lasting at least `BackoffMax` resets backoff; cancellation interrupts it |
 | Target-only route change | New channels use the new target; existing channels retain theirs |
 | Added/removed route name | Reattaches and closes the previous session's channels; `SetRoutes` returns before replacement attachment finishes |
-| Certificate refresh | Runs on connect, then every 12 hours, or every minute within the 30-day renewal window |
+| Certificate refresh | Runs on connect, then every 12 hours, every minute within the 30-day renewal window, or at the certificate poll interval after expiry |
 
 Renewal reuses the existing key, validates and saves the new certificate, and
 emits an event. New TLS connections use it; established connections continue.
 Transient refresh failures remain observable and retain the last valid
 certificate. Shutdown stops refresh work.
+
+The client emits `certificate-expiring`, `certificate-expired`,
+`certificate-recovery-started`, `certificate-refresh-failed`, and
+`certificate-renewed` events as applicable.
+An expired certificate cannot complete a visitor handshake. A `failed` remote
+state rebinds a CSR with the same key; ordinary near-expiry polling waits for
+server renewal and does not submit a new CSR. Pending issuance uses
+`CertificatePollInterval`; failed-issuance retries share a per-profile cooldown
+within this client. Installing a valid replacement clears that cooldown. The
+cooldown is in memory, so restarting the client resets it.
 
 ## CLI, examples, and verification
 
@@ -264,7 +339,9 @@ the test target. See [TESTING.md](TESTING.md) for runnable commands,
 [VERIFICATION.md](VERIFICATION.md) for local evidence, and
 [LIVE_TESTING.md](LIVE_TESTING.md) for hosted interoperability results and gaps.
 The [security model](SECURITY.md) distinguishes relay encryption, metadata,
-endpoint plaintext, and active domain/certificate operator impersonation.
+endpoint plaintext, and active domain/certificate operator impersonation. The
+[hardening guide](HARDENING.md) collects the current review changes and remaining
+limits.
 
 ## Scope
 

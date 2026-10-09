@@ -37,8 +37,9 @@ func serveTunnel(ctx context.Context) error {
     defer client.Close()
 
     connection, err := client.Connect(ctx, opentunnel.ConnectOptions{
-        Profile: "demo",
-        Routes:  opentunnel.Routes{"@": "127.0.0.1:8080"},
+        Profile:  "demo",
+        Routes:   opentunnel.Routes{"@": "127.0.0.1:8080"},
+        Lifetime: ctx,
     })
     if err != nil {
         return err
@@ -55,18 +56,27 @@ Run it with `go run ./examples/webapp`; it creates and owns its tunnel connectio
 
 Use these contracts when embedding:
 
-- **Lifetime:** `Connect` returns after its first successful attachment. Its
-  context controls provisioning, reconnects, and shutdown. `Client.Close` joins
-  all work it owns; `Connection.Close` joins one connection's workers.
+- **Lifetime:** the `Connect` context bounds startup only. Set
+  `ConnectOptions.Lifetime` when application shutdown should stop the running
+  tunnel. Otherwise call `Connection.Close`; `Client.Close` stops every
+  connection owned by that client.
+- **Routes:** one client may run disjoint route names for the same profile.
+  Overlapping names return `ErrRouteInUse`, including conflicting `SetRoutes`
+  updates.
 - **Storage:** `NewFileStorage(root)` uses your directory; `NewXDGStorage()` uses
   the upstream-compatible data directory. Memory storage lasts only for the
   process. Coordinate same-profile provisioning across clients or processes.
 - **Events:** delivery is bounded and lossy. Use `Status()` for current state
   and `Status().DroppedEvents` to detect missed events.
 - **Traffic:** buffers are bounded. The relay protocol has no per-channel flow
-  control, so sustained outbound backpressure can delay other channels.
-- **Credentials:** identity JSON omits tokens and private keys. Keep the stored
-  files private. Read the [security model](docs/SECURITY.md) before exposing an app.
+  control, so sustained outbound backpressure can delay other channels. Optional
+  `TransportOptions.IdleTimeout` is disabled by default.
+- **Credentials:** JSON, `fmt`, and `slog` representations of `Identity` and
+  `PendingIdentity` redact tokens and private keys. Their exported fields still
+  contain live secrets. Other API response types may also carry credentials;
+  keep them private and read the [security model](docs/SECURITY.md).
+- **API transport:** use HTTPS except for exact `localhost` or literal loopback
+  addresses. Redirects must keep the same scheme, hostname, and effective port.
 
 See the [API mapping](docs/DESIGN.md#public-package-and-api) for lifecycle,
 connection, storage, and remote-inspection operations.
@@ -115,9 +125,12 @@ make fuzz
 ```
 
 Local tests cover the API, storage, protocol, TLS forwarding, concurrency, and CLI.
-The public service was also exercised on **2026-10-09**: provisioning, HTTPS/WSS,
-streaming, large and concurrent transfers, route changes, reconnection, embedding,
-shutdown, and deletion passed.
+The **2026-10-09** public-service records cover provisioning, HTTPS/WSS,
+streaming, large and concurrent transfers, route changes, embedding, shutdown,
+and deletion. The final CLI and embedded-app retest ran after the hardening
+changes; the earlier run also exercised a forced bridge reconnect.
 
 Read the [local results](docs/VERIFICATION.md) and
-[live results and limits](docs/LIVE_TESTING.md) for the evidence.
+[live results and limits](docs/LIVE_TESTING.md) for the evidence. See the
+[hardening guide](docs/HARDENING.md) for the current behavior and remaining
+limits.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,11 +13,183 @@ import (
 )
 
 func TestAPIValidatesBase(t *testing.T) {
-	for _, base := range []string{"ftp://example.com", "https://user:pass@example.com", "https://example.com/?x=1", "https://example.com/#x"} {
+	for _, base := range []string{"ftp://example.com", "https://user:pass@example.com", "https://example.com/?x=1", "https://example.com/#x", "http://example.com", "http://127.0.0.1.nip.io", "http://localhost.example"} {
 		if _, err := NewAPI(base, nil, time.Second); err == nil {
 			t.Fatalf("accepted %q", base)
 		}
 	}
+	for _, base := range []string{"http://localhost", "http://127.0.0.1", "http://[::1]"} {
+		if _, err := NewAPI(base, nil, time.Second); err != nil {
+			t.Fatalf("rejected loopback %q: %v", base, err)
+		}
+	}
+}
+
+func TestAPIRedirectRejectsHTTPSDowngradeBeforeCustomTransport(t *testing.T) {
+	const token = "token-secret-marker"
+	transport := &roundTripFunc{fn: func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"http://127.0.0.1/api/tunnel/demo"}},
+			Body:       io.NopCloser(strings.NewReader("redirect")),
+			Request:    req,
+		}, nil
+	}}
+	api, err := NewAPI("https://api.example.test", &http.Client{Transport: transport}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Get(context.Background(), "demo", token); err == nil {
+		t.Fatal("HTTPS downgrade redirect succeeded")
+	}
+	if transport.calls != 1 {
+		t.Fatalf("redirect reached custom transport %d times", transport.calls)
+	}
+}
+
+func TestAPIRedirectRejectsNonLoopbackHTTPDestination(t *testing.T) {
+	transport := &roundTripFunc{fn: func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"http://api.example.test/api/tunnel/demo"}},
+			Body:       io.NopCloser(strings.NewReader("redirect")),
+			Request:    req,
+		}, nil
+	}}
+	api, err := NewAPI("http://127.0.0.1", &http.Client{Transport: transport}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Get(context.Background(), "demo", "token"); err == nil {
+		t.Fatal("non-loopback HTTP redirect succeeded")
+	}
+	if transport.calls != 1 {
+		t.Fatalf("redirect reached custom transport %d times", transport.calls)
+	}
+}
+
+func TestAPIRedirectPreservesCallerHook(t *testing.T) {
+	sentinel := errors.New("caller redirect hook")
+	transport := &roundTripFunc{fn: func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"https://api.example.test/elsewhere"}},
+			Body:       io.NopCloser(strings.NewReader("redirect")),
+			Request:    req,
+		}, nil
+	}}
+	api, err := NewAPI("https://api.example.test", &http.Client{
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return sentinel
+		},
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Get(context.Background(), "demo", "token"); !errors.Is(err, sentinel) {
+		t.Fatalf("redirect error = %v, want caller hook error", err)
+	}
+	if transport.calls != 1 {
+		t.Fatalf("redirect reached custom transport %d times", transport.calls)
+	}
+}
+
+func TestAPIRedirectRejectsCrossOriginHTTPSBeforeCustomTransport(t *testing.T) {
+	for _, target := range []string{
+		"https://other.example.test/api/tunnel/demo",
+		"https://sub.api.example.test/api/tunnel/demo",
+		"https://api.example.test:8443/api/tunnel/demo",
+	} {
+		t.Run(target, func(t *testing.T) {
+			transport := &roundTripFunc{fn: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusFound,
+					Header:     http.Header{"Location": []string{target}},
+					Body:       io.NopCloser(strings.NewReader("redirect")),
+					Request:    req,
+				}, nil
+			}}
+			api, err := NewAPI("https://api.example.test", &http.Client{Transport: transport}, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := api.Get(context.Background(), "demo", "token-secret-marker"); err == nil {
+				t.Fatal("cross-origin HTTPS redirect succeeded")
+			}
+			if transport.calls != 1 {
+				t.Fatalf("redirect reached custom transport %d times", transport.calls)
+			}
+		})
+	}
+}
+
+func TestAPIRedirectAllowsSameOriginHTTPS(t *testing.T) {
+	transport := &roundTripFunc{fn: func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/same-origin" {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"demo","hostname":"demo.example","state":"online"}`)),
+				Request:    req,
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"https://API.EXAMPLE.TEST:443/same-origin"}},
+			Body:       io.NopCloser(strings.NewReader("redirect")),
+			Request:    req,
+		}, nil
+	}}
+	api, err := NewAPI("https://api.example.test", &http.Client{Transport: transport}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Get(context.Background(), "demo", "token-secret-marker"); err != nil {
+		t.Fatalf("same-origin HTTPS redirect: %v", err)
+	}
+	if transport.calls != 2 {
+		t.Fatalf("transport calls = %d, want 2", transport.calls)
+	}
+}
+
+func TestAPIRedirectRejectsCallerHookCrossOriginMutation(t *testing.T) {
+	transport := &roundTripFunc{fn: func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host != "api.example.test" {
+			return nil, errors.New("cross-origin request reached transport")
+		}
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"https://api.example.test/same-origin"}},
+			Body:       io.NopCloser(strings.NewReader("redirect")),
+			Request:    req,
+		}, nil
+	}}
+	api, err := NewAPI("https://api.example.test", &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			req.URL.Host = "other.example.test"
+			return nil
+		},
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Get(context.Background(), "demo", "token-secret-marker"); err == nil {
+		t.Fatal("caller hook redirected to another origin")
+	}
+	if transport.calls != 1 {
+		t.Fatalf("redirect reached custom transport %d times", transport.calls)
+	}
+}
+
+type roundTripFunc struct {
+	calls int
+	fn    func(*http.Request) (*http.Response, error)
+}
+
+func (f *roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	f.calls++
+	return f.fn(req)
 }
 
 func TestAPIStatusAuthEscapingAndRedaction(t *testing.T) {

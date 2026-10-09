@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -409,7 +410,39 @@ func (s *fileStorage) Remove(ctx context.Context, profile string) error {
 	if err != nil || !exists {
 		return err
 	}
-	if err := os.RemoveAll(dir); err != nil {
+	markerExists := false
+	for _, name := range []string{"tunnel.json", "pending.json"} {
+		exists, err := regularFileExists(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+		markerExists = markerExists || exists
+	}
+	if !markerExists {
+		return nil
+	}
+	ownedFiles := []string{"token", "private-key.pem", "certificate.pem", "chain.pem", "tunnel.json", "pending.json"}
+	for _, name := range ownedFiles {
+		if _, err := regularFileExists(filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	for _, name := range ownedFiles {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := removeRegular(filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("opentunnel: inspect profile %q after removal: %w", profile, err)
+	}
+	if len(entries) != 0 {
+		return nil
+	}
+	if err := os.Remove(dir); err != nil {
 		return fmt.Errorf("opentunnel: remove profile %q: %w", profile, err)
 	}
 	return nil
@@ -452,9 +485,17 @@ func (s *fileStorage) profileDir(profile string) (string, bool, error) {
 }
 
 func (s *fileStorage) ensureProfileDir(profile string) (string, error) {
-	if info, err := os.Lstat(s.root); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
-		return "", fmt.Errorf("opentunnel: unsafe storage root")
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	rootCreated := false
+	if info, err := os.Lstat(s.root); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", fmt.Errorf("opentunnel: unsafe storage root")
+		}
+		if runtime.GOOS != "windows" && info.Mode().Perm()&0o022 != 0 {
+			return "", fmt.Errorf("opentunnel: storage root permissions %04o are writable by group or others", info.Mode().Perm())
+		}
+	} else if errors.Is(err, fs.ErrNotExist) {
+		rootCreated = true
+	} else {
 		return "", fmt.Errorf("opentunnel: inspect storage root: %w", err)
 	}
 	if err := os.MkdirAll(s.root, 0o700); err != nil {
@@ -466,9 +507,11 @@ func (s *fileStorage) ensureProfileDir(profile string) (string, error) {
 		}
 		return "", fmt.Errorf("opentunnel: unsafe storage root")
 	}
-	// #nosec G302 -- Directory requires owner execute; no access for group/others.
-	if err := os.Chmod(s.root, 0o700); err != nil {
-		return "", fmt.Errorf("opentunnel: secure storage root: %w", err)
+	if rootCreated {
+		// #nosec G302 -- Directory requires owner execute; no access for group/others.
+		if err := os.Chmod(s.root, 0o700); err != nil {
+			return "", fmt.Errorf("opentunnel: secure storage root: %w", err)
+		}
 	}
 	dir, exists, err := s.profileDir(profile)
 	if err != nil {
@@ -490,6 +533,20 @@ func (s *fileStorage) ensureProfileDir(profile string) (string, error) {
 		return "", fmt.Errorf("opentunnel: secure profile %q: %w", profile, err)
 	}
 	return dir, nil
+}
+
+func regularFileExists(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("opentunnel: inspect %s: %w", filepath.Base(path), err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return false, fmt.Errorf("opentunnel: unsafe file %s", filepath.Base(path))
+	}
+	return true, nil
 }
 
 func (s *fileStorage) write(ctx context.Context, dir, name string, content []byte) error {

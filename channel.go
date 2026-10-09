@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -29,13 +30,37 @@ type channel struct {
 func (ch *channel) forward() {
 	s := ch.session
 	var final error
-	defer func() { ch.cancel(); ch.raw.abort(net.ErrClosed); s.finished(ch, final) }()
-	secure := tls.Server(ch.raw, channelTLS(ch.cert))
+	defer func() {
+		ch.raw.mu.Lock()
+		cause := ch.raw.err
+		ch.raw.mu.Unlock()
+		if errors.Is(cause, ErrIdleTimeout) || errors.Is(cause, ErrInboundLimit) {
+			final = cause
+		}
+		ch.cancel()
+		ch.raw.abort(net.ErrClosed)
+		s.finished(ch, final)
+	}()
+	config := channelTLS(ch.cert)
+	config.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		route, ok := RouteForSNI(hello.ServerName, s.owner.Identity().Hostname)
+		if !ok || route != ch.route {
+			return nil, ErrRouteMismatch
+		}
+		if !time.Now().Before(ch.cert.Leaf.NotAfter) {
+			return nil, ErrCertificateExpired
+		}
+		if time.Now().Before(ch.cert.Leaf.NotBefore) {
+			return nil, ErrInvalid
+		}
+		return config, nil
+	}
+	secure := tls.Server(ch.raw, config)
 	ctx, cancel := context.WithTimeout(ch.ctx, s.owner.client.options.HandshakeTimeout)
 	err := secure.HandshakeContext(ctx)
 	cancel()
 	if err != nil {
-		final = errors.New("TLS handshake failed")
+		final = fmt.Errorf("TLS handshake failed: %w", err)
 		ch.reset("client_io_error")
 		return
 	}
@@ -50,9 +75,18 @@ func (ch *channel) forward() {
 	defer func() { _ = upstream.Close() }()
 	stop := context.AfterFunc(ch.ctx, func() { _ = upstream.Close(); ch.raw.abort(net.ErrClosed) })
 	defer stop()
+	var stream net.Conn = secure
+	if idle := s.owner.client.options.IdleTimeout; idle > 0 {
+		active := &activityConn{Conn: secure}
+		active.last.Store(time.Now().UnixNano())
+		stream = active
+		done := make(chan struct{})
+		go func() { defer close(done); ch.watchIdle(active, idle) }()
+		defer func() { ch.cancel(); <-done }()
+	}
 	results := make(chan error, 2)
 	go func() {
-		_, e := io.Copy(upstream, secure)
+		_, e := io.Copy(upstream, stream)
 		if e == nil {
 			if tcp, ok := upstream.(*net.TCPConn); ok {
 				e = tcp.CloseWrite()
@@ -65,7 +99,7 @@ func (ch *channel) forward() {
 		results <- e
 	}()
 	go func() {
-		_, e := io.Copy(secure, upstream)
+		_, e := io.Copy(stream, upstream)
 		if e == nil {
 			e = secure.CloseWrite()
 			if e == nil {
@@ -91,6 +125,44 @@ func (ch *channel) abort(e error) { ch.raw.abort(e); ch.cancel() }
 func (ch *channel) reset(code string) {
 	if !ch.remoteReset.Load() && ch.session.ctx.Err() == nil {
 		_ = ch.session.control(controlMessage{Type: "reset", Conn: ch.id, Code: code})
+	}
+}
+
+// activityConn tracks successfully forwarded application bytes in both directions.
+type activityConn struct {
+	net.Conn
+	last atomic.Int64
+}
+
+func (c *activityConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.last.Store(time.Now().UnixNano())
+	}
+	return n, err
+}
+func (c *activityConn) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	if n > 0 {
+		c.last.Store(time.Now().UnixNano())
+	}
+	return n, err
+}
+func (ch *channel) watchIdle(c *activityConn, idle time.Duration) {
+	timer := time.NewTimer(idle)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ch.ctx.Done():
+			return
+		case <-timer.C:
+			remaining := idle - time.Since(time.Unix(0, c.last.Load()))
+			if remaining <= 0 {
+				ch.abort(ErrIdleTimeout)
+				return
+			}
+			timer.Reset(remaining)
+		}
 	}
 }
 

@@ -127,6 +127,7 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	defer func() { _ = client.Close() }()
 
 	write := &lockedWriter{w: out}
+	writeErr := &lockedWriter{w: errout}
 	if name == "profiles" {
 		profiles, err := client.Profiles(commandCtx)
 		return printValue(write, common.json, profiles, err)
@@ -169,8 +170,9 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	}
 	if name == "create" || name == "resume" || name == "ensure" {
 		options := opentunnel.ProvisionOptions{}
+		progressErr := func() error { return nil }
 		if !common.json {
-			options.OnProgress = func(stage opentunnel.ProvisionStage) { _, _ = fmt.Fprintln(write, stage) }
+			options.OnProgress, progressErr = provisionProgressReporter(writeErr)
 		}
 		var identity *opentunnel.Identity
 		switch name {
@@ -181,12 +183,25 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 		default:
 			identity, err = client.Ensure(commandCtx, common.profile)
 		}
+		if err := progressErr(); err != nil {
+			return err
+		}
 		if err != nil {
 			return err
 		}
 		return printPointer(write, common.json, identity, nil)
 	}
-	return connect(commandCtx, client, common.profile, routes, interactive, common.json, in, write)
+	return connect(commandCtx, client, common.profile, routes, interactive, common.json, in, write, writeErr)
+}
+
+func provisionProgressReporter(errout io.Writer) (func(opentunnel.ProvisionStage), func() error) {
+	var writeErr error
+	return func(stage opentunnel.ProvisionStage) {
+		if writeErr != nil {
+			return
+		}
+		_, writeErr = fmt.Fprintln(errout, stage)
+	}, func() error { return writeErr }
 }
 
 func printValue[T any](out io.Writer, asJSON bool, value T, err error) error {
@@ -284,7 +299,7 @@ func parseRoute(value string) (string, string, error) {
 	return name, target, nil
 }
 
-func connect(ctx context.Context, client *opentunnel.Client, profile string, values routeFlags, interactive, asJSON bool, in io.Reader, out io.Writer) error {
+func connect(ctx context.Context, client *opentunnel.Client, profile string, values routeFlags, interactive, asJSON bool, in io.Reader, out, errout io.Writer) error {
 	routes, err := values.routes()
 	if err != nil {
 		return err
@@ -292,7 +307,7 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 	if len(routes) == 0 {
 		return errors.New("connect requires at least one --route name=host:port")
 	}
-	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: profile, Routes: routes})
+	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: profile, Routes: routes, Lifetime: ctx})
 	if err != nil {
 		return err
 	}
@@ -351,11 +366,12 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 			if !ok {
 				return nil
 			}
-			if err := interactiveCommand(connection, line, asJSON, out); err != nil {
-				if errors.Is(err, errQuit) {
-					return nil
-				}
+			quit, err := processInteractiveCommand(connection, line, asJSON, out, errout)
+			if err != nil {
 				return err
+			}
+			if quit {
+				return nil
 			}
 		case <-connection.Done():
 			return connection.Err()
@@ -363,6 +379,11 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 			return ctx.Err()
 		}
 	}
+}
+
+func printInteractiveError(errout io.Writer, err error) error {
+	_, writeErr := fmt.Fprintln(errout, "interactive:", terminalText(err.Error()))
+	return writeErr
 }
 
 func startCommandReader(ctx context.Context, in io.Reader) (<-chan string, func()) {
@@ -405,7 +426,32 @@ func readCommands(ctx context.Context, in io.Reader, commands chan<- string, don
 
 var errQuit = errors.New("interactive quit")
 
-func interactiveCommand(connection *opentunnel.Connection, line string, asJSON bool, out io.Writer) error {
+type interactiveConnection interface {
+	Status() opentunnel.Status
+	SetRoutes(opentunnel.Routes) error
+}
+
+func processInteractiveCommand(connection interactiveConnection, line string, asJSON bool, out, errout io.Writer) (bool, error) {
+	err := interactiveCommand(connection, line, asJSON, out)
+	if errors.Is(err, errQuit) {
+		return true, nil
+	}
+	if err != nil {
+		var inputErr interactiveInputError
+		if errors.As(err, &inputErr) {
+			return false, printInteractiveError(errout, inputErr)
+		}
+		return false, err
+	}
+	return false, nil
+}
+
+type interactiveInputError struct{ err error }
+
+func (e interactiveInputError) Error() string { return e.err.Error() }
+func (e interactiveInputError) Unwrap() error { return e.err }
+
+func interactiveCommand(connection interactiveConnection, line string, asJSON bool, out io.Writer) error {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
 		return nil
@@ -423,25 +469,46 @@ func interactiveCommand(connection *opentunnel.Connection, line string, asJSON b
 		for _, value := range fields[1:] {
 			name, target, err := parseRoute(value)
 			if err != nil {
-				return err
+				return interactiveInputError{err: err}
 			}
 			if _, duplicate := routes[name]; duplicate {
-				return fmt.Errorf("duplicate route %q", name)
+				return interactiveInputError{err: fmt.Errorf("duplicate route %q", name)}
 			}
 			routes[name] = target
 		}
 		return connection.SetRoutes(routes)
 	default:
-		return fmt.Errorf("unknown interactive command %q (use status, routes, or quit)", fields[0])
+		return interactiveInputError{err: fmt.Errorf("unknown interactive command %q (use status, routes, or quit)", fields[0])}
 	}
 }
 func formatEvent(event opentunnel.Event) string {
 	parts := []string{terminalText(event.Type)}
+	if event.Attempt != 0 {
+		parts = append(parts, fmt.Sprintf("attempt=%d", event.Attempt))
+	}
+	if event.Delay != 0 {
+		parts = append(parts, "delay="+event.Delay.String())
+	}
+	if event.Session != "" {
+		parts = append(parts, "session="+terminalText(event.Session))
+	}
+	if event.Conn != 0 {
+		parts = append(parts, fmt.Sprintf("conn=%d", event.Conn))
+	}
 	if event.Route != "" {
 		parts = append(parts, "route="+terminalText(event.Route))
 	}
+	if event.Peer != "" {
+		parts = append(parts, "peer="+terminalText(event.Peer))
+	}
 	if event.Reason != "" {
 		parts = append(parts, "reason="+terminalText(event.Reason))
+	}
+	if event.Error != "" {
+		parts = append(parts, "error="+terminalText(event.Error))
+	}
+	if !event.Expiry.IsZero() {
+		parts = append(parts, "expiry="+event.Expiry.UTC().Format(time.RFC3339))
 	}
 	sort.Strings(parts[1:])
 	return strings.Join(parts, " ")
@@ -462,7 +529,7 @@ func printStatus(out io.Writer, status opentunnel.Status) error {
 
 func terminalText(value string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return '?'
 		}
 		return r

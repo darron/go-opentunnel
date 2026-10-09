@@ -34,6 +34,19 @@ func generateRequest(hostname string) (privateKey, csr string, err error) {
 }
 
 func parseCertificate(identity Identity) (*tls.Certificate, error) {
+	cert, err := parseCertificateMaterial(identity)
+	if err != nil {
+		return nil, err
+	}
+	if !time.Now().Before(cert.Leaf.NotAfter) {
+		return nil, ErrCertificateExpired
+	}
+	return cert, nil
+}
+
+// parseCertificateMaterial permits an expired leaf only for bridge attachment
+// that triggers server renewal. Handshakes still require a currently valid leaf.
+func parseCertificateMaterial(identity Identity) (*tls.Certificate, error) {
 	if identity.Hostname == "" || identity.PrivateKey == "" || identity.Certificate == "" {
 		return nil, fmt.Errorf("%w: incomplete certificate identity", ErrInvalid)
 	}
@@ -45,7 +58,7 @@ func parseCertificate(identity Identity) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	if time.Now().After(leaf.NotAfter) || time.Now().Before(leaf.NotBefore) {
+	if time.Now().Before(leaf.NotBefore) {
 		return nil, fmt.Errorf("%w: certificate outside validity period", ErrInvalid)
 	}
 	if err := leaf.VerifyHostname(identity.Hostname); err != nil {

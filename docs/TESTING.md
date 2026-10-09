@@ -18,7 +18,16 @@ These commands do not create a public tunnel.
    go test -race -run 'TestLifecycle|TestTunnelStalledChannel|TestTunnelRoutesReconnect' -count=10 .
    ```
 
-3. Run a five-second fuzz smoke test for each parser:
+3. Run the focused hardening regressions:
+
+   ```sh
+   go test -run 'TestTunnelHandshakeRouteIsolation|TestConnectStartupContextDoesNotOwnLifetime' -count=1 .
+   go test -run 'TestConnectExplicitLifetimeCancellation|TestConnectRejectsOverlappingRoutes' -count=1 .
+   go test -run 'TestRuntimeFailedCertificateRecoversSameKey|TestExpiredIdentityAttachesToTriggerServerRenewal|TestFileStorage' -count=1 .
+   go test -run 'TestEstablishedChannelIdleLimit|TestActiveChannelRenewsIdleDeadline|TestJSONOmitsUnsetEventTimes|TestAPI|TestIdentityFormatting' -count=1 .
+   ```
+
+4. Run a five-second fuzz smoke test for each parser:
 
    ```sh
    make fuzz
@@ -26,10 +35,12 @@ These commands do not create a public tunnel.
 
 Local fixtures use a fake API/relay with real WebSockets, TLS handshakes, and
 generated test certificates. They cover request encoding, redaction,
-cancellation, storage, routes, framing, forwarding, and CLI dispatch. Hosted
-API, certificate issuance, and relay interoperability have a separate
-[live test record](LIVE_TESTING.md). Recorded local results are in
-[VERIFICATION.md](VERIFICATION.md).
+cancellation, storage, route ownership, SNI-to-route isolation, certificate
+renewal, framing, forwarding, and CLI dispatch. Hosted API, certificate issuance,
+and relay interoperability have a separate dated [live test record](LIVE_TESTING.md).
+That record does not prove later hardening changes were revalidated live.
+Recorded local results are in [VERIFICATION.md](VERIFICATION.md); current review
+changes and remaining limits are in [HARDENING.md](HARDENING.md).
 
 ## Lint scope and exceptions
 
@@ -105,6 +116,35 @@ Put flags after the command. Negative durations are rejected.
 | Provisioning `--timeout` | `2m` | Bounds the full provisioning operation; `0` disables this CLI deadline |
 | `connect --timeout` | `0` | Runs until Ctrl-C; a positive value bounds the full lifetime, including reconnects |
 | `--request-timeout` | `0` | Selects the API's finite default of `15s`; a positive value overrides it |
+
+At the package API, `Client.Connect(ctx, ...)` uses `ctx` only for startup. Set
+`ConnectOptions.Lifetime` to make application cancellation stop the running
+connection. The CLI passes its command context as both startup and lifetime, so
+its positive `connect --timeout` still bounds the full command.
+
+`TransportOptions.IdleTimeout` has no CLI flag. Zero disables it. A positive
+value resets a channel after no application bytes move in either direction for
+that duration. Choose a value longer than valid quiet periods and test streaming
+or slow endpoints. `MaxInboundBytes` is separate: a large upload to a slow target
+can overflow the per-channel buffer and reset even while bytes are arriving.
+
+## Check security boundaries locally
+
+1. Confirm a relay-selected route cannot override ClientHello SNI, including a
+   client that sends no SNI.
+2. Confirm expired certificates fail visitor handshakes and `Connect` waits for
+   server renewal before returning.
+3. Confirm plain HTTP accepts only exact loopback hosts and HTTPS downgrade
+   or cross-origin redirects never reach the redirected transport.
+4. Confirm identity JSON, `fmt`, and `slog` output omit test secret values. Direct
+   `Token` and `PrivateKey` field access must still be treated as secret.
+5. Confirm file removal preserves unrelated files, unmarked directories, and
+   unsafe markers. Run Unix mode assertions only on non-Windows platforms.
+
+Certificate recovery regressions also hold issuance indefinitely, remove the
+profile, and check that all workers stop without recreating credentials. Repeated
+failed responses test the shared CSR retry cooldown, eventual retry, and reset
+after successful renewal. These run in the normal suite and under `-race`.
 
 ## Interactive stdin shutdown
 

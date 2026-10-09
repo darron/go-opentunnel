@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 const maxAPIResponse = 1 << 20
 
+// API performs authenticated requests to the OpenTunnel control API.
 type API struct {
 	base    *url.URL
 	client  *http.Client
@@ -31,12 +33,17 @@ func (r *cancelReadCloser) Close() error {
 	return err
 }
 
+// NewAPI creates an API client for base. HTTPS bases may use any host; HTTP is
+// limited to localhost or a literal loopback IP so bearer credentials are never
+// sent across a network in cleartext. Redirects must remain at the initial
+// origin. The supplied client is cloned before its redirect policy is hardened;
+// its Transport, Jar, and redirect hook remain trusted with API credentials.
 func NewAPI(base string, client *http.Client, timeout time.Duration) (*API, error) {
 	if timeout < 0 {
 		return nil, fmt.Errorf("%w: negative request timeout", ErrInvalid)
 	}
 	u, err := url.Parse(base)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme == "http" && !isLoopbackHTTPHost(u.Hostname())) {
 		return nil, fmt.Errorf("%w: invalid API base URL", ErrInvalid)
 	}
 	if client == nil {
@@ -45,7 +52,70 @@ func NewAPI(base string, client *http.Client, timeout time.Duration) (*API, erro
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	return &API{base: u, client: client, timeout: timeout}, nil
+	return &API{base: u, client: hardenedAPIClient(client, canonicalOrigin(u)), timeout: timeout}, nil
+}
+
+func isLoopbackHTTPHost(host string) bool {
+	ip := net.ParseIP(host)
+	return strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback())
+}
+
+type apiOrigin struct {
+	scheme string
+	host   string
+	port   string
+}
+
+func canonicalOrigin(u *url.URL) apiOrigin {
+	scheme := strings.ToLower(u.Scheme)
+	port := u.Port()
+	if port == "" {
+		switch scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		}
+	}
+	return apiOrigin{scheme: scheme, host: strings.ToLower(u.Hostname()), port: port}
+}
+
+func (o apiOrigin) matches(u *url.URL) bool {
+	return o == canonicalOrigin(u)
+}
+
+func validateAPIRedirect(initial apiOrigin, req *http.Request) error {
+	if !initial.matches(req.URL) {
+		return fmt.Errorf("%w: API redirect changed origin", ErrInvalid)
+	}
+	if req.URL.Scheme == "http" {
+		if !isLoopbackHTTPHost(req.URL.Hostname()) {
+			return fmt.Errorf("%w: HTTP API redirect is not loopback", ErrInvalid)
+		}
+	}
+	return nil
+}
+
+func hardenedAPIClient(client *http.Client, initial apiOrigin) *http.Client {
+	clone := *client
+	original := client.CheckRedirect
+	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := validateAPIRedirect(initial, req); err != nil {
+			return err
+		}
+		if original != nil {
+			err := original(req, via)
+			if validationErr := validateAPIRedirect(initial, req); validationErr != nil {
+				return validationErr
+			}
+			return err
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &clone
 }
 
 func (a *API) endpointURL(id, suffix string) *url.URL {
@@ -110,6 +180,8 @@ func (a *API) response(resp *http.Response, expected int, out any) error {
 	}
 	return nil
 }
+
+// Create creates a new tunnel and returns its credentials.
 func (a *API) Create(ctx context.Context) (CreateTunnelResponse, error) {
 	var out CreateTunnelResponse
 	resp, err := a.request(ctx, http.MethodPost, "", "", "", []byte("{}"))
@@ -125,6 +197,8 @@ func (a *API) Create(ctx context.Context) (CreateTunnelResponse, error) {
 	}
 	return out, nil
 }
+
+// Get returns the current state of tunnel id using token.
 func (a *API) Get(ctx context.Context, id, token string) (TunnelInfo, error) {
 	var out TunnelInfo
 	resp, err := a.request(ctx, http.MethodGet, id, "", token, nil)
@@ -140,6 +214,8 @@ func (a *API) Get(ctx context.Context, id, token string) (TunnelInfo, error) {
 	}
 	return out, nil
 }
+
+// BindCertificate submits csr for tunnel id using token.
 func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (CertificateInfo, error) {
 	var out CertificateInfo
 	body, _ := json.Marshal(struct {
@@ -155,6 +231,8 @@ func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (Certi
 	}
 	return validateCertificateInfo(out)
 }
+
+// Certificate returns the certificate status for tunnel id using token.
 func (a *API) Certificate(ctx context.Context, id, token string) (CertificateInfo, error) {
 	var out CertificateInfo
 	resp, err := a.request(ctx, http.MethodGet, id, "/certificate", token, nil)
@@ -167,6 +245,8 @@ func (a *API) Certificate(ctx context.Context, id, token string) (CertificateInf
 	}
 	return validateCertificateInfo(out)
 }
+
+// Remove permanently removes tunnel id using token.
 func (a *API) Remove(ctx context.Context, id, token string) error {
 	resp, err := a.request(ctx, http.MethodDelete, id, "", token, nil)
 	if err != nil {
