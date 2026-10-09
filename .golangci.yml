@@ -1,0 +1,34 @@
+version: "2"
+run:
+  timeout: 5m
+  tests: true
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - nilerr
+    - nilnil
+    - noctx
+    - prealloc
+    - unconvert
+    - wastedassign
+  settings:
+    gosec:
+      excludes:
+        # Route targets are deliberately caller-selected host:port endpoints.
+        - G704
+        # The profile store deliberately uses runtime paths, validates profile
+        # labels, and rejects symlinked profiles/files before filesystem access.
+        - G304
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+  exclusions:
+    presets: []
+formatters:
+  enable:
+    - gofmt

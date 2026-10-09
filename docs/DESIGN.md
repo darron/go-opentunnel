@@ -164,6 +164,47 @@ must be deleted explicitly when intended to be temporary. File compatibility is
 required; simultaneous provisioning through different language clients is not
 a supported cross-process transaction and must be documented.
 
+## Security model and confidentiality limits
+
+The intended TLS endpoints are the public visitor and the embedding Go process.
+The relay and Worker carry encrypted TLS records; terminating the bridge's outer
+WebSocket TLS does not decrypt the visitor's inner application TLS. The Go
+process owns the certificate private key. Ordinary passive observation at the
+relay does not disclose HTTP paths, queries, headers, cookies, bodies, or
+application WebSocket contents.
+
+This is not a protocol-level guarantee against an actively malicious operator
+of the hosted service. The upstream service controls DNS and performs ACME
+DNS-01 authorization for `*.opentunnel.xyz`. An operator with that authority
+could issue another browser-trusted certificate for a tunnel hostname using its
+own key and terminate future visitor connections, then proxy to the legitimate
+client. This is a threat-model inference from certificate/DNS authority, not a
+claim that the deployed service performs interception. Checking the certificate
+returned to the Go client against its private key does not prevent a different
+certificate being presented to visitors. Client-controlled, independently
+verified key pinning or a separately authenticated application encryption layer
+would be required to exclude this authority from the trust boundary; neither is
+provided by ordinary browser HTTPS to a provider-owned hostname.
+
+The service can observe source addresses, tunnel and route identities, SNI,
+ClientHello metadata, timing, connection counts, and encrypted byte volumes.
+The inspected upstream source logs routing metadata and emits byte/duration
+analytics. This system does not hide traffic metadata or provide anonymity.
+
+After TLS termination, forwarding to a plaintext `host:port` exposes application
+bytes on that local network segment. Examples bind loopback; forwarding to a
+different host extends the plaintext trust boundary. Endpoint processes, their
+logs, and a compromised endpoint can also expose plaintext.
+
+Documentation must distinguish normal relay blindness, metadata visibility,
+endpoint trust, and active certificate-authority/domain-operator interception.
+Require TLS 1.2 or later, prefer TLS 1.3, and use forward-secret authenticated
+encryption suites. Do not disable upstream HTTPS certificate verification.
+Tests must check that forwarded relay payloads are TLS ciphertext, that invalid
+or mismatched certificates are rejected, and that credentials are absent from
+diagnostic output. These tests establish the implemented boundaries, not an
+independent security audit or verification of the production deployment.
+
 ## Bridge, TLS, and forwarding
 
 Use `ws`/`wss` at `/api/tunnel/:id/connect`, negotiate subprotocol `opentunnel`,
