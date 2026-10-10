@@ -248,3 +248,34 @@ drain, and cancellation under bridge backpressure use local fixture evidence;
 they were not all induced against the hosted service. Windows remains
 compile-only. The hosted deployment revision and provider infrastructure were
 not audited.
+
+## TLS listener retest, 2026-10-10
+
+**Passed against the public service using the final rebuilt CLI and webapp.**
+The recorded workflow exited 0. It used three dedicated identities in isolated
+private temporary storage; all were removed, authenticated API inspection returned
+404 after deletion, local lists were empty, and every owned process stopped.
+Credentials and raw logs stayed outside the repository. The deployed server
+revision was not established. Public requests used normal certificate trust.
+
+| Path | Verified behavior |
+| --- | --- |
+| Existing CLI forwarding | Interrupted create/resume; identity reuse and redaction; online/offline inspection; HTTPS; three incremental stream chunks; WSS text/binary 16,000 bytes each and normal close |
+| Forwarding routes | Invalid interactive commands preserve traffic; root/named reattachment; exact 2 MiB POST echo; eight concurrent 256 KiB echoes; target replacement; refused named target leaves root usable; empty/restored routes |
+| Forwarding shutdown | Quit and SIGINT exit 0 with stdin still open; 3-second deadline exits 1 and reports context deadline exceeded; attachment becomes offline |
+| `otgo listen` | Root and named routes expose actual TLS state/SNI, HTTPS origin, and nonempty relay peer; forged `X-Forwarded-For`/`X-Forwarded-Proto` do not override those fields |
+| Listener shutdown | SIGINT exits 0; 3-second listener deadline exits 1 with context deadline exceeded; remote state returns offline |
+| Direct embedded webapp | New identity provisioned through `Listen`; HTTPS root; incremental streaming; WSS text/binary 16,000 bytes each with normal close; `/request` reports real TLS/SNI/peer; SIGINT exits 0 and leaves tunnel offline |
+| Cleanup | Interrupted pending identity deleted; repeated removal succeeds; all three remote identities return 404, all local identities/pending records are absent, all processes stop |
+
+Two earlier attempts found defects and cleaned up after themselves: the CLI
+initially used the forwarding route parser; then immediate channel reset on
+application close truncated a normal WSS close. Both now have regression tests.
+Ordinary application close sends an orderly protocol `end` to preserve buffered
+TLS/HTTP/WebSocket bytes. Failures and forced listener shutdown still abort.
+
+Wrong-SNI rejection, renewal, reconnects, resource limits, fatal attachments,
+concurrent Accept, and worker joining were exercised with local relay fixtures;
+this hosted run does not claim those adversarial scenarios were induced at the
+public service. See [VERIFICATION.md](VERIFICATION.md#tls-listener-verification-2026-10-10)
+and [LISTENER.md](LISTENER.md) for evidence and contracts.

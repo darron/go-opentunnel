@@ -1,7 +1,7 @@
 # Implementation
 
 Start with `client.go` for lifecycle operations and `connection.go` for a running
-tunnel. `cmd/otgo` and `examples/webapp` both consume the public package.
+tunnel, or `listener.go` for direct HTTP embedding. `cmd/otgo` and `examples/webapp` both consume the public package.
 
 The module is `github.com/darron/go-opentunnel`, requires Go 1.25 or newer, and
 is MIT licensed. Its sole external module is `github.com/coder/websocket v1.8.15`.
@@ -26,6 +26,7 @@ lock, and its path checks retain a same-user check-then-use race.
 | `protocol.go` | Route/control validation and four-byte big-endian connection IDs; upstream fixtures are in `testdata/vectors/` |
 | `connection.go` | Startup/lifetime ownership, same-profile route claims, reconnects, copied routes/status, bounded events, certificate refresh, and route-change attachment |
 | `session.go` | Attachment, framing, heartbeat, channel dispatch, and bounded write queue |
+| `listener.go` | TLS net.Listener, bounded accept queue, exact TLS connections, relay peer metadata, and socket ownership |
 | `channel.go` | SNI-to-route authorization, certificate-time checks, optional channel idle timeout, bidirectional TCP forwarding, half-close, and blocked-socket cancellation |
 
 Target changes apply to new channels. Name changes reattach. Empty replacement
@@ -33,11 +34,12 @@ routes suspend attachment.
 
 ## Ownership
 
-- The `Client.Connect` context bounds provisioning and the first valid
+- The `Client.Connect` or `Client.Listen` context bounds provisioning and the first valid
   attachment. It no longer owns the connection after return.
-- `ConnectOptions.Lifetime` optionally owns the running connection. With no
-  lifetime, call `Connection.Close` or `Client.Close`.
-- `Connection.Close` cancels and joins its workers.
+- `ConnectOptions.Lifetime` or `ListenOptions.Lifetime` optionally owns the running
+  tunnel. With no lifetime, call its `Close` or `Client.Close`.
+- `Connection.Close` and `Listener.Close` cancel and join their package workers.
+  Listener close also aborts accepted sockets; application handlers are not joined.
 - `Client.Close` cancels and joins its owned operations and connections.
 - `Client.API()` calls use their own contexts.
 - Custom storage must honor cancellation; coordinate shared-profile provisioning
@@ -65,8 +67,8 @@ sockets, and other memory remain additional overhead. Lower
 
 An inbound overflow resets that channel. A large upload to a slow target can
 reach this limit even when the session is healthy. A configured idle timeout
-closes a channel only after no application bytes move in either direction. Slow
-event consumers lose events;
+closes inactive channels: Connect counts application bytes, while Listen counts
+TLS records consumed or written by the application. Slow event consumers lose events;
 `Status().DroppedEvents` counts them. Sustained outbound pressure can delay other
 channels because the wire protocol has no per-channel flow control.
 

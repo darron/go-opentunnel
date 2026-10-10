@@ -39,6 +39,7 @@ func (ch *channel) forward() {
 		}
 		ch.cancel()
 		ch.raw.abort(net.ErrClosed)
+		ch.raw.writeWorkers.Wait()
 		s.finished(ch, final)
 	}()
 	config := channelTLS(ch.cert)
@@ -64,6 +65,10 @@ func (ch *channel) forward() {
 		ch.reset("client_io_error")
 		return
 	}
+	if s.owner.listener != nil {
+		final = ch.serveListener(secure)
+		return
+	}
 	ctx, cancel = context.WithTimeout(ch.ctx, s.owner.client.options.DialTimeout)
 	upstream, err := (&net.Dialer{}).DialContext(ctx, "tcp", ch.target)
 	cancel()
@@ -81,7 +86,7 @@ func (ch *channel) forward() {
 		active.last.Store(time.Now().UnixNano())
 		stream = active
 		done := make(chan struct{})
-		go func() { defer close(done); ch.watchIdle(active, idle) }()
+		go func() { defer close(done); ch.watchIdle(&active.last, idle) }()
 		defer func() { ch.cancel(); <-done }()
 	}
 	results := make(chan error, 2)
@@ -148,7 +153,7 @@ func (c *activityConn) Write(p []byte) (int, error) {
 	}
 	return n, err
 }
-func (ch *channel) watchIdle(c *activityConn, idle time.Duration) {
+func (ch *channel) watchIdle(last *atomic.Int64, idle time.Duration) {
 	timer := time.NewTimer(idle)
 	defer timer.Stop()
 	for {
@@ -156,7 +161,7 @@ func (ch *channel) watchIdle(c *activityConn, idle time.Duration) {
 		case <-ch.ctx.Done():
 			return
 		case <-timer.C:
-			remaining := idle - time.Since(time.Unix(0, c.last.Load()))
+			remaining := idle - time.Since(time.Unix(0, last.Load()))
 			if remaining <= 0 {
 				ch.abort(ErrIdleTimeout)
 				return
@@ -187,6 +192,9 @@ type bridgeConn struct {
 	err           error
 	readDeadline  time.Time
 	writeDeadline time.Time
+	lastActivity  atomic.Int64
+	writeWorkers  sync.WaitGroup
+	callerClosed  atomic.Bool
 }
 
 func newBridgeConn(s *session, id uint32, peer string, limit int) *bridgeConn {
@@ -259,6 +267,7 @@ func (b *bridgeConn) Read(p []byte) (int, error) {
 		}
 		if len(b.chunks) > 0 {
 			n := copy(p, b.chunks[0][b.offset:])
+			b.lastActivity.Store(time.Now().UnixNano())
 			b.offset += n
 			b.bytes -= n
 			if b.offset == len(b.chunks[0]) {
@@ -324,6 +333,7 @@ func (b *bridgeConn) Write(p []byte) (int, error) {
 			return n, e
 		}
 		n += size
+		b.lastActivity.Store(time.Now().UnixNano())
 		p = p[size:]
 	}
 	return n, nil
@@ -333,8 +343,19 @@ func (b *bridgeConn) Write(p []byte) (int, error) {
 // belongs to this call and is joined before return; it never cancels the socket.
 func (b *bridgeConn) writeContext() (context.Context, func()) {
 	ctx, cancel := context.WithCancelCause(b.ctx)
+	b.mu.Lock()
+	if b.closed || b.writeEnd {
+		b.mu.Unlock()
+		cancel(net.ErrClosed)
+		return ctx, func() {}
+	}
+	// Admission under mu prevents additions after abort, before channel teardown
+	// waits for these package-owned deadline watchers.
+	b.writeWorkers.Add(1)
+	b.mu.Unlock()
 	done := make(chan struct{})
 	go func() {
+		defer b.writeWorkers.Done()
 		defer close(done)
 		for {
 			b.mu.Lock()
@@ -371,7 +392,7 @@ func (b *bridgeConn) writeContext() (context.Context, func()) {
 	}()
 	return ctx, func() { cancel(context.Canceled); <-done }
 }
-func (b *bridgeConn) Close() error { b.abort(net.ErrClosed); return nil }
+func (b *bridgeConn) Close() error { b.callerClosed.Store(true); b.abort(net.ErrClosed); return nil }
 func (b *bridgeConn) CloseWrite() error {
 	b.mu.Lock()
 	if b.writeEnd || b.closed {

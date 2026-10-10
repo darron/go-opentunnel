@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -384,5 +385,58 @@ func TestCanceledCommandReturnsContextError(t *testing.T) {
 	err := run(ctx, []string{"profiles", "--data-dir", t.TempDir()}, strings.NewReader(""), &out, &errout)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestListenCommandValidation(t *testing.T) {
+	for _, args := range [][]string{{"listen"}, {"listen", "--route", "@=127.0.0.1:8080"}, {"listen", "--route", "Bad"}, {"listen", "--route", "@", "--route", "@"}} {
+		var out, errout bytes.Buffer
+		err := run(t.Context(), append(args, "--data-dir", t.TempDir()), strings.NewReader(""), &out, &errout)
+		if err == nil || strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	var out, errout bytes.Buffer
+	if err := run(t.Context(), []string{"listen", "--help"}, strings.NewReader(""), &out, &errout); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errout.String(), "route name") {
+		t.Fatal(errout.String())
+	}
+}
+
+func TestListenerDiagnosticUsesTLSAndRelayMetadata(t *testing.T) {
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://demo.test/", nil)
+	request.RemoteAddr = "203.0.113.7:443"
+	request.TLS = &tls.ConnectionState{HandshakeComplete: true, ServerName: "demo.test"}
+	request.Header.Set("X-Forwarded-For", "forged")
+	request.Header.Set("X-Forwarded-Proto", "http")
+	response := httptest.NewRecorder()
+	listenerDiagnostic(response, request)
+	var result map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["tls"] != true || result["sni"] != "demo.test" || result["origin"] != "https://demo.test" || result["peer"] != request.RemoteAddr {
+		t.Fatal(result)
+	}
+	request.TLS = nil
+	response = httptest.NewRecorder()
+	listenerDiagnostic(response, request)
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["tls"] != false || result["origin"] != "" {
+		t.Fatal(result)
+	}
+}
+
+func TestListenAcceptsRouteNamesBeforeStartup(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var out, errout bytes.Buffer
+	err := run(ctx, []string{"listen", "--route", "@", "--route", "api", "--data-dir", t.TempDir()}, strings.NewReader(""), &out, &errout)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("valid route names rejected: %v", err)
 	}
 }

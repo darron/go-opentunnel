@@ -165,3 +165,18 @@ stdin writer stays open:
 ```sh
 go test -race ./cmd/otgo -run 'TestReadCommands|TestNativeStdin' -count=3
 ```
+
+## TLS listener regression tests
+
+```sh
+go test -race -run '^TestListener' . -count=10
+```
+
+These tests carry real TLS through the protocol fixture and exercise direct
+`http.Server.Serve`, handshake state, Secure cookies/origin construction, relay
+peer metadata despite forged HTTP forwarding headers, wrong SNI, streamed HTTP,
+WebSocket upgrades, admission/buffer bounds, stalled handshakes, idle cleanup,
+renewal, pending recovery, reconnect, route conflicts with forwarding, terminal
+errors, concurrent Accept, removal/client shutdown, and deadline-worker joins.
+`otgo listen --route @` serves the public API's transport diagnostics. The webapp
+example defaults to direct listening; `--forward` keeps the forwarding example.

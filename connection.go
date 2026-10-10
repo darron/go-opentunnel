@@ -15,6 +15,7 @@ import (
 // Events are bounded and lossy; Status gives the current state. Done closes after
 // all workers exit.
 type Connection struct {
+	listener        *Listener
 	client          *Client
 	profile         string
 	ctx             context.Context
@@ -47,6 +48,10 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 	if e := ValidateRoutes(o.Routes); e != nil {
 		return nil, e
 	}
+	return c.connect(ctx, o, nil)
+}
+
+func (c *Client) connect(ctx context.Context, o ConnectOptions, listener *Listener) (*Connection, error) {
 	p, e := profileName(o.Profile)
 	if e != nil {
 		return nil, e
@@ -92,7 +97,7 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 		parent = c.ctx
 	}
 	life, cancel := context.WithCancel(parent)
-	x := &Connection{client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
+	x := &Connection{listener: listener, client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	x.status = Status{State: "connecting", Hostname: id.Hostname, Routes: copyRoutes(o.Routes)}
 	x.stopParent = context.AfterFunc(c.ctx, cancel)
 	c.mu.Lock()
@@ -176,6 +181,10 @@ func (x *Connection) SetRoutes(routes Routes) error {
 	if e := ValidateRoutes(routes); e != nil {
 		return e
 	}
+	return x.setRoutes(routes)
+}
+
+func (x *Connection) setRoutes(routes Routes) error {
 	x.client.mu.Lock()
 	defer x.client.mu.Unlock()
 	if e := x.client.checkRouteClaims(x.profile, routes, x); e != nil {
@@ -256,6 +265,9 @@ func (x *Connection) run() {
 		}
 		x.mu.Unlock()
 		err := s.run()
+		if x.listener != nil {
+			x.listener.discardPending()
+		}
 		x.mu.Lock()
 		x.session = nil
 		x.status.Session = ""
@@ -317,6 +329,9 @@ func (x *Connection) run() {
 	x.client.mu.Lock()
 	delete(x.client.connections, x)
 	x.client.mu.Unlock()
+	if x.listener != nil {
+		x.listener.discardPending()
+	}
 	close(x.events)
 	close(x.done)
 }

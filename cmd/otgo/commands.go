@@ -30,6 +30,7 @@ Commands:
   remove                   Delete a tunnel
   inspect                  Fetch public metadata from the remote API
   connect                  Run a tunnel connection
+  listen                   Serve an HTTP diagnostic handler directly over tunnel TLS
 
 All command flags follow the command. Common flags are --api, --data-dir,
 --profile, --json, and --request-timeout. Run ` + "`otgo <command> --help`" + ` for command flags.
@@ -77,7 +78,7 @@ func runCommand(ctx context.Context, args []string, in io.Reader, out, errout io
 		return err
 	}
 	switch args[0] {
-	case "profiles", "list", "get", "pending", "create", "resume", "ensure", "remove", "inspect", "connect":
+	case "profiles", "list", "get", "pending", "create", "resume", "ensure", "remove", "inspect", "connect", "listen":
 	default:
 		return fmt.Errorf("unknown command %q\n\n%s", args[0], usage)
 	}
@@ -90,9 +91,14 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	common.bind(fs)
 	var timeout time.Duration
 	var routes routeFlags
+	var listenNames nameFlags
 	var interactive bool
 	if name == "create" || name == "resume" || name == "ensure" {
 		fs.DurationVar(&timeout, "timeout", 2*time.Minute, "overall provisioning timeout (0 disables it)")
+	}
+	if name == "listen" {
+		fs.Var(&listenNames, "route", "SNI route name (repeatable, e.g. @ or api)")
+		fs.DurationVar(&timeout, "timeout", 0, "overall listener timeout (0 runs until cancelled)")
 	}
 	if name == "connect" {
 		fs.Var(&routes, "route", "route in name=host:port form (repeatable)")
@@ -190,6 +196,9 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 			return err
 		}
 		return printPointer(write, common.json, identity, nil)
+	}
+	if name == "listen" {
+		return listen(commandCtx, client, common.profile, listenNames, common.json, write)
 	}
 	return connect(commandCtx, client, common.profile, routes, interactive, common.json, in, write, writeErr)
 }

@@ -102,3 +102,12 @@ storage deletion boundaries. Those tests establish local behavior; they are not
 an independent audit or current live revalidation of the hosted service. See the
 [hardening guide](HARDENING.md), [Amp review](AMP_REVIEW.md), and the dated
 [live record](LIVE_TESTING.md).
+
+## Direct TLS listener
+
+`Client.Listen` returns handshaken `*tls.Conn` connections for HTTP embedding.
+Actual TLS/SNI validation stays in the package. `Request.TLS` is the real
+handshake state; this does not authenticate a visitor with a client certificate.
+`RemoteAddr` is the relay-provided peer string. The relay can forge it, so it is
+not a separate proof of visitor identity. The package never uses HTTP forwarding
+headers to infer TLS or peer state. See [the listener contracts](LISTENER.md).

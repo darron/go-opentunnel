@@ -128,3 +128,42 @@ The rebuilt CLI and app also passed the [recorded post-Amp public workflow](LIVE
 with exit 0 and remote/local cleanup verified. These results cover the listed
 cases; they do not establish all inputs, Windows runtime behavior, long-term
 production renewal, or hosted operator security.
+
+## TLS listener verification, 2026-10-10
+
+Implemented [issue #1](https://github.com/darron/go-opentunnel/issues/1) with
+`Client.Listen` / `Listener`, `otgo listen`, and a direct-listener webapp example.
+No external dependency was added. The existing forwarding API remains available.
+
+Verified on macOS arm64, Go 1.27.2, golangci-lint 2.14.0:
+
+| Check | Result |
+| --- | --- |
+| `make check` | All tests, vet, format, CLI/app builds passed; golangci-lint **0 issues** |
+| `go test -race ./... -count=1` | Full race suite passed |
+| `go test -race -run '^TestListener' . -count=10` | Ten repetitions passed |
+| `GOTOOLCHAIN=go1.25.0 go test ./... -count=1` | Minimum supported Go version passed |
+| Linux/Windows amd64 | Package/CLI test compilation and webapp builds passed; Windows runtime untested |
+| `make fuzz` | Frame 64,474; control 1,105,775; SNI 610,384 executions, no failures |
+| Sharing check | Relative documentation links resolved; no private workstation paths or private key material found. The preexisting storage test contains an invalid `KEY` PEM placeholder. |
+
+The listener fixtures use the real relay framing, generated certificates, TLS
+handshakes, and HTTP server. Coverage includes `Request.TLS`, Secure cookies,
+HTTPS origin construction, exact relay peer despite forged forwarding headers,
+wrong SNI, streaming HTTP/WSS with normal close, preserving buffered responses
+for slow readers, limits and stalled visitors, idle cleanup,
+certificate refresh, pending recovery, repeated reconnects without accepting,
+disjoint forwarding/listener route ownership, concurrent Accept, lifetime/fatal
+errors, client shutdown/removal, and joining write-deadline workers. The CLI
+regressions cover valid name parsing, invalid/duplicate names, help, and metadata.
+
+The first hosted attempt exposed reuse of the forwarding flag parser, which
+rejected `--route @` before listener startup. A failing CLI regression reproduced
+it; separate route-name parsing fixed it. That attempt cleaned up its identities.
+The next hosted attempt exposed response truncation on ordinary application
+close: an immediate reset could discard already-written bytes buffered by the
+relay. A slow-reader regression reproduced the truncation. Ordinary close now
+sends protocol `end` so preceding bytes drain; failures and forced shutdown retain
+reset/session-abort behavior. Normal WebSocket close is also asserted locally.
+The final rebuilt hosted rerun is recorded in [LIVE_TESTING.md](LIVE_TESTING.md).
+See [LISTENER.md](LISTENER.md) for lifetime, shutdown, and trust contracts.

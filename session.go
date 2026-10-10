@@ -287,10 +287,10 @@ func (s *session) open(m controlMessage) {
 	x := s.owner
 	x.mu.Lock()
 	route, ok := RouteForSNI(m.SNI, x.identity.Hostname)
-	target := x.routes[route]
+	target, claimed := x.routes[route]
 	cert := x.cert
 	x.mu.Unlock()
-	if !ok || target == "" {
+	if !ok || !claimed {
 		_ = s.control(controlMessage{Type: "reset", Conn: m.Conn, Code: "unknown_route"})
 		return
 	}

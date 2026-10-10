@@ -1,5 +1,6 @@
-// Package opentunnel forwards visitor TLS through OpenTunnel and terminates it
-// in the embedding process. See docs/SECURITY.md for the operator trust boundary.
+// Package opentunnel terminates visitor TLS carried through OpenTunnel and
+// exposes it through a net.Listener or forwards decrypted bytes to TCP targets.
+// See docs/SECURITY.md for the operator trust boundary.
 package opentunnel
 
 import (
@@ -17,7 +18,7 @@ const DefaultAPI = "https://opentunnel.xyz"
 const Version = "0.1.0"
 
 var (
-	// ErrClosed reports an operation attempted after its Client or Connection was closed.
+	// ErrClosed reports an operation attempted after its Client, Connection, or Listener was closed.
 	ErrClosed = errors.New("opentunnel: closed")
 	// ErrExists reports an attempt to create a completed tunnel over an existing profile.
 	ErrExists = errors.New("opentunnel: profile already has a tunnel")
@@ -25,7 +26,7 @@ var (
 	ErrProfileChanged = errors.New("opentunnel: profile removed or replaced during provisioning")
 	// ErrInvalid reports invalid input or protocol/certificate data.
 	ErrInvalid = errors.New("opentunnel: invalid input")
-	// ErrRouteInUse reports overlapping routes on connections owned by one Client.
+	// ErrRouteInUse reports overlapping routes on tunnels owned by one Client.
 	ErrRouteInUse = errors.New("opentunnel: route already connected by this client")
 	// ErrRouteMismatch reports a TLS hostname that differs from the relay route.
 	ErrRouteMismatch = errors.New("opentunnel: TLS hostname does not match relay route")
@@ -154,8 +155,8 @@ type TransportOptions struct {
 	BackoffMin time.Duration
 	// BackoffMax defaults to 30 seconds for bridge reconnection.
 	BackoffMax time.Duration
-	// IdleTimeout closes established channels with no application bytes in either
-	// direction for this duration. Zero disables it; streaming apps may need this.
+	// IdleTimeout closes inactive established channels. Connect counts application
+	// bytes; Listen counts TLS records read/written by the application. Zero disables it.
 	IdleTimeout time.Duration
 }
 

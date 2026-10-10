@@ -373,3 +373,13 @@ limits.
 The package forwards to an application's local TCP server. It supplies no
 hosted relay, daemon, installer, app authentication layer, direct HTTP-handler
 adapter, or tunnel-backed public `net.Listener`.
+
+## Direct HTTP embedding
+
+`Client.Listen` adds a TLS `net.Listener` alongside TCP forwarding. Both modes
+share the connection/session lifecycle, certificate refresh, route claims, and
+admission limits. After the existing SNI-validated handshake, listener channels
+enter a bounded accept queue and remain session-owned until application close,
+reset, idle timeout, or session shutdown. The exact `*tls.Conn` reaches HTTP
+handlers. No loopback socket or synthetic HTTPS marker is required. See
+[LISTENER.md](LISTENER.md) for the API and shutdown/peer contracts.

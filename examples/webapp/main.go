@@ -1,8 +1,9 @@
-// webapp embeds opentunnel and serves a loopback HTTP/WebSocket test target.
+// webapp serves HTTP/WebSocket through a tunnel TLS listener or a loopback target.
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -29,10 +30,12 @@ func run() error {
 	api := flag.String("api", "", "OpenTunnel API base URL")
 	dataDir := flag.String("data-dir", "", "tunnel storage directory (default: XDG)")
 	profile := flag.String("profile", "webapp", "tunnel profile")
+	forward := flag.Bool("forward", false, "forward tunnel traffic to the loopback HTTP listener")
 	localOnly := flag.Bool("local-only", false, "serve only the loopback target; do not create a tunnel")
 	flag.Parse()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprintln(w, "go-opentunnel loopback example") })
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprintln(w, "go-opentunnel embedded example") })
+	mux.HandleFunc("/request", requestMetadata)
 	mux.HandleFunc("/stream", stream)
 	mux.HandleFunc("/ws", echo)
 	server := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -44,7 +47,10 @@ func run() error {
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
-	serverErr := serve(server, *addr)
+	var serverErr <-chan error
+	if *localOnly || *forward {
+		serverErr = serve(server, *addr)
+	}
 	if *localOnly {
 		return waitServer(ctx, serverErr)
 	}
@@ -57,6 +63,18 @@ func run() error {
 		return err
 	}
 	defer func() { _ = client.Close() }()
+	if !*forward {
+		listener, err := client.Listen(ctx, opentunnel.ListenOptions{Profile: *profile, Routes: []string{"@"}, Lifetime: ctx})
+		if err != nil {
+			return err
+		}
+		defer func() { _ = listener.Close() }()
+		errs := make(chan error, 1)
+		go func() { errs <- server.Serve(listener); close(errs) }()
+		defer func() { _ = listener.Close(); _ = server.Close(); <-errs }()
+		log.Printf("serving handler directly through https://%s", listener.Identity().Hostname)
+		return waitConnection(ctx, errs, listener)
+	}
 	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: *profile, Routes: opentunnel.Routes{"@": *addr}, Lifetime: ctx})
 	if err != nil {
 		return err
@@ -97,12 +115,19 @@ func waitServer(ctx context.Context, errs <-chan error) error {
 	}
 }
 
-func waitConnection(ctx context.Context, errs <-chan error, connection *opentunnel.Connection) error {
+func waitConnection(ctx context.Context, errs <-chan error, connection interface {
+	Done() <-chan struct{}
+	Err() error
+	Events() <-chan opentunnel.Event
+}) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case err := <-errs:
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
 			return err
 		case <-connection.Done():
 			return connection.Err()
@@ -145,4 +170,19 @@ func echo(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// requestMetadata shows the transport state without interpreting proxy headers.
+func requestMetadata(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	state := struct {
+		TLS  bool   `json:"tls"`
+		SNI  string `json:"sni"`
+		Peer string `json:"peer"`
+	}{Peer: r.RemoteAddr}
+	if r.TLS != nil {
+		state.TLS = r.TLS.HandshakeComplete
+		state.SNI = r.TLS.ServerName
+	}
+	_ = json.NewEncoder(w).Encode(state)
 }

@@ -1,7 +1,7 @@
 # go-opentunnel
 
-Embed an [OpenTunnel](https://opentunnel.xyz) client in your Go application. Run
-an HTTP server on loopback, then use the package to expose it over public HTTPS.
+Embed an [OpenTunnel](https://opentunnel.xyz) client in your Go application. Serve
+your HTTP handler directly over public HTTPS, or forward to an existing TCP server.
 Visitor TLS terminates in your process.
 
 ```sh
@@ -13,7 +13,29 @@ Requires Go 1.25 or newer. The sole dependency outside the standard library is
 
 ## Embed the client
 
-This function connects an existing server at `127.0.0.1:8080`. Pass your
+Use `Client.Listen` to give `http.Server` the actual visitor TLS connection:
+
+```go
+listener, err := client.Listen(ctx, opentunnel.ListenOptions{
+    Profile: "demo",
+    Routes: []string{"@"},
+    Lifetime: ctx,
+})
+if err != nil {
+    return err
+}
+defer listener.Close()
+server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+return server.Serve(listener)
+```
+
+`Request.TLS` contains the real handshake. `RemoteAddr` comes from relay metadata;
+HTTP forwarding headers do not override it. Closing aborts accepted sockets and
+joins package workers. Read the [listener contracts](docs/LISTENER.md) for peer
+trust, admission limits, terminal errors, and HTTP shutdown behavior.
+
+Use `Client.Connect` for an existing TCP server. This function connects
+`127.0.0.1:8080`. Pass your
 application's shutdown context. The `demo` profile persists across restarts.
 
 ```go
@@ -52,12 +74,13 @@ func serveTunnel(ctx context.Context) error {
 
 The [webapp example](examples/webapp/main.go) includes an HTTP server, event
 handling, signal cancellation, streaming responses, and a WebSocket echo endpoint.
-Run it with `go run ./examples/webapp`; it creates and owns its tunnel connection.
+Run it with `go run ./examples/webapp`; it serves directly through `Listen`.
+Use `--forward` for the loopback forwarding path or `--local-only` for local HTTP.
 
 Use these contracts when embedding:
 
-- **Lifetime:** the `Connect` context bounds startup only. Set
-  `ConnectOptions.Lifetime` when application shutdown should stop the running
+- **Lifetime:** the `Connect` and `Listen` contexts bound startup only. Set
+  `ConnectOptions.Lifetime` or `ListenOptions.Lifetime` when application shutdown should stop the running
   tunnel. Otherwise call `Connection.Close`; `Client.Close` stops every
   connection owned by that client.
 - **Routes:** one client may run disjoint route names for the same profile.
@@ -128,7 +151,9 @@ make race
 make fuzz
 ```
 
-Local tests cover the API, storage, protocol, TLS forwarding, concurrency, and CLI.
+Local tests cover the API, storage, protocol, TLS listening/forwarding, concurrency,
+and CLI. The **2026-10-10** listener retest also verified real HTTP TLS/peer
+metadata, HTTPS/WSS normal close, and shutdown against the public service.
 The **2026-10-09** public-service records cover provisioning, HTTPS/WSS,
 streaming, large and concurrent transfers, route changes, embedding, shutdown,
 and deletion. The final CLI and embedded-app retest ran after the hardening
