@@ -33,8 +33,10 @@ type relayChunk struct {
 	end  bool
 }
 type relayChannel struct {
-	socket *net.TCPConn
-	input  chan relayChunk
+	mu         sync.Mutex
+	outputGate <-chan struct{}
+	socket     *net.TCPConn
+	input      chan relayChunk
 }
 type relaySession struct {
 	fixture    *relayFixture
@@ -229,6 +231,16 @@ func (s *relaySession) publicRaw(t *testing.T, id uint32, sni string) net.Conn {
 		for {
 			select {
 			case p := <-ch.input:
+				ch.mu.Lock()
+				gate := ch.outputGate
+				ch.mu.Unlock()
+				if gate != nil {
+					select {
+					case <-gate:
+					case <-s.ctx.Done():
+						return
+					}
+				}
 				if p.end {
 					_ = ch.socket.CloseWrite()
 				} else {

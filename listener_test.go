@@ -505,24 +505,19 @@ func TestListenerApplicationClosePreservesBufferedResponse(t *testing.T) {
 	l := listenTest(t, c, ListenOptions{Routes: []string{"@"}})
 	s := f.next(t)
 	public := s.public(t, 1, "demo.test")
-	// Small TCP buffers can drain slowly on CI; assert byte preservation, not speed.
-	if err := public.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
 	conn := acceptTest(t, l)
-	tcp, ok := public.NetConn().(*net.TCPConn)
-	if !ok {
-		t.Fatal("missing visitor TCP socket")
-	}
-	if err := tcp.SetReadBuffer(1024); err != nil {
-		t.Fatal(err)
-	}
 	s.mu.Lock()
 	relay := s.channels[1]
 	s.mu.Unlock()
-	if err := relay.socket.SetWriteBuffer(1024); err != nil {
-		t.Fatal(err)
-	}
+	// Hold relay output after TLS setup so close happens with response bytes
+	// queued. This does not depend on OS-specific TCP buffering or pacing.
+	gate := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(gate) }) }
+	t.Cleanup(release)
+	relay.mu.Lock()
+	relay.outputGate = gate
+	relay.mu.Unlock()
 	payload := strings.Repeat("complete-response-", 32768)
 	if _, err := io.WriteString(conn, payload); err != nil {
 		t.Fatal(err)
@@ -530,6 +525,15 @@ func TestListenerApplicationClosePreservesBufferedResponse(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case message := <-s.controls:
+		if message.Type != "end" || message.Conn != 1 {
+			t.Fatalf("application Close sent %+v", message)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("application Close did not notify relay")
+	}
+	release()
 	reply, err := io.ReadAll(public)
 	if err != nil || string(reply) != payload {
 		t.Fatalf("Close truncated response: got %d/%d, %v", len(reply), len(payload), err)

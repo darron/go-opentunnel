@@ -167,3 +167,10 @@ sends protocol `end` so preceding bytes drain; failures and forced shutdown reta
 reset/session-abort behavior. Normal WebSocket close is also asserted locally.
 The final rebuilt hosted rerun is recorded in [LIVE_TESTING.md](LIVE_TESTING.md).
 See [LISTENER.md](LISTENER.md) for lifetime, shutdown, and trust contracts.
+
+The [first hosted Linux CI run](https://github.com/darron/go-opentunnel/actions/runs/38080724255)
+timed out in the slow-reader test because its tiny TCP buffer drained much more
+slowly on Linux than macOS. The regression now pauses relay output explicitly
+after TLS setup, queues a response, observes orderly `end`, then releases output
+and checks every byte. Restoring the original reset behavior makes it fail.
+This removes an OS-dependent throughput assumption; production code is unchanged.
