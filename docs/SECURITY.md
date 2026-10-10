@@ -9,7 +9,7 @@ remains inside the HTTPS trust boundary.
 | Observer | What is visible |
 | --- | --- |
 | Normally operating relay | Encrypted TLS records and traffic metadata; no HTTP paths, queries, headers, cookies, bodies, or application WebSocket contents |
-| Domain/certificate operator acting maliciously, or after compromise | Could obtain another trusted certificate and impersonate the tunnel hostname to visitors |
+| Domain/certificate operator acting maliciously, or after compromise | Could actively impersonate the tunnel hostname using a different trusted certificate and its private key, exposing traffic from visitors who connect to that endpoint |
 | Embedding process and local target | Decrypted application traffic, including anything written to their logs |
 | Observer on the target's network path | Plaintext application bytes after local TLS termination; loopback keeps this path on the local host |
 
@@ -17,20 +17,52 @@ The visitor's TLS connection passes through the relay and terminates in the
 embedding Go process. The outer HTTPS/WebSocket bridge is a separate authenticated
 connection. Decrypting that outer connection does not decrypt visitor TLS.
 
+## Local keys and visitor TLS
+
+The client generates an ECDSA P-256 private key locally. It sends a signed
+certificate signing request (CSR) containing the public key and requested
+hostnames to the API; it never sends the private key. The certificate authority
+issues a certificate binding those hostnames to that public key. The client
+checks that the returned certificate matches its private key before using it.
+
+For a genuine visitor connection to the embedding process, TLS protects the
+application traffic from the relay. The public certificate and CSR do not let
+the relay decrypt that traffic. The local private key authenticates the TLS
+endpoint; ephemeral key exchange establishes the traffic keys. A different
+certificate and private key cannot decrypt previously recorded genuine sessions.
+
 ## Domain and certificate authority
 
-The hosted provider controls tunnel DNS and ACME DNS-01 authorization for
-`*.opentunnel.xyz`. That authority could issue a certificate using a different
-private key, terminate future visitor connections, and proxy them to your app.
-This is a consequence of DNS/certificate authority, not evidence that the hosted
-service intercepts traffic.
+The hosted provider controls tunnel DNS and ACME DNS-01 validation for tunnel
+hostnames under `opentunnel.xyz`. That authority could obtain a trusted certificate
+using its own private key and direct future visitor connections to an endpoint
+it controls. It could then decrypt those connections and proxy requests to your
+app over a separate TLS connection. This attack does not require your local
+private key or decrypt the original end-to-end sessions. It is a consequence of
+DNS/certificate authority, not evidence that the hosted service intercepts traffic.
 
-The client checks that its issued certificate matches its local private key.
-That check cannot prevent a different certificate from being presented to
-visitors. Excluding the provider from this trust boundary requires independently
-verified key pinning or application encryption with independently authenticated
-keys. Ordinary browser HTTPS to a provider-owned hostname does not provide that
-independence.
+The client's certificate/key check cannot prevent a different valid certificate
+from being presented to visitors. Excluding the provider from this trust boundary
+requires independently verified key pinning or application encryption with
+independently authenticated keys. Ordinary browser HTTPS to a provider-owned
+hostname does not provide that independence.
+
+### Wildcards and Certificate Transparency
+
+The client requests a certificate for its own hostname, such as
+`demo.opentunnel.xyz`, and `*.demo.opentunnel.xyz` for named routes. Those names
+share its locally generated key. A separate operator-held certificate for
+`*.opentunnel.xyz` would cover `demo.opentunnel.xyz`, but not
+`api.demo.opentunnel.xyz`: a wildcard matches only one DNS label. See
+[RFC 9525's wildcard rules](https://www.rfc-editor.org/rfc/rfc9525.html#section-7.1).
+
+An operator that holds a valid covering certificate and its private key could
+reuse them for impersonation without issuing another certificate.
+[Certificate Transparency](https://certificate.transparency.dev/howctworks/)
+logs certificate issuance, not each connection that uses a certificate.
+Monitoring can make new issuance visible, but cannot reveal every use of an
+existing certificate or prove who holds its private key. Using a wildcard
+therefore does not remove the operator from the HTTPS trust boundary.
 
 ## Metadata and endpoints
 
