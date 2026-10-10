@@ -178,3 +178,21 @@ This removes an OS-dependent throughput assumption; production code is unchanged
 [Follow-up hosted CI](https://github.com/darron/go-opentunnel/actions/runs/38080929130)
 passed for `8b4365cf38b6ac4802bf21d09bb161c554f9034c`: Go 1.25 tests/vet/builds
 on Linux and macOS, the Linux race suite, and all-package formatting/lint.
+
+## v0.3.0 review follow-up, 2026-10-10
+
+The [Amp/Oracle listener review](AMP_REVIEW_V0.3.0.md) reproduced a terminal-error
+race during profile removal and found stale design documentation. Both were
+fixed before release. The new 64-paused-listener regression failed on every
+listener before the fix, then passed ten race repetitions. After the fixes,
+`make check`, the fresh full race suite, and Go 1.25 full tests passed; lint
+reported **0 issues**. Amp's focused confirmation also passed all listener tests
+with ten race repetitions, the full race suite, ten Go 1.25 repetitions of the
+removal regression, vet, formatting, lint, and diff checks.
+
+The CLI and webapp were rebuilt after the removal fix. The entire public-service
+workflow was repeated and recorded with **exit 0**, including forwarding and
+direct listeners, streaming, normal WebSocket close, route changes, shutdown,
+and cleanup. All three owned identities were deleted with authenticated API
+404 confirmations; local state was empty and all owned processes stopped.
+See [the post-review live record](LIVE_TESTING.md#v030-post-review-retest-2026-10-10).

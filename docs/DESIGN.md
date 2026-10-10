@@ -354,13 +354,15 @@ cooldown is in memory, so restarting the client resets it.
 ## CLI, examples, and verification
 
 `otgo` provides `profiles`, `list`, `get`, `pending`, `create`, `resume`, `ensure`,
-`remove`, `inspect`, and `connect`. It displays public metadata, accepts common
-API/storage/profile/JSON/timeout flags, and supports interactive `status`,
-`routes`, and `quit`. It does not daemonize or install services.
+`remove`, `inspect`, `connect`, and `listen`. It displays public metadata and
+accepts common API/storage/profile/JSON/timeout flags. `connect` supports
+interactive `status`, `routes`, and `quit`; `listen` serves an HTTP diagnostic
+handler directly over tunnel TLS. It does not daemonize or install services.
 
-The webapp example runs a loopback server, embeds `Client.Connect`, consumes
-events, and shuts down through context cancellation. `--local-only` starts just
-the test target. See [TESTING.md](TESTING.md) for runnable commands,
+The webapp example embeds `Client.Listen` by default, consumes events, and shuts
+down through context cancellation. `--forward` uses `Client.Connect` with a
+loopback server; `--local-only` starts just that local test target.
+See [TESTING.md](TESTING.md) for runnable commands,
 [VERIFICATION.md](VERIFICATION.md) for local evidence, and
 [LIVE_TESTING.md](LIVE_TESTING.md) for hosted interoperability results and gaps.
 The [security model](SECURITY.md) distinguishes relay encryption, metadata,
@@ -370,9 +372,9 @@ limits.
 
 ## Scope
 
-The package forwards to an application's local TCP server. It supplies no
-hosted relay, daemon, installer, app authentication layer, direct HTTP-handler
-adapter, or tunnel-backed public `net.Listener`.
+The package provides a tunnel-backed TLS `net.Listener` for direct HTTP serving
+and forwards to an application's local TCP server. It supplies no hosted relay,
+daemon, installer, or application authentication layer.
 
 ## Direct HTTP embedding
 

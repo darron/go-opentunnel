@@ -562,6 +562,8 @@ func (c *Client) Remove(ctx context.Context, profile string) error {
 	for conn, profile := range c.connections {
 		if profile == p {
 			conns = append(conns, conn)
+			// Publish requested closure before cancellation can classify shutdown.
+			conn.closeRequested.Store(true)
 			conn.cancel()
 		}
 	}

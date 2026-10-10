@@ -11,6 +11,8 @@ go get github.com/darron/go-opentunnel
 Requires Go 1.25 or newer. The sole dependency outside the standard library is
 `github.com/coder/websocket`. Licensed under [MIT](LICENSE).
 
+See [CHANGELOG.md](CHANGELOG.md) for release highlights.
+
 ## Embed the client
 
 Use `Client.Listen` to give `http.Server` the actual visitor TLS connection:
@@ -161,5 +163,6 @@ changes; the earlier run also exercised a forced bridge reconnect.
 
 Read the [local results](docs/VERIFICATION.md) and
 [live results and limits](docs/LIVE_TESTING.md) for the evidence. See the
-[hardening guide](docs/HARDENING.md) and [Amp review](docs/AMP_REVIEW.md) for
-current behavior, review dispositions, and remaining limits.
+[hardening guide](docs/HARDENING.md), [v0.2.0 Amp review](docs/AMP_REVIEW.md), and
+[v0.3.0 listener review](docs/AMP_REVIEW_V0.3.0.md) for current behavior, review
+dispositions, and remaining limits.

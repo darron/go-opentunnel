@@ -279,3 +279,30 @@ concurrent Accept, and worker joining were exercised with local relay fixtures;
 this hosted run does not claim those adversarial scenarios were induced at the
 public service. See [VERIFICATION.md](VERIFICATION.md#tls-listener-verification-2026-10-10)
 and [LISTENER.md](LISTENER.md) for evidence and contracts.
+
+## v0.3.0 post-review retest, 2026-10-10
+
+After fixing the [Amp/Oracle removal finding](AMP_REVIEW_V0.3.0.md), the rebuilt
+CLI and webapp repeated the complete TLS-listener workflow above. The driver
+recorded **exit 0**. It used private temporary storage and normal public TLS
+verification. No credentials or raw workflow artifacts were added to the repo.
+
+- Provisioning and CLI inspection: canceled creation with saved pending state,
+  resume, ensure, get, pending, profiles, list, create conflict, JSON redaction,
+  and offline/online inspection.
+- Forwarding: public HTTPS, three incremental stream chunks, 16,000-byte text
+  and binary WSS with normal close, an exact 2 MiB upload, and eight concurrent
+  256 KiB uploads.
+- Routes and shutdown: invalid interactive input preserves traffic; named route
+  attachment, backend replacement/refusal, empty-route pause and restoration,
+  quit with open stdin, timeout, and SIGINT.
+- Direct listening: root/named TLS state, SNI, secure origin, relay peer, ignored
+  forged forwarding headers, SIGINT, timeout, and return to offline state.
+- Embedded app: fresh provisioning through `Listen`, HTTPS, incremental stream,
+  text/binary WSS with normal close, real request metadata, and SIGINT shutdown.
+- Cleanup: pending deletion, idempotent removal, authenticated API 404 for all
+  three owned identities, empty local profile/identity views, and stopped owned
+  processes, including the local-only app.
+
+The 64-paused-listener removal race was tested against local relay fixtures;
+this live run did not induce that concurrency scenario at the hosted service.

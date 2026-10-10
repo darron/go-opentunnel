@@ -472,6 +472,37 @@ func TestListenerClientShutdownAndRemoveJoinAccepts(t *testing.T) {
 	}
 }
 
+func TestListenerRemovePausedListenersReportsClosed(t *testing.T) {
+	f := newRelay(t)
+	c := tunnelClient(t, f, TransportOptions{})
+	listeners := make([]*Listener, 64)
+	for i := range listeners {
+		l := listenTest(t, c, ListenOptions{Routes: []string{fmt.Sprintf("r%d", i)}})
+		_ = f.next(t)
+		if err := l.SetRoutes(nil); err != nil {
+			t.Fatal(err)
+		}
+		waitStatus(t, l.connection, func(s Status) bool { return s.State == "waiting-routes" })
+		listeners[i] = l
+	}
+	if err := c.Remove(t.Context(), ""); err != nil {
+		t.Fatal(err)
+	}
+	for i, l := range listeners {
+		select {
+		case <-l.Done():
+		default:
+			t.Errorf("listener %d: removal returned before workers exited", i)
+		}
+		if err := l.Err(); err != nil {
+			t.Errorf("listener %d: Err = %v, want nil", i, err)
+		}
+		if _, err := l.Accept(); !errors.Is(err, net.ErrClosed) {
+			t.Errorf("listener %d: Accept = %v, want net.ErrClosed", i, err)
+		}
+	}
+}
+
 func TestListenerCloseJoinsWriteDeadlineWatchers(t *testing.T) {
 	f := newRelay(t)
 	c := tunnelClient(t, f, TransportOptions{})
