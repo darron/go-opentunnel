@@ -12,9 +12,11 @@ import (
 )
 
 func privateDir(path string) error {
+	// #nosec G703 -- Operator-selected storage path; directory ownership and type checked below.
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return errors.New("cannot create protected storage directory")
 	}
+	// #nosec G703 -- Metadata check of an operator-selected storage path.
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("unsafe storage directory")
@@ -25,6 +27,7 @@ func privateDir(path string) error {
 	return nil
 }
 func checkPrivateFile(path string) (os.FileInfo, error) {
+	// #nosec G703 -- Metadata check of an operator-selected storage path.
 	info, e := os.Lstat(path)
 	if e != nil {
 		return nil, e

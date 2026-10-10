@@ -10,7 +10,7 @@ import (
 
 func ownedByUser(info os.FileInfo) bool {
 	s, ok := info.Sys().(*syscall.Stat_t)
-	return ok && s.Uid == uint32(os.Geteuid())
+	return ok && int64(s.Uid) == int64(os.Geteuid())
 }
 func openNoFollow(path string, flags int, mode os.FileMode) (*os.File, error) {
 	fd, e := syscall.Open(path, flags|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, uint32(mode))

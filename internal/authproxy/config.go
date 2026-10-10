@@ -67,7 +67,8 @@ func ValidProfile(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+		allowed := c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-'
+		if !allowed {
 			return false
 		}
 	}

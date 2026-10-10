@@ -100,6 +100,7 @@ func TestConfigRejectsUnsafeFiles(t *testing.T) {
 	if err := SaveConfig(link, fixtureConfig()); err == nil {
 		t.Fatal("replaced symlink")
 	}
+	// #nosec G302 -- Deliberately public credentials must be rejected.
 	if err := os.Chmod(target, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +110,7 @@ func TestConfigRejectsUnsafeFiles(t *testing.T) {
 	if err := os.Chmod(target, 0600); err != nil {
 		t.Fatal(err)
 	}
+	// #nosec G302 -- Deliberately unsafe directory must be rejected.
 	if err := os.Chmod(root, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +157,7 @@ func TestConfigBindingMismatch(t *testing.T) {
 func secureTempDir(t *testing.T) string {
 	t.Helper()
 	p := t.TempDir()
+	// #nosec G302 -- Directory needs owner read/write/search permissions.
 	if err := os.Chmod(p, 0700); err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,231 @@
+package authproxy
+
+import (
+	"crypto/subtle"
+	"errors"
+	"html/template"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+)
+
+const SessionCookie = "__Host-otgo-session"
+const CSRFCookie = "__Host-otgo-csrf"
+const sessionLifetime = 8 * time.Hour
+
+type BrowserAuthenticator interface{ Register(*http.ServeMux) }
+type credential struct {
+	secret    string
+	machine   bool
+	principal Principal
+}
+
+func (h *Handler) authenticate(r *http.Request) (credential, error) {
+	auth := r.Header.Values("Authorization")
+	xt := r.Header.Values("X-Otgo-Token")
+	if len(auth) > 1 || len(xt) > 1 {
+		return credential{}, errUnauthorized
+	}
+	var cookie string
+	count := 0
+	for _, c := range r.Cookies() {
+		if c.Name == SessionCookie {
+			count++
+			cookie = c.Value
+		}
+	}
+	if count > 1 {
+		return credential{}, errUnauthorized
+	}
+	bearer := ""
+	if len(auth) == 1 {
+		fields := strings.Fields(auth[0])
+		if len(fields) >= 2 && strings.EqualFold(fields[0], "Bearer") && strings.HasPrefix(fields[1], "otgo_") {
+			if len(fields) != 2 {
+				return credential{}, errUnauthorized
+			}
+			bearer = fields[1]
+		}
+	}
+	if bearer != "" && len(xt) > 0 {
+		return credential{}, errUnauthorized
+	}
+	if len(xt) > 0 {
+		bearer = xt[0]
+		if bearer == "" {
+			return credential{}, errUnauthorized
+		}
+	}
+	if bearer != "" {
+		if h.tokens == nil {
+			return credential{}, errUnauthorized
+		}
+		p, e := h.tokens.Authenticate(bearer)
+		return credential{secret: bearer, machine: true, principal: p}, e
+	}
+	p, e := h.sessions.Authenticate(cookie)
+	return credential{secret: cookie, principal: p}, e
+}
+func (h *Handler) validOrigin(r *http.Request, c credential) bool {
+	origins := r.Header.Values("Origin")
+	if len(origins) > 1 {
+		return false
+	}
+	if len(origins) == 1 && origins[0] != h.origin {
+		return false
+	}
+	unsafe := r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS"
+	ws := r.Header.Get("Upgrade") != ""
+	return c.machine || (!unsafe && !ws) || len(origins) == 1
+}
+func (h *Handler) validPublicRequest(r *http.Request) bool {
+	return r.Host == h.config.Binding.Hostname && r.TLS != nil && r.TLS.HandshakeComplete && r.TLS.ServerName == h.config.Binding.Hostname && !r.URL.IsAbs() && r.URL.Host == ""
+}
+func ownedHeaders(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+}
+func authCookie(name, value string, maxAge int) *http.Cookie {
+	return &http.Cookie{Name: name, Value: value, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: maxAge}
+}
+func csrfMatches(r *http.Request) bool {
+	var val string
+	count := 0
+	for _, c := range r.Cookies() {
+		if c.Name == CSRFCookie {
+			count++
+			val = c.Value
+		}
+	}
+	given := r.PostForm.Get("csrf")
+	return count == 1 && len(val) == 43 && len(given) == 43 && subtle.ConstantTimeCompare([]byte(val), []byte(given)) == 1
+}
+
+var loginPage = template.Must(template.New("login").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Protected by otgo</title><style>body{font:17px system-ui;margin:12vh auto;padding:24px;max-width:380px;background:#f6f5f1;color:#20242a}input,button{font:inherit;box-sizing:border-box;padding:12px;width:100%;margin-top:12px}label{display:block}button{background:#243c37;color:white;border:0;border-radius:5px}small{color:#555}</style><main><h1>Sign in</h1><p>This site is protected by otgo.</p>{{if .GitHub}}<a href="/__otgo/github">Sign in with GitHub</a>{{else}}<form method="post" action="/__otgo/login"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Password<input type="password" name="password" maxlength="1024" autocomplete="current-password" required autofocus></label><button>Sign in</button></form>{{end}}<p><small>{{.Message}}</small></p></main></html>`))
+
+func renderLogin(w http.ResponseWriter, r *http.Request, github bool, message string) {
+	ownedHeaders(w)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	csrf := randomSecret()
+	http.SetCookie(w, authCookie(CSRFCookie, csrf, 600))
+	w.WriteHeader(http.StatusUnauthorized)
+	if r.Method != "HEAD" {
+		_ = loginPage.Execute(w, struct {
+			CSRF    string
+			GitHub  bool
+			Message string
+		}{csrf, github, message})
+	}
+}
+
+type PasswordBrowserAuthenticator struct {
+	verifier  PasswordVerifier
+	sessions  *Sessions
+	origin    string
+	mu        sync.Mutex
+	allowance float64
+	last      time.Time
+	now       func() time.Time
+	slots     chan struct{}
+}
+
+func NewPasswordBrowserAuthenticator(cfg Config, s *Sessions) *PasswordBrowserAuthenticator {
+	return &PasswordBrowserAuthenticator{verifier: cfg.Password, sessions: s, origin: "https://" + cfg.Binding.Hostname, allowance: 10, last: time.Now(), now: time.Now, slots: make(chan struct{}, 2)}
+}
+func (p *PasswordBrowserAuthenticator) admit() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := p.now()
+	p.allowance += now.Sub(p.last).Seconds()
+	p.last = now
+	if p.allowance > 10 {
+		p.allowance = 10
+	}
+	if p.allowance < 1 {
+		return false
+	}
+	p.allowance--
+	return true
+}
+func (p *PasswordBrowserAuthenticator) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /__otgo/login", func(w http.ResponseWriter, r *http.Request) { renderLogin(w, r, false, "") })
+	mux.HandleFunc("POST /__otgo/login", p.login)
+}
+func (p *PasswordBrowserAuthenticator) login(w http.ResponseWriter, r *http.Request) {
+	ownedHeaders(w)
+	if len(r.Header.Values("Origin")) != 1 || r.Header.Get("Origin") != p.origin {
+		http.Error(w, "Invalid request origin", http.StatusForbidden)
+		return
+	}
+	if !p.admit() {
+		http.Error(w, "Too many login attempts", http.StatusTooManyRequests)
+		return
+	}
+	select {
+	case p.slots <- struct{}{}:
+		defer func() { <-p.slots }()
+	default:
+		http.Error(w, "Login service busy", http.StatusTooManyRequests)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if e := r.ParseForm(); e != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(e, &tooLarge) {
+			http.Error(w, "Login request too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "Invalid login request", http.StatusBadRequest)
+		}
+		return
+	}
+	if !csrfMatches(r) {
+		http.Error(w, "Invalid login request", http.StatusForbidden)
+		return
+	}
+	if len(r.PostForm["password"]) != 1 || !VerifyPassword(p.verifier, []byte(r.PostForm.Get("password"))) {
+		renderLogin(w, r, false, "Invalid password")
+		return
+	}
+	secret, e := p.sessions.Create(Principal{ID: "password", Mechanism: "password"}, sessionLifetime)
+	if e != nil {
+		http.Error(w, "Login service busy", http.StatusServiceUnavailable)
+		return
+	}
+	if old, e := r.Cookie(SessionCookie); e == nil {
+		p.sessions.Revoke(old.Value)
+	}
+	http.SetCookie(w, authCookie(SessionCookie, secret, int(sessionLifetime.Seconds())))
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	ownedHeaders(w)
+	c, e := h.authenticate(r)
+	if e != nil || c.machine {
+		http.Error(w, "Sign in required", http.StatusUnauthorized)
+		return
+	}
+	if r.Method == "GET" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		csrf := randomSecret()
+		http.SetCookie(w, authCookie(CSRFCookie, csrf, 600))
+		_, _ = io.WriteString(w, `<!doctype html><title>Sign out</title><form method="post" action="/__otgo/logout"><input type="hidden" name="csrf" value="`+csrf+`"><button>Sign out</button></form>`)
+		return
+	}
+	if !h.validOrigin(r, c) {
+		http.Error(w, "Invalid request origin", http.StatusForbidden)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if e := r.ParseForm(); e != nil || !csrfMatches(r) {
+		http.Error(w, "Invalid logout request", http.StatusForbidden)
+		return
+	}
+	h.sessions.Revoke(c.secret)
+	http.SetCookie(w, authCookie(SessionCookie, "", -1))
+	http.SetCookie(w, authCookie(CSRFCookie, "", -1))
+	http.Redirect(w, r, "/__otgo/login", http.StatusSeeOther)
+}
