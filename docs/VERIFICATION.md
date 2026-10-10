@@ -1,5 +1,35 @@
 # Local verification record
 
+## Auth proxy and Homebrew — 2026-10-10
+
+Verified on macOS arm64 with Go 1.27.2 and golangci-lint 2.14.0. Auth adds no external
+dependency; the existing WebSocket dependency is unchanged. The default build
+produces only the CLI; the example has a separate target.
+
+| Check | Result |
+| --- | --- |
+| `make check` | Full tests, vet, formatting, lint, CLI build passed; **0 lint issues** |
+| `make race` | All packages passed |
+| `GOTOOLCHAIN=go1.25.0 go test ./...` | Minimum Go version passed |
+| `make fuzz` | Frame 66,434; control 1,026,590; SNI routing 572,652 executions, no failure |
+| Linux/Windows amd64 CLI cross-build | Passed; not runtime-tested |
+| Solaris amd64 auth test cross-build | Passed; protected auth storage deliberately unsupported |
+| Homebrew updater unittest | Five tests passed |
+| `actionlint` | Workflow checks passed |
+| Stable Homebrew formula | Syntax/style/strict audit, source install and `brew test` passed |
+
+The fresh-context [auth review](AUTH_PROXY_REVIEW.md) reproduced defects and fixes;
+final source review found no remaining Critical/Important issue. It independently
+ran full/focused tests, race tests, vet, formatting, lint and workflow checks.
+
+The rebuilt CLI and embedding app passed the full public-service workflow again.
+The auth smoke passed real public HTTPS, including eight concurrent 2 MiB uploads,
+SSE/WSS revocation in **0.347 seconds**, corrupted-token denial, restart and two
+isolated concurrent backends. All owned processes stopped, local credentials were
+removed and API 404 confirmed remote deletion. See [LIVE_TESTING.md](LIVE_TESTING.md)
+for coverage and browser/provider limits. Older records below describe their own
+SDK revisions and checks.
+
 **Passed:** local acceptance checks, race tests, parser fuzz smoke tests, and
 minimum-version/cross-platform compilation. **golangci-lint: 0 issues.**
 

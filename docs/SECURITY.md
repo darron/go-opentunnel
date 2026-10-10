@@ -1,5 +1,23 @@
 # Security model
 
+For the CLI gate, see [AUTH_PROXY.md](AUTH_PROXY.md) and the
+[auth review](AUTH_PROXY_REVIEW.md). `otgo proxy` protects every backend path/method;
+ordinary `connect` and `listen` do not add login protection.
+
+Auth secrets require account-owned 0700 directories, regular 0600 files, bounded
+strict JSON, no-follow opens, atomic replacement and OS file locks. Password
+verifiers use PBKDF2-HMAC-SHA256 with 600,000 iterations and random salts. Generated
+passwords/tokens use cryptographic randomness. Token hashes are reloaded on each
+authentication; expiry/revocation aborts active streams. Browser sessions live in
+memory and end on restart. Login uses CSRF, rate/concurrency limits and bounded
+body reads. The operator guide specifies lifetimes and MCP compatibility limits.
+
+Windows auth storage is refused until private ACL validation is available; SDK
+and other CLI commands remain available. Same-account compromise can read/replace
+secrets despite file modes. Auth does not remove the hosted operator from the
+HTTPS trust boundary: hostname impersonation could capture passwords, sessions
+or bearer tokens. Use those credentials only for this backend.
+
 Use loopback route targets and protect stored credentials. Ordinary relay
 operation keeps application traffic encrypted, but the hosted domain operator
 remains inside the HTTPS trust boundary.

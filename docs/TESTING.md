@@ -1,5 +1,27 @@
 # Run the tests
 
+Auth regressions and the Homebrew updater:
+
+```sh
+go test -race ./internal/authproxy ./cmd/otgo
+go test -race ./internal/authproxy -run 'TestRevocationAbortsTLS|TestRuntimeFormatting|TestSlowLoginBody|TestDeniedRequestBodies|TestAuthenticatedUpload'
+python3 -m unittest discover -s scripts -p 'test_update_homebrew.py'
+```
+
+An opt-in hosted auth test creates isolated profiles, exercises the password/token
+gate, streaming/revocation/restart/multiple backends, then removes local credentials
+and verifies remote deletion with API 404:
+
+```sh
+make build
+python3 scripts/auth_smoke.py
+```
+
+The fixture becomes public only through the authenticated proxy. The test uses
+normal public HTTPS trust and never prints passwords/token values. Failed cleanup
+retains its private temporary directory and reports its location. GitHub owner
+approval and browser/app integration are separate checks.
+
 ## Local checks
 
 These commands do not create a public tunnel.
@@ -77,7 +99,7 @@ storage; keep its credentials until remote deletion succeeds.
 1. In terminal A, build and start the loopback target. Leave it running:
 
    ```sh
-   make build
+   make build build-example
    ./bin/webapp --local-only --addr 127.0.0.1:8080
    ```
 

@@ -1,5 +1,44 @@
 # Public-service validation
 
+## Auth proxy and full CLI/app retest — 2026-10-10
+
+The final rebuilt binaries passed the following checks through the hosted service
+using normal public TLS trust. Profiles and credentials were isolated from user
+profiles. Earlier attempts failed during remote certificate issuance; their
+identities were deleted and API 404 confirmed cleanup. A stable v0.3.0 provisioning
+probe subsequently passed, and fresh complete runs then passed too. The server-side
+cause of those earlier issuance failures was not established.
+
+| Path | Tested outcome |
+| --- | --- |
+| Diagnostic CLI | Interrupted create/resume, saved identity reuse, JSON redaction, online/offline inspect, interactive invalid input, root/named routes, target replacement, refused backend isolation, route suspension/restoration, timeout/quit/SIGINT with stdin open |
+| Direct listener | Root/named real TLS state, HTTPS origin, relay peer, ignored forged headers, deadline/SIGINT and offline state |
+| Embedding app | Fresh provisioning, HTTPS root/stream/WSS, incremental chunks, 16,000-byte text/binary WebSocket messages, SIGINT and offline state |
+| Transfers | Exact 2 MiB POST, eight concurrent 256 KiB diagnostic transfers; eight concurrent 2 MiB auth-proxy uploads |
+| Universal auth gate | GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS/CONNECT denied on root/assets/health/MCP/discovery/encoded variants; backend counter stayed unchanged |
+| Browser protocol | Wrong password/origin/CSRF denied, good password set a Secure/HttpOnly cookie, authenticated writes required Origin, invalid gate tokens could not fall back to a session, logout revoked access |
+| Machine clients | MCP POST accepted with bearer; hostname lookup and token mint/list worked while proxy ran; duplicate profile refused |
+| Upstream rewrite | Gate cookies/token and forged identity headers stripped; backend Authorization retained with X-Otgo-Token; Host/Origin/Referer, redirects and reserved Set-Cookie handling checked |
+| Streaming/revocation | SSE and WSS streamed; revocation closed both in **0.347 seconds** and subsequent access returned 401 |
+| Persistence/isolation | Corrupt registry denied machine access; restart retained hostname/backend/token but invalidated browser session; two profiles ran against different backends and rejected each other's credentials |
+| Cleanup | Every owned process stopped; local auth/identity files removed; API 404 confirmed all temporary remote identities were removed, including interrupted provisioning |
+
+The auth run is repeatable with `make build` and `python3 scripts/auth_smoke.py`.
+It does not implement a full MCP OAuth client/server exchange; it verifies HTTP
+MCP gating with configured machine credentials. Provider-owner browser approval,
+non-allowlisted real GitHub accounts, long-term renewal and runtime behavior on
+other operating systems remain separate from this smoke test. Local GitHub
+fixtures cover registration, PKCE/state/replay/expiry, numeric account IDs,
+allow/deny behavior, errors/timeouts and restart configuration.
+
+The installed Plannotator Inbox additionally returned its real HTML after
+password login through public HTTPS. Chrome's initial form submission was blocked
+with `ERR_BLOCKED_BY_CLIENT`; the equivalent HTTP login succeeded. Browser live
+updates, attachment/reply interactions and real GitHub owner registration are
+not claimed as passed here until their interactive checks complete.
+
+The dated SDK records below describe their own revisions.
+
 **Passed:** provisioning, HTTPS/WSS, streaming, large/concurrent transfers,
 route updates, reconnection, embedding, shutdown, and deletion. Both temporary
 tunnels were deleted; all test server/bridge processes stopped.

@@ -1,4 +1,4 @@
-//go:build unix
+//go:build darwin || linux || freebsd || openbsd || netbsd || dragonfly
 
 package authproxy
 
@@ -7,6 +7,8 @@ import (
 	"os"
 	"syscall"
 )
+
+const protectedStorageSupported = true
 
 func ownedByUser(info os.FileInfo) bool {
 	s, ok := info.Sys().(*syscall.Stat_t)

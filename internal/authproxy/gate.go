@@ -5,6 +5,7 @@ import (
 	"errors"
 	"html/template"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"sync"
@@ -122,7 +123,9 @@ func renderLogin(w http.ResponseWriter, r *http.Request, github bool, message st
 	}
 }
 
-type PasswordBrowserAuthenticator struct {
+type PasswordBrowserAuthenticator struct{ *passwordBrowserState }
+
+type passwordBrowserState struct {
 	verifier  PasswordVerifier
 	sessions  *Sessions
 	origin    string
@@ -134,7 +137,7 @@ type PasswordBrowserAuthenticator struct {
 }
 
 func NewPasswordBrowserAuthenticator(cfg Config, s *Sessions) *PasswordBrowserAuthenticator {
-	return &PasswordBrowserAuthenticator{verifier: cfg.Password, sessions: s, origin: "https://" + cfg.Binding.Hostname, allowance: 10, last: time.Now(), now: time.Now, slots: make(chan struct{}, 2)}
+	return &PasswordBrowserAuthenticator{&passwordBrowserState{verifier: cfg.Password, sessions: s, origin: "https://" + cfg.Binding.Hostname, allowance: 10, last: time.Now(), now: time.Now, slots: make(chan struct{}, 2)}}
 }
 func (p *PasswordBrowserAuthenticator) admit() bool {
 	p.mu.Lock()
@@ -165,15 +168,7 @@ func (p *PasswordBrowserAuthenticator) login(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Too many login attempts", http.StatusTooManyRequests)
 		return
 	}
-	select {
-	case p.slots <- struct{}{}:
-		defer func() { <-p.slots }()
-	default:
-		http.Error(w, "Login service busy", http.StatusTooManyRequests)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	if e := r.ParseForm(); e != nil {
+	if e := parseOwnedForm(w, r); e != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(e, &tooLarge) {
 			http.Error(w, "Login request too large", http.StatusRequestEntityTooLarge)
@@ -184,6 +179,13 @@ func (p *PasswordBrowserAuthenticator) login(w http.ResponseWriter, r *http.Requ
 	}
 	if !csrfMatches(r) {
 		http.Error(w, "Invalid login request", http.StatusForbidden)
+		return
+	}
+	select {
+	case p.slots <- struct{}{}:
+		defer func() { <-p.slots }()
+	default:
+		http.Error(w, "Login service busy", http.StatusTooManyRequests)
 		return
 	}
 	if len(r.PostForm["password"]) != 1 || !VerifyPassword(p.verifier, []byte(r.PostForm.Get("password"))) {
@@ -219,8 +221,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request origin", http.StatusForbidden)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	if e := r.ParseForm(); e != nil || !csrfMatches(r) {
+	if e := parseOwnedForm(w, r); e != nil || !csrfMatches(r) {
 		http.Error(w, "Invalid logout request", http.StatusForbidden)
 		return
 	}
@@ -228,4 +229,23 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, authCookie(SessionCookie, "", -1))
 	http.SetCookie(w, authCookie(CSRFCookie, "", -1))
 	http.Redirect(w, r, "/__otgo/login", http.StatusSeeOther)
+}
+
+// Auth forms have a short body deadline; authenticated uploads and streams do
+// not. Failed reads retain that deadline through net/http's unread-body drain.
+func parseOwnedForm(w http.ResponseWriter, r *http.Request) error {
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(time.Now().Add(2 * time.Second))
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/x-www-form-urlencoded" {
+		w.Header().Set("Connection", "close")
+		return errors.New("auth form requires URL-encoded content")
+	}
+	if err := r.ParseForm(); err != nil {
+		w.Header().Set("Connection", "close")
+		return err
+	}
+	_ = controller.SetReadDeadline(time.Time{})
+	return nil
 }

@@ -33,7 +33,9 @@ type githubManifest struct {
 	DefaultEvents      []string          `json:"default_events"`
 	Public             bool              `json:"public"`
 }
-type githubSetup struct {
+type githubSetup struct{ *githubSetupState }
+
+type githubSetupState struct {
 	cfg           Config
 	paths         Paths
 	binding       Binding
@@ -72,7 +74,7 @@ func newGitHubSetup(cfg Config, paths Paths, binding Binding, accounts []GitHubA
 	if e != nil {
 		return nil, errors.New("cannot encode GitHub manifest")
 	}
-	return &githubSetup{cfg: cfg, paths: paths, binding: binding, accounts: accounts, provider: provider, origin: origin, state: randomSecret(), manifest: string(b), expires: time.Now().Add(10 * time.Minute), now: time.Now, completed: make(chan error, 1), out: out}, nil
+	return &githubSetup{&githubSetupState{cfg: cfg, paths: paths, binding: binding, accounts: accounts, provider: provider, origin: origin, state: randomSecret(), manifest: string(b), expires: time.Now().Add(10 * time.Minute), now: time.Now, completed: make(chan error, 1), out: out}}, nil
 }
 
 var setupPage = template.Must(template.New("setup").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><title>Set up otgo GitHub login</title><h1>Set up GitHub login</h1><p>This creates a GitHub App for your tunnel. GitHub will ask you to approve creation. No repository write permissions or webhook deliveries are requested.</p><form method="post" action="/create"><input type="hidden" name="csrf" value="{{.}}"><button>Continue to GitHub</button></form></html>`))

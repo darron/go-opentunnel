@@ -142,7 +142,9 @@ type githubPending struct {
 	verifier string
 	expires  time.Time
 }
-type GitHubBrowserAuthenticator struct {
+type GitHubBrowserAuthenticator struct{ *githubBrowserState }
+
+type githubBrowserState struct {
 	config   GitHubConfig
 	sessions *Sessions
 	origin   string
@@ -167,7 +169,7 @@ func newGitHubBrowser(cfg Config, sessions *Sessions, client *http.Client, endpo
 	for _, a := range cfg.GitHub.Users {
 		allowed[a.ID] = true
 	}
-	return &GitHubBrowserAuthenticator{config: cfg.GitHub, sessions: sessions, origin: "https://" + cfg.Binding.Hostname, provider: newGitHubProvider(client, endpoints), allowed: allowed, pending: make(map[string]githubPending), now: time.Now}, nil
+	return &GitHubBrowserAuthenticator{&githubBrowserState{config: cfg.GitHub, sessions: sessions, origin: "https://" + cfg.Binding.Hostname, provider: newGitHubProvider(client, endpoints), allowed: allowed, pending: make(map[string]githubPending), now: time.Now}}, nil
 }
 func (g *GitHubBrowserAuthenticator) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /__otgo/login", func(w http.ResponseWriter, r *http.Request) { renderLogin(w, r, true, "") })

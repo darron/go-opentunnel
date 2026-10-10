@@ -284,7 +284,9 @@ func TestGateLoginLimiterAndConcurrency(t *testing.T) {
 	p.allowance = 10
 	p.slots <- struct{}{}
 	p.slots <- struct{}{}
-	r := withForm(publicRequest("POST", "/__otgo/login"), "password=x")
+	csrf := randomSecret()
+	r := withForm(publicRequest("POST", "/__otgo/login"), "password=x&csrf="+csrf)
+	r.AddCookie(authCookie(CSRFCookie, csrf, 600))
 	r.Header.Set("Origin", "https://demo.test")
 	w := httptest.NewRecorder()
 	p.login(w, r)

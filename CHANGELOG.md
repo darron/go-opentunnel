@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Add `otgo proxy` to protect every route of a fixed HTTP backend with password
+  or allowlisted GitHub login, without modifying the backend.
+- Add named XDG auth profiles, concurrent proxies for different backends,
+  persistent settings and expiring/revocable machine tokens, including HTTP MCP
+  clients that can send configured tokens.
+- Add guided GitHub App registration, OAuth state/PKCE protection and numeric
+  account allowlists. Keep auth code private to the CLI.
+- Harden auth storage, credential formatting, slow login bodies and stream
+  revocation; refuse platforms without the required storage protections.
+- Build only the CLI by default; add Homebrew installation and automated stable
+  release updates to `darron/homebrew-tap`.
+- Clarify local keys and operator-held wildcard certificates in the security doc.
+
 ## v0.3.0 — Direct TLS listeners — 2026-10-10
 
 - Add `Client.Listen` and `Listener` for serving HTTP handlers directly over

@@ -7,11 +7,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 )
 
+var errUnsupportedStorage = errors.New("otgo authentication storage is unsupported on this platform; account-only protection is required")
+
 func privateDir(path string) error {
+	if !protectedStorageSupported {
+		return errUnsupportedStorage
+	}
 	// #nosec G703 -- Operator-selected storage path; directory ownership and type checked below.
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return errors.New("cannot create protected storage directory")
@@ -21,26 +25,32 @@ func privateDir(path string) error {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("unsafe storage directory")
 	}
-	if runtime.GOOS != "windows" && (info.Mode().Perm() != 0700 || !ownedByUser(info)) {
+	if info.Mode().Perm() != 0700 || !ownedByUser(info) {
 		return errors.New("storage directory must be owned by this account with mode 0700")
 	}
 	return nil
 }
 func checkPrivateFile(path string) (os.FileInfo, error) {
+	if !protectedStorageSupported {
+		return nil, errUnsupportedStorage
+	}
 	// #nosec G703 -- Metadata check of an operator-selected storage path.
 	info, e := os.Lstat(path)
 	if e != nil {
 		return nil, e
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || (runtime.GOOS != "windows" && (info.Mode().Perm() != 0600 || !ownedByUser(info))) {
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0600 || !ownedByUser(info) {
 		return nil, errors.New("unsafe credential file; require account ownership and mode 0600")
 	}
 	return info, nil
 }
 func readPrivate(path string) ([]byte, error) {
+	if !protectedStorageSupported {
+		return nil, errUnsupportedStorage
+	}
 	// #nosec G703 -- Validate parent of an operator-selected credential file.
 	info, e := os.Lstat(filepath.Dir(path))
-	if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || (runtime.GOOS != "windows" && (info.Mode().Perm() != 0700 || !ownedByUser(info))) {
+	if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByUser(info) {
 		return nil, errors.New("unsafe or missing credential directory")
 	}
 	before, e := checkPrivateFile(path)

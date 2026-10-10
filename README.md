@@ -13,6 +13,10 @@ Requires Go 1.25 or newer. The sole dependency outside the standard library is
 
 See [CHANGELOG.md](CHANGELOG.md) for release highlights.
 
+Install the CLI with `brew install darron/tap/otgo`. See
+[Homebrew installation and automation](docs/HOMEBREW.md) for HEAD installs and
+release maintenance. `make build` builds only `bin/otgo`.
+
 ## Embed the client
 
 Use `Client.Listen` to give `http.Server` the actual visitor TLS connection:
@@ -169,7 +173,9 @@ dispositions, and remaining limits.
 
 ## Protect a local application with otgo
 
-Configure a named profile once, then start its authenticated proxy:
+The [auth guide](docs/AUTH_PROXY.md) covers persistence, multiple backends,
+password/GitHub setup, active token management and MCP compatibility. Configure a
+named profile once, then start its authenticated proxy:
 
 ```sh
 otgo auth init --profile inbox --upstream http://127.0.0.1:57732

@@ -2,3 +2,7 @@
 /coverage.out
 /otgo
 /.otgo-data/
+
+# Python tooling caches, never release materials.
+__pycache__/
+*.pyc

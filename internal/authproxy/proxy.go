@@ -21,7 +21,9 @@ type Options struct {
 	Sessions             *Sessions
 	BrowserAuthenticator BrowserAuthenticator
 }
-type Handler struct {
+type Handler struct{ *handlerState }
+
+type handlerState struct {
 	config    Config
 	origin    string
 	tokens    *TokenStore
@@ -50,19 +52,33 @@ type requestLease struct {
 	mu       sync.Mutex
 	hijacked net.Conn
 	aborted  bool
+	finished bool
 }
 
 func (l *requestLease) terminate() {
 	l.mu.Lock()
-	defer l.mu.Unlock()
+	if l.finished || l.aborted {
+		l.mu.Unlock()
+		return
+	}
 	l.aborted = true
+	client, hijacked := l.client, l.hijacked
+	l.mu.Unlock()
 	l.cancel()
-	if l.client != nil {
-		_ = l.client.Close()
+	abortConnection(client)
+	abortConnection(hijacked)
+}
+
+// Revocation must abort the transport, without waiting for a TLS close_notify
+// write to a peer that may have stopped reading.
+func abortConnection(c net.Conn) {
+	if c == nil {
+		return
 	}
-	if l.hijacked != nil {
-		_ = l.hijacked.Close()
+	if wrapped, ok := c.(interface{ NetConn() net.Conn }); ok {
+		c = wrapped.NetConn()
 	}
+	_ = c.Close()
 }
 
 type leaseWriter struct {
@@ -78,10 +94,11 @@ func (w *leaseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		return nil, nil, e
 	}
 	w.lease.mu.Lock()
-	defer w.lease.mu.Unlock()
 	w.lease.hijacked = c
-	if w.lease.aborted {
-		_ = c.Close()
+	aborted := w.lease.aborted
+	w.lease.mu.Unlock()
+	if aborted {
+		abortConnection(c)
 		return nil, nil, net.ErrClosed
 	}
 	return c, r, nil
@@ -93,7 +110,7 @@ func NewHandler(o Options) (*Handler, error) {
 	if o.Sessions == nil {
 		o.Sessions = NewSessions(1024)
 	}
-	h := &Handler{config: o.Config, origin: "https://" + o.Config.Binding.Hostname, tokens: o.TokenStore, sessions: o.Sessions, owned: http.NewServeMux(), active: make(map[*requestLease]credential), stop: make(chan struct{}), watched: make(chan struct{})}
+	h := &Handler{&handlerState{config: o.Config, origin: "https://" + o.Config.Binding.Hostname, tokens: o.TokenStore, sessions: o.Sessions, owned: http.NewServeMux(), active: make(map[*requestLease]credential), stop: make(chan struct{}), watched: make(chan struct{})}}
 	browser := o.BrowserAuthenticator
 	if browser == nil {
 		if o.Config.Mode == "github" {
@@ -176,6 +193,10 @@ func stripRequestCredentials(r *http.Request) {
 	}
 }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Even a denied request can make net/http drain an unfinished body. Bound
+	// untrusted body reads, then remove the limit only for authenticated forwarding.
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(time.Now().Add(2 * time.Second))
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	client, _ := ctx.Value(connContextKey{}).(net.Conn)
@@ -189,7 +210,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.active[lease] = credential{}
 	h.wg.Add(1)
 	h.mu.Unlock()
-	defer func() { h.mu.Lock(); delete(h.active, lease); h.mu.Unlock(); h.wg.Done() }()
+	defer func() {
+		lease.mu.Lock()
+		lease.finished = true
+		lease.mu.Unlock()
+		h.mu.Lock()
+		delete(h.active, lease)
+		h.mu.Unlock()
+		h.wg.Done()
+	}()
 	r = r.WithContext(ctx)
 	if !h.validPublicRequest(r) {
 		http.Error(w, "Misdirected request", http.StatusMisdirectedRequest)
@@ -221,6 +250,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	h.active[lease] = c
 	h.mu.Unlock()
+	_ = controller.SetReadDeadline(time.Time{})
 	h.proxy.ServeHTTP(&leaseWriter{ResponseWriter: w, lease: lease}, r)
 }
 func (h *Handler) watch() {
