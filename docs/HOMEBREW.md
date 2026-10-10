@@ -31,7 +31,8 @@ main. Manual runs validate even an unchanged formula. The workflow uses the tap'
 own `GITHUB_TOKEN`; no personal token or additional secret is required. Validation
 runs with read-only permissions. A separate fresh runner recreates the validated
 formula change using tap-owned code and receives write permission only for
-publishing. dbrain's existing workflow and formula remain unchanged.
+publishing. Both jobs use the same immutable main commit; other refs are skipped.
+dbrain's existing workflow and formula remain unchanged.
 
 Run a validation/update without publishing another release:
 

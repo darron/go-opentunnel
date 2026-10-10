@@ -201,11 +201,25 @@ func TestJSONOmitsUnsetEventTimes(t *testing.T) {
 	}
 }
 
+// Manual renewal checks must not compete with the connection's background worker.
+// Background recovery and cancellation are covered by the live relay tests.
+func manualRefreshConnection(t *testing.T, c *Client) *Connection {
+	t.Helper()
+	id, err := c.Ensure(t.Context(), "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := parseCertificate(*id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Connection{client: c, profile: "default", ctx: t.Context(), identity: *id, cert: cert, events: make(chan Event, c.options.EventBuffer)}
+}
+
 func TestRuntimeFailedCertificateRecoversSameKey(t *testing.T) {
 	f := newRelay(t)
 	c := tunnelClient(t, f, TransportOptions{})
-	x := connectTest(t, c, Routes{"@": echoTarget(t)})
-	_ = f.next(t)
+	x := manualRefreshConnection(t, c)
 	old := x.Identity()
 	submissions := f.api.submissions.Load()
 	f.api.mu.Lock()
@@ -276,10 +290,8 @@ func TestFailedCertificateRecoveryIsThrottledAcrossConnections(t *testing.T) {
 		f.api.serve(w, r)
 	})
 	c := tunnelClient(t, f, TransportOptions{})
-	x := connectTest(t, c, Routes{"@": echoTarget(t)})
-	_ = f.next(t)
-	y := connectTest(t, c, Routes{"api": echoTarget(t)})
-	_ = f.next(t)
+	x := manualRefreshConnection(t, c)
+	y := manualRefreshConnection(t, c)
 	submissions := f.api.submissions.Load()
 	fail.Store(true)
 	for i := 0; i < 5; i++ {
@@ -303,8 +315,7 @@ func TestCertificateRecoveryRetriesAndResetsAfterRenewal(t *testing.T) {
 	})
 	const retry = 500 * time.Millisecond
 	c := tunnelClient(t, f, TransportOptions{CertificateRetryInterval: retry})
-	x := connectTest(t, c, Routes{"@": echoTarget(t)})
-	_ = f.next(t)
+	x := manualRefreshConnection(t, c)
 	old := x.Identity()
 	submissions := f.api.submissions.Load()
 	f.api.mu.Lock()

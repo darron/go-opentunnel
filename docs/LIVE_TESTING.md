@@ -35,7 +35,8 @@ The installed Plannotator Inbox additionally returned its real HTML after
 password login through public HTTPS. Chrome's initial form submission was blocked
 with `ERR_BLOCKED_BY_CLIENT`; the equivalent HTTP login succeeded. Browser live
 updates, attachment/reply interactions and real GitHub owner registration are
-not claimed as passed here until their interactive checks complete.
+not claimed as passed here until their interactive checks complete. The temporary
+Inbox proxy was stopped and removed; API 404 confirmed deletion.
 
 The dated SDK records below describe their own revisions.
 

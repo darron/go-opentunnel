@@ -17,6 +17,18 @@ produces only the CLI; the example has a separate target.
 | Homebrew updater unittest | Five tests passed |
 | `actionlint` | Workflow checks passed |
 | Stable Homebrew formula | Syntax/style/strict audit, source install and `brew test` passed |
+| Official `darron/tap/otgo` HEAD install | Source build, `brew test`, CLI help and auth paths passed |
+| Tap-owned Actions workflow | Manual v0.3.0 run passed macOS validation and isolated publishing jobs |
+
+The [live tap run](https://github.com/darron/homebrew-tap/actions/runs/38096719658)
+validated the existing stable release without changing it. Hourly polling is
+enabled for future stable releases; no new tag/release was published.
+
+The first Linux CI run exposed a test fixture race: manual renewal competed with
+a newly started background worker. Four manual renewal tests now use a worker-free
+connection fixture; background recovery integration coverage is retained. Twenty
+race-enabled repetitions of these checks passed, including shared cooldown and
+renewal reset behavior. Production renewal code did not change.
 
 The fresh-context [auth review](AUTH_PROXY_REVIEW.md) reproduced defects and fixes;
 final source review found no remaining Critical/Important issue. It independently

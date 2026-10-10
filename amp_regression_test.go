@@ -188,8 +188,7 @@ func TestWriteDeadlineUpdateInterruptsPendingChannelSend(t *testing.T) {
 func TestForegroundCertificateRecoverySharesRuntimeCooldown(t *testing.T) {
 	f := newRelay(t)
 	c := tunnelClient(t, f, TransportOptions{})
-	x := connectTest(t, c, Routes{"@": echoTarget(t)})
-	_ = f.next(t)
+	x := manualRefreshConnection(t, c)
 	base := f.api.submissions.Load()
 	f.api.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/certificate") {
