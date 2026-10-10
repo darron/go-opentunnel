@@ -1,7 +1,8 @@
 # Authenticated HTTP proxy for otgo
 
-Status: proposed design for review. No proxy or authentication commands described
-here are implemented yet.
+Status: design direction approved on 2026-10-10. The XDG storage layout below
+clarifies persistence. No proxy or authentication commands described here are
+implemented yet.
 
 ## Purpose and boundary
 
@@ -21,6 +22,60 @@ proxied application, including its administration and agent APIs. This is an
 authentication boundary, not application-specific roles or a sandbox. The hosted
 DNS/certificate operator boundary remains as documented in [SECURITY.md](SECURITY.md).
 The upstream must not have a separate publicly accessible ingress.
+
+## Profiles, XDG paths, and restart behavior
+
+A profile is a local nickname for a saved tunnel and its proxy configuration,
+such as `inbox` or `mayfly`. It is not a visitor account or a security boundary.
+The existing package accepts lowercase DNS-label names, with `default` selected
+when no name is supplied. Different profiles normally represent different apps
+and tunnel hostnames.
+
+Use the same name to select these persistent locations:
+
+| Contents | XDG location | Default for profile `inbox` |
+| --- | --- | --- |
+| Upstream URL, browser auth mode, password verifier, GitHub client credentials and approved account IDs, bound tunnel ID/hostname | `$XDG_CONFIG_HOME/otgo/<profile>/auth.json` | `~/.config/otgo/inbox/auth.json` |
+| Machine-token IDs, hashes, and expiry times | `$XDG_DATA_HOME/otgo/<profile>/tokens.json` | `~/.local/share/otgo/inbox/tokens.json` |
+| Existing OpenTunnel identity, API token, local TLS key, certificate/chain, and provisioning recovery records | `$XDG_DATA_HOME/opentunnel/<profile>/` | `~/.local/share/opentunnel/inbox/` |
+
+The OpenTunnel location and its file format stay compatible with existing
+profiles. The new auth configuration is private even though it lives under the
+configuration directory: create application/profile directories with `0700`
+and credential files with `0600` on Unix. Do not change permissions on shared
+XDG base directories. Validate existing application/profile directories and
+files before use, and refuse unsafe credentials rather than silently importing
+them. Honor absolute XDG overrides; ignore relative XDG values and use their
+specified defaults. See the [XDG specification](https://specifications.freedesktop.org/basedir/latest/).
+
+The proxy reuses its saved upstream, password verifier or GitHub registration,
+allowlist, machine-token registry, and OpenTunnel hostname on subsequent starts.
+It does not create a new GitHub App or tunnel merely because the process restarted.
+Bind auth configuration to the saved tunnel ID, hostname, and API origin; reject
+a mismatch instead of silently associating it with another identity. A missing
+bound tunnel is a setup error, not permission to create a replacement publicly.
+Setup may explicitly provision and bind a new identity.
+
+Browser sessions, pending OAuth states, and temporary setup state stay in memory.
+Visitors sign in again after a restart, using the same password or GitHub account.
+GitHub user access tokens are discarded after identity verification. Nothing
+security-critical is stored in `$XDG_CACHE_HOME`; deleting cache must not change
+the password, create an unprotected proxy, or lose the tunnel identity. No disk
+session cache or state directory is needed for the initial implementation.
+
+Retain the existing `--data-dir` override for OpenTunnel storage. Add
+`--auth-config` for an explicit auth configuration file and `--token-file` for
+an explicit token registry file; show the resolved paths through a local paths
+command without printing file contents. An overridden tunnel directory must
+still match the auth configuration's bound identity.
+
+Normal stop retains all persistent files and the remote registration. Existing
+`otgo remove` remains a tunnel operation; it does not erase separate proxy auth
+files or delete a GitHub App. Proxy startup then fails on the missing bound
+tunnel. Provide an explicit local auth-reset command for the known auth/token
+files only, and report the GitHub App management URL for owner-controlled remote
+cleanup. Never recursively delete unrelated files or remove a GitHub App as a
+side effect of stopping a proxy.
 
 ## Authentication before forwarding
 
@@ -76,9 +131,11 @@ shutdown must close hijacked connections too. Bound session, OAuth-state, and
 active-stream bookkeeping and join their workers during shutdown.
 
 Auth directories are private to the account; configuration files use restrictive
-permissions and atomic replacement. Reject symlinks and unsafe file modes on
-Unix. Windows requires an appropriate account ACL. Configuration does not appear
-in JSON status, struct formatting, logs, errors, or committed examples.
+permissions and atomic replacement. Serialize configuration/token mutations
+across local processes so a concurrent write cannot undo a token revocation.
+Reject symlinks and unsafe file modes on Unix. Windows requires an appropriate
+account ACL. Configuration does not appear in JSON status, struct formatting,
+logs, errors, or committed examples.
 
 ## Machine clients and HTTP MCP
 
