@@ -174,3 +174,7 @@ slowly on Linux than macOS. The regression now pauses relay output explicitly
 after TLS setup, queues a response, observes orderly `end`, then releases output
 and checks every byte. Restoring the original reset behavior makes it fail.
 This removes an OS-dependent throughput assumption; production code is unchanged.
+
+[Follow-up hosted CI](https://github.com/darron/go-opentunnel/actions/runs/38080929130)
+passed for `8b4365cf38b6ac4802bf21d09bb161c554f9034c`: Go 1.25 tests/vet/builds
+on Linux and macOS, the Linux race suite, and all-package formatting/lint.
