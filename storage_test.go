@@ -323,3 +323,20 @@ func TestXDGStorageUsesConfiguredDataHome(t *testing.T) {
 		t.Fatalf("XDG layout missing: %v", err)
 	}
 }
+
+func TestXDGStorageIgnoresRelativeDataHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_DATA_HOME", "relative")
+	s, err := NewXDGStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(context.Background(), "default", storageIdentity()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local", "share", "opentunnel", "default", "tunnel.json")); err != nil {
+		t.Fatalf("XDG fallback missing: %v", err)
+	}
+}

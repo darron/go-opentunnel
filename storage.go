@@ -154,7 +154,7 @@ func NewFileStorage(root string) Storage { return &fileStorage{root: root} }
 // ~/.local/share/opentunnel for upstream compatibility.
 func NewXDGStorage() (Storage, error) {
 	dataHome := os.Getenv("XDG_DATA_HOME")
-	if dataHome == "" {
+	if !filepath.IsAbs(dataHome) {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("opentunnel: find home directory: %w", err)
