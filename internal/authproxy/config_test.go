@@ -174,6 +174,7 @@ func TestConfigStrictJSONAndFailedReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, b := range [][]byte{append(append([]byte{}, original...), []byte("{}")...), []byte(`{"unexpected":true}`)} {
+		// #nosec G703 -- Test-owned temporary credential file.
 		if err := os.WriteFile(path, b, 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -181,6 +182,7 @@ func TestConfigStrictJSONAndFailedReplacement(t *testing.T) {
 			t.Fatal("accepted malformed configuration")
 		}
 	}
+	// #nosec G703 -- Restore the test-owned temporary credential file.
 	if err := os.WriteFile(path, original, 0600); err != nil {
 		t.Fatal(err)
 	}

@@ -385,3 +385,14 @@ enter a bounded accept queue and remain session-owned until application close,
 reset, idle timeout, or session shutdown. The exact `*tls.Conn` reaches HTTP
 handlers. No loopback socket or synthetic HTTPS marker is required. See
 [LISTENER.md](LISTENER.md) for the API and shutdown/peer contracts.
+
+## otgo authentication boundary
+
+The CLI's private `internal/authproxy` subsystem adds browser login and machine
+tokens around a fixed HTTP backend. It uses the existing listener API; the public
+SDK remains an authentication-neutral transport. Each named CLI profile binds
+its auth configuration to one tunnel ID, hostname, and control API origin.
+Proxy startup cannot provision a missing identity. OS file locks prevent two
+protected proxies for the same profile, while token commands use separate locks
+and remain available during service. Sessions live in memory; token hashes and
+secret configuration use protected, bounded, atomically replaced XDG files.

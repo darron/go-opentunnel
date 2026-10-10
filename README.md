@@ -166,3 +166,39 @@ Read the [local results](docs/VERIFICATION.md) and
 [hardening guide](docs/HARDENING.md), [v0.2.0 Amp review](docs/AMP_REVIEW.md), and
 [v0.3.0 listener review](docs/AMP_REVIEW_V0.3.0.md) for current behavior, review
 dispositions, and remaining limits.
+
+## Protect a local application with otgo
+
+Configure a named profile once, then start its authenticated proxy:
+
+```sh
+otgo auth init --profile inbox --upstream http://127.0.0.1:57732
+otgo proxy --profile inbox
+```
+
+Setup shows a generated password once and saves its verifier. Use
+`--password-stdin` to supply your own password through protected input. Restarting
+`proxy` reuses its hostname and backend; browser sessions require a fresh login.
+All backend routes require authentication, including HTTP MCP and WebSockets.
+
+Use separate profiles for separate backends; multiple proxies can run on the
+same machine. A second proxy using the same profile is refused. While a proxy
+runs, another terminal can inspect its hostname with `otgo get --profile inbox`
+and issue a short-lived machine credential:
+
+```sh
+otgo auth token create --profile inbox --ttl 1h
+otgo auth token list --profile inbox
+otgo auth token revoke --profile inbox --id TOKEN_ID
+```
+
+Clients can send the generated credential as `Authorization: Bearer otgo_...`
+or `X-Otgo-Token`. The latter preserves a backend's own Authorization header.
+Tokens grant access to the entire backend. Clients that cannot supply a cookie
+or token are denied; this is not a complete MCP OAuth authorization server.
+
+`otgo auth paths --profile inbox` reports the XDG files without displaying
+credentials. `auth reset` removes the known local auth files while retaining the
+tunnel. Run `auth init --replace` while stopped to change a password/backend and
+revoke existing machine tokens. Existing diagnostic `listen` and `connect`
+commands still expose services directly without this authentication gate.

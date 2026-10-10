@@ -38,6 +38,7 @@ func checkPrivateFile(path string) (os.FileInfo, error) {
 	return info, nil
 }
 func readPrivate(path string) ([]byte, error) {
+	// #nosec G703 -- Validate parent of an operator-selected credential file.
 	info, e := os.Lstat(filepath.Dir(path))
 	if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || (runtime.GOOS != "windows" && (info.Mode().Perm() != 0700 || !ownedByUser(info))) {
 		return nil, errors.New("unsafe or missing credential directory")
@@ -91,6 +92,7 @@ func writePrivate(path string, b []byte) error {
 		return errors.New("cannot create credential temporary file")
 	}
 	tmp := f.Name()
+	// #nosec G703 -- Remove only the temporary file returned by CreateTemp.
 	defer func() { _ = f.Close(); _ = os.Remove(tmp) }()
 	if _, e = f.Write(b); e != nil {
 		return errors.New("cannot write credential file")
@@ -101,6 +103,7 @@ func writePrivate(path string, b []byte) error {
 	if e = f.Close(); e != nil {
 		return errors.New("cannot close credential file")
 	}
+	// #nosec G703 -- Both paths are in the validated private directory.
 	if e = os.Rename(tmp, path); e != nil {
 		return errors.New("cannot replace credential file")
 	}
@@ -131,4 +134,40 @@ func withFileLock(path string, fn func() error) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return fn()
+}
+
+// WithProfileLock prevents simultaneous proxies or setup for one tunnel profile.
+// The lock file is retained: unlinking an active OS lock would permit a second owner.
+func WithProfileLock(path string, fn func() error) error  { return withFileLock(path, fn) }
+func WithMutationLock(path string, fn func() error) error { return withFileLock(path+".mutation", fn) }
+
+// Reset removes only the known credential files; lock files stay in place.
+func Reset(paths Paths) error {
+	return WithMutationLock(paths.AuthConfig, func() error {
+		for _, path := range []string{paths.AuthConfig, paths.TokenFile} {
+			if e := withFileLock(path, func() error {
+				if _, e := checkPrivateFile(path); os.IsNotExist(e) {
+					return nil
+				} else if e != nil {
+					return e
+				}
+				return os.Remove(path)
+			}); e != nil {
+				return e
+			}
+		}
+		return nil
+	})
+}
+
+// ResetTokens is used during explicit setup to invalidate credentials for a previous backend.
+func ResetTokens(path string) error {
+	return withFileLock(path, func() error {
+		if _, e := checkPrivateFile(path); os.IsNotExist(e) {
+			return nil
+		} else if e != nil {
+			return e
+		}
+		return os.Remove(path)
+	})
 }

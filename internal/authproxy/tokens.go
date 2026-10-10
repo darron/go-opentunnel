@@ -76,6 +76,7 @@ func (s *TokenStore) Create(ttl time.Duration) (secret, id string, err error) {
 	err = withFileLock(s.path, func() error {
 		r, e := s.load()
 		if e != nil {
+			// #nosec G703 -- Metadata only; token path is explicitly operator-selected.
 			if _, statErr := os.Lstat(s.path); !os.IsNotExist(statErr) {
 				return e
 			}

@@ -20,6 +20,8 @@ import (
 const usage = `Usage: otgo <command> [flags]
 
 Commands:
+  auth                     Configure browser login and machine tokens
+  proxy                    Run the saved authenticated HTTP proxy
   profiles                 List profiles
   list                     List stored tunnels
   get                      Show a stored tunnel
@@ -76,6 +78,12 @@ func runCommand(ctx context.Context, args []string, in io.Reader, out, errout io
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		_, err := io.WriteString(out, usage)
 		return err
+	}
+	if args[0] == "auth" {
+		return runAuth(ctx, args[1:], in, out, errout)
+	}
+	if args[0] == "proxy" {
+		return runProxy(ctx, args[1:], out, errout)
 	}
 	switch args[0] {
 	case "profiles", "list", "get", "pending", "create", "resume", "ensure", "remove", "inspect", "connect", "listen":

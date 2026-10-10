@@ -216,8 +216,8 @@ func TestTokenInterprocessSerializationAndCrashRelease(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// #nosec G204 -- Runs this test binary, never a caller-selected executable.
-			cmd := exec.Command(os.Args[0], "-test.run=^TestTokenProcessHelper$")
+			// #nosec G204 G702 -- Runs this test binary, never a caller-selected executable.
+			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestTokenProcessHelper$")
 			cmd.Env = append(os.Environ(), "OTGO_TEST_TOKEN_PATH="+path)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Errorf("child: %v %s", err, out)
@@ -229,8 +229,8 @@ func TestTokenInterprocessSerializationAndCrashRelease(t *testing.T) {
 	if err != nil || len(entries) != 5 {
 		t.Fatalf("process lost update: %d %v", len(entries), err)
 	}
-	// #nosec G204 -- Runs this test binary, never a caller-selected executable.
-	cmd := exec.Command(os.Args[0], "-test.run=^TestTokenProcessHelper$")
+	// #nosec G204 G702 -- Runs this test binary, never a caller-selected executable.
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestTokenProcessHelper$")
 	cmd.Env = append(os.Environ(), "OTGO_TEST_TOKEN_PATH="+path, "OTGO_TEST_HOLD_LOCK=1")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

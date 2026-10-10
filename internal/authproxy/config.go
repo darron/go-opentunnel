@@ -214,3 +214,5 @@ func SaveConfig(path string, c Config) error {
 	}
 	return withFileLock(path, func() error { return writePrivate(path, append(b, '\n')) })
 }
+
+func ValidateUpstream(raw string) error { _, e := upstreamURL(raw); return e }
