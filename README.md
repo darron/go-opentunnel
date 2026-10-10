@@ -202,3 +202,16 @@ credentials. `auth reset` removes the known local auth files while retaining the
 tunnel. Run `auth init --replace` while stopped to change a password/backend and
 revoke existing machine tokens. Existing diagnostic `listen` and `connect`
 commands still expose services directly without this authentication gate.
+
+To switch a stopped profile to GitHub login, use the guided GitHub App setup:
+
+```sh
+otgo auth github --profile inbox --allow-user darron
+```
+
+Open the printed loopback link and approve the app on GitHub. Setup registers the
+exact tunnel callback and stores the client credentials privately. Add repeatable
+`--allow-user` flags for other approved accounts. For an existing OAuth/GitHub App,
+use `--client-id ID --client-secret-stdin` instead; its callback must be
+`https://TUNNEL_HOSTNAME/__otgo/github/callback`. GitHub login replaces password
+login without an automatic fallback. Reset does not delete the GitHub App.

@@ -1,8 +1,11 @@
-.PHONY: build check test race vet lint fuzz
+.PHONY: build build-example check test race vet lint fuzz
 
 build:
 	mkdir -p bin
 	go build -o bin/otgo ./cmd/otgo
+
+build-example:
+	mkdir -p bin
 	go build -o bin/webapp ./examples/webapp
 
 test:

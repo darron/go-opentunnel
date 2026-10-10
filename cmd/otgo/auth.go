@@ -74,14 +74,16 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		args = args[1:]
 	}
 	switch name {
-	case "init", "paths", "reset", "token create", "token list", "token revoke":
+	case "init", "github", "paths", "reset", "token create", "token list", "token revoke":
 	default:
 		return errors.New("unknown auth command")
 	}
 	fs := newFlagSet("auth "+name, errout)
 	var a authFlags
 	a.bind(fs)
-	var upstream, id string
+	var upstream, id, clientID string
+	var users nameFlags
+	var clientSecretStdin bool
 	var passwordStdin, generate, replace bool
 	ttl := time.Hour
 	timeout := 2 * time.Minute
@@ -91,6 +93,12 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		fs.BoolVar(&generate, "generate-password", false, "generate and show a password once (also the default)")
 		fs.BoolVar(&replace, "replace", false, "replace existing setup and revoke its machine tokens")
 		fs.DurationVar(&timeout, "timeout", timeout, "overall provisioning timeout")
+	}
+	if name == "github" {
+		fs.Var(&users, "allow-user", "approved GitHub username (repeatable)")
+		fs.StringVar(&clientID, "client-id", "", "existing OAuth/GitHub App client ID")
+		fs.BoolVar(&clientSecretStdin, "client-secret-stdin", false, "read the existing client secret from stdin")
+		fs.DurationVar(&timeout, "timeout", 10*time.Minute, "overall setup timeout")
 	}
 	if name == "token create" {
 		fs.DurationVar(&ttl, "ttl", ttl, "token lifetime (positive, at most 24h)")
@@ -121,6 +129,74 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		_, e = fmt.Fprintf(out, "auth config: %s\ntoken registry: %s\ntunnel root: %s\n", terminalText(paths.AuthConfig), terminalText(paths.TokenFile), terminalText(paths.TunnelRoot))
 		return e
 	}
+	if name == "github" {
+		if len(users) == 0 {
+			return errors.New("GitHub setup requires at least one --allow-user")
+		}
+		if (clientID == "") != (!clientSecretStdin) {
+			return errors.New("manual GitHub setup requires --client-id and --client-secret-stdin together")
+		}
+		var secret string
+		if clientSecretStdin {
+			var e error
+			secret, e = readPasswordInput(ctx, in)
+			if e != nil {
+				return e
+			}
+			if len(secret) == 0 || len(secret) > 1024 {
+				return errors.New("invalid GitHub client secret length")
+			}
+		}
+
+		if timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+		return authproxy.WithProfileLock(a.profileLock(paths), func() error {
+			return authproxy.WithMutationLock(paths.AuthConfig, func() error {
+				cfg, e := authproxy.LoadConfig(paths.AuthConfig)
+				if e != nil {
+					return e
+				}
+				client, e := a.clientAt(paths)
+				if e != nil {
+					return e
+				}
+				defer func() { _ = client.Close() }()
+				id, e := client.Get(ctx, a.profile)
+				if e != nil {
+					return e
+				}
+				if id == nil {
+					return errors.New("profile has no stored tunnel")
+				}
+				binding, e := a.binding(*id)
+				if e != nil {
+					return e
+				}
+				if e = authproxy.ValidateBinding(cfg, binding); e != nil {
+					return e
+				}
+				if clientID == "" {
+					return authproxy.RunGitHubSetup(ctx, paths, binding, users, out)
+				}
+				accounts, e := authproxy.ResolveGitHubUsers(ctx, users)
+				if e != nil {
+					return e
+				}
+				cfg.Mode = "github"
+				cfg.Password = authproxy.PasswordVerifier{}
+				cfg.GitHub = authproxy.GitHubConfig{ClientID: clientID, ClientSecret: secret, Users: accounts}
+				if e := authproxy.SaveConfig(paths.AuthConfig, cfg); e != nil {
+					return e
+				}
+				_, e = fmt.Fprintf(out, "GitHub login configured for https://%s; callback: https://%s/__otgo/github/callback\n", terminalText(binding.Hostname), terminalText(binding.Hostname))
+				return e
+			})
+		})
+	}
+
 	if name == "reset" {
 		return authproxy.WithProfileLock(a.profileLock(paths), func() error {
 			if e := authproxy.Reset(paths); e != nil {

@@ -44,7 +44,36 @@ type Config struct {
 	Password PasswordVerifier `json:"password"`
 	GitHub   GitHubConfig     `json:"github"`
 }
-type diskConfig Config
+type diskPassword PasswordVerifier
+type diskGitHub GitHubConfig
+type diskConfig struct {
+	Version  int          `json:"version"`
+	Binding  Binding      `json:"binding"`
+	Upstream string       `json:"upstream"`
+	Mode     string       `json:"mode"`
+	Password diskPassword `json:"password"`
+	GitHub   diskGitHub   `json:"github"`
+}
+
+func toDisk(c Config) diskConfig {
+	return diskConfig{c.Version, c.Binding, c.Upstream, c.Mode, diskPassword(c.Password), diskGitHub(c.GitHub)}
+}
+func fromDisk(c diskConfig) Config {
+	return Config{c.Version, c.Binding, c.Upstream, c.Mode, PasswordVerifier(c.Password), GitHubConfig(c.GitHub)}
+}
+func (g GitHubConfig) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ClientID string          `json:"client_id"`
+		Users    []GitHubAccount `json:"users"`
+		AppURL   string          `json:"app_url,omitempty"`
+	}{g.ClientID, g.Users, g.AppURL})
+}
+func (p PasswordVerifier) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Version    int `json:"version"`
+		Iterations int `json:"iterations"`
+	}{p.Version, p.Iterations})
+}
 
 func (c Config) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -175,7 +204,7 @@ func validateConfig(c Config) error {
 		return errors.New("password verifier is missing or invalid")
 	}
 	if c.Mode == "github" {
-		if c.GitHub.ClientID == "" || c.GitHub.ClientSecret == "" || len(c.GitHub.Users) == 0 || len(c.GitHub.Users) > 256 {
+		if c.GitHub.ClientID == "" || len(c.GitHub.ClientID) > 256 || c.GitHub.ClientSecret == "" || len(c.GitHub.ClientSecret) > 4096 || len(c.GitHub.Users) == 0 || len(c.GitHub.Users) > 256 {
 			return errors.New("GitHub credentials and allowlist are required")
 		}
 		seen := make(map[int64]bool)
@@ -197,7 +226,7 @@ func LoadConfig(path string) (Config, error) {
 	if e = decodeStrict(b, &c); e != nil {
 		return Config{}, errors.New("invalid auth configuration JSON")
 	}
-	cfg := Config(c)
+	cfg := fromDisk(c)
 	if e = validateConfig(cfg); e != nil {
 		return Config{}, e
 	}
@@ -208,7 +237,7 @@ func SaveConfig(path string, c Config) error {
 		return e
 	}
 	c.Version = 1
-	b, e := json.MarshalIndent(diskConfig(c), "", "  ")
+	b, e := json.MarshalIndent(toDisk(c), "", "  ")
 	if e != nil {
 		return errors.New("cannot encode auth configuration")
 	}

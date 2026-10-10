@@ -96,11 +96,17 @@ func NewHandler(o Options) (*Handler, error) {
 	h := &Handler{config: o.Config, origin: "https://" + o.Config.Binding.Hostname, tokens: o.TokenStore, sessions: o.Sessions, owned: http.NewServeMux(), active: make(map[*requestLease]credential), stop: make(chan struct{}), watched: make(chan struct{})}
 	browser := o.BrowserAuthenticator
 	if browser == nil {
-		if o.Config.Mode != "password" {
-			return nil, errors.New("GitHub browser authenticator required")
+		if o.Config.Mode == "github" {
+			var e error
+			browser, e = NewGitHubBrowserAuthenticator(o.Config, h.sessions)
+			if e != nil {
+				return nil, e
+			}
+		} else {
+			browser = NewPasswordBrowserAuthenticator(o.Config, h.sessions)
 		}
-		browser = NewPasswordBrowserAuthenticator(o.Config, h.sessions)
 	}
+
 	browser.Register(h.owned)
 	h.owned.HandleFunc("GET /__otgo/logout", h.logout)
 	h.owned.HandleFunc("POST /__otgo/logout", h.logout)

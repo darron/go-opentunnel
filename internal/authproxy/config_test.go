@@ -201,3 +201,16 @@ func TestConfigStrictJSONAndFailedReplacement(t *testing.T) {
 		t.Fatal("failed replacement changed config")
 	}
 }
+
+func TestConfigNestedSecretRedaction(t *testing.T) {
+	cfg := fixtureConfig()
+	for _, v := range []any{cfg.GitHub, cfg.Password} {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), cfg.GitHub.ClientSecret) || strings.Contains(string(b), cfg.Password.Digest) {
+			t.Fatal("nested credential JSON leaked")
+		}
+	}
+}

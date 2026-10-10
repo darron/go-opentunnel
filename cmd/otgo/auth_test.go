@@ -179,3 +179,16 @@ func TestProxyProfileLockAndIndependentProfiles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAuthGitHubManualValidation(t *testing.T) {
+	flags, _ := authFixture(t)
+	for _, args := range [][]string{{"auth", "github", "--client-id", "id", "--client-secret-stdin"}, {"auth", "github", "--allow-user", "../bad", "--client-id", "id", "--client-secret-stdin"}} {
+		var out, errout bytes.Buffer
+		if err := run(t.Context(), append(args, flags...), strings.NewReader("never-print-secret"), &out, &errout); err == nil {
+			t.Fatal("invalid GitHub setup accepted")
+		}
+		if strings.Contains(out.String(), "never-print-secret") || strings.Contains(errout.String(), "never-print-secret") {
+			t.Fatal("GitHub secret leaked")
+		}
+	}
+}
