@@ -11,7 +11,7 @@ import (
 )
 
 func fixtureConfig() Config {
-	return Config{Binding: Binding{TunnelID: "id", Hostname: "demo.test", APIOrigin: "https://api.test"}, Upstream: "http://127.0.0.1:8000", Mode: "password", Password: PasswordVerifier{Version: 1, Salt: "salt", Iterations: 600000, Digest: "digest"}, GitHub: GitHubConfig{ClientID: "client", ClientSecret: "secret-never-print"}}
+	return Config{Binding: Binding{TunnelID: "id", Hostname: "demo.test", APIOrigin: "https://api.test"}, Upstream: "http://127.0.0.1:8000", Mode: "password", Password: PasswordVerifier{Version: 1, Salt: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", Iterations: 600000, Digest: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}, GitHub: GitHubConfig{ClientID: "client", ClientSecret: "secret-never-print"}}
 }
 
 func TestResolvePathsXDGAndOverrides(t *testing.T) {

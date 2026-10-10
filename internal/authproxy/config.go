@@ -170,7 +170,7 @@ func validateConfig(c Config) error {
 	if c.Mode != "password" && c.Mode != "github" {
 		return errors.New("auth mode must be password or github")
 	}
-	if c.Mode == "password" && (c.Password.Version != 1 || c.Password.Iterations < 600000 || c.Password.Salt == "" || c.Password.Digest == "") {
+	if c.Mode == "password" && !validVerifier(c.Password) {
 		return errors.New("password verifier is missing or invalid")
 	}
 	if c.Mode == "github" {
