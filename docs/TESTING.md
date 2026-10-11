@@ -201,7 +201,7 @@ Put flags after the command. Negative durations are rejected.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| Provisioning `--timeout` | `2m` | Bounds the full provisioning operation; `0` disables this CLI deadline |
+| Provisioning and password setup `--timeout` | `5m` | Bounds the full provisioning operation; `0` disables this CLI deadline |
 | `connect --timeout` | `0` | Runs until Ctrl-C; a positive value bounds the full lifetime, including reconnects |
 | `--request-timeout` | `0` | Selects the API's finite default of `15s`; a positive value overrides it |
 

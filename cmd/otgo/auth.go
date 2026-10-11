@@ -89,7 +89,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 	var clientSecretStdin bool
 	var passwordStdin, generate, replace bool
 	ttl := time.Hour
-	timeout := 2 * time.Minute
+	timeout := defaultProvisionTimeout
 	if name == "init" {
 		fs.StringVar(&upstream, "upstream", "", "fixed backend origin (HTTPS or loopback HTTP)")
 		fs.BoolVar(&passwordStdin, "password-stdin", false, "read password from stdin instead of generating one")

@@ -534,3 +534,48 @@ The script exited with status 1. Cleanup succeeded, with authenticated remote AP
 probe and diagnostic file; they remain in a private temporary directory. The
 only captured diagnostic is the 29-byte reason above, with no tunnel credentials.
 Public plain/v1/v2 forwarding remains unverified. No runtime code was changed.
+
+## Fresh-state version comparison and v0.6.0 live checks — 2026-10-11
+
+**Passed with v0.3.0, v0.5.0 and current code.** Built the CLI, embedding example
+and private test helpers with Go 1.25.0. Historical releases came from `git archive`
+at `b6eb12c77b48e3c33d63a7a2ddd470bf317f1362` (v0.3.0) and
+`6c531cced6baa30466315ebaf51581565e288163` (v0.5.0). Initial current builds used
+`36fc546`; final builds advertised 0.6.0 with the release changes.
+
+Each fresh run started with a private, empty `--data-dir` and no XDG state.
+Existing profiles and the running `otgo proxy --profile inbox` were untouched.
+Visitor checks used normal HTTPS certificate verification.
+
+| Check | Result |
+| --- | --- |
+| Each version's local-only embedding example | Root response, three stream chunks, request metadata, text/binary WebSocket echo and shutdown passed |
+| v0.3.0 fresh public embedding example | Certificate issued; HTTPS, stream, real TLS metadata and text/binary WebSocket echo passed |
+| v0.5.0 initial fresh attempt | Still in `challenge` when the test coordinator stopped it at 120 seconds; no terminal issuance error was reported |
+| v0.5.0 second fresh attempt, 300-second window | Certificate issued; the same public embedding checks passed |
+| Initial current fresh public embedding example | Certificate issued; the same public embedding checks passed |
+| Final 0.6.0 CLI `create --timeout 5m` | Fresh provisioning passed in 186 seconds |
+| v0.3.0, v0.5.0 and final 0.6.0 CLI `connect` | Reused the final identity sequentially; HTTPS, stream, metadata, text/binary WebSocket echo, interactive status and quit passed for each |
+| Final embedding listener | Reused the same identity; public root, stream, actual TLS metadata, WebSockets and SIGINT shutdown passed |
+| Final package plain/v1/v2 forwarding | Reused the same identity; public HTTPS response and each backend preamble passed, including v2 authority TLV |
+| Cleanup | All five test identities deleted; authenticated API 404 and empty profiles confirmed; all owned processes stopped |
+
+The final forwarding check used a private copy of `scripts/proxy-smoke/main.go`
+that called `Ensure` on the existing test profile. Its deletion block was moved
+to the enclosing test coordinator, so the CLI, listener and PROXY checks shared
+one certificate before a single confirmed cleanup. Raw logs and helpers stayed
+outside the repo in private temporary storage.
+
+A Go scanner comparison, ignoring comments and formatting, found identical
+v0.3.0/v0.5.0 code tokens in `api.go`, `client.go`, `certificate.go`, `listener.go`,
+`session.go`, `connection.go` and `protocol.go`. During the longer v0.5.0 run,
+both clients independently read the same certificate record as `issuing`.
+The version comparison did not reproduce a release-specific provisioning or
+forwarding regression. The 120-second cutoff was too early to establish failure.
+The successful 186-second CLI run demonstrates why the new five-minute default
+can matter. Because the longer v0.5.0 run used a new identity, it does not prove
+that extra waiting alone would have completed the earlier request.
+
+The earlier `ACME server returned no nonce` was a terminal remote failure,
+not a local deadline. These successful later runs do not explain that failure
+or establish rate limiting. No deployed-server revision was verified.

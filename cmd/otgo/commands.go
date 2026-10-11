@@ -17,6 +17,8 @@ import (
 	"github.com/darron/go-opentunnel"
 )
 
+const defaultProvisionTimeout = 5 * time.Minute
+
 const usage = `Usage: otgo <command> [flags]
 
 Commands:
@@ -103,7 +105,7 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	var listenNames nameFlags
 	var interactive bool
 	if name == "create" || name == "resume" || name == "ensure" {
-		fs.DurationVar(&timeout, "timeout", 2*time.Minute, "overall provisioning timeout (0 disables it)")
+		fs.DurationVar(&timeout, "timeout", defaultProvisionTimeout, "overall provisioning timeout (0 disables it)")
 	}
 	if name == "listen" {
 		fs.Var(&listenNames, "route", "SNI route name (repeatable, e.g. @ or api)")

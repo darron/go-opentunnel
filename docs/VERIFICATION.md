@@ -1,5 +1,33 @@
 # Local verification record
 
+## v0.6.0 release checks — 2026-10-11
+
+Added optional per-route PROXY v1/v2 forwarding and safe certificate diagnostics,
+then increased the CLI provisioning/password-setup default to five minutes.
+The package still uses the caller's startup context; request timeouts remain
+separate. The advertised client version is 0.6.0 and dependencies are unchanged.
+
+- Go 1.25.0 `go test -race -count=1 ./...` passed every package, including auth.
+  Vet, full golangci-lint (**0 issues**), formatting and `git diff --check` passed.
+  All five Homebrew updater tests passed and the CLI-only `make build` succeeded.
+- The new CLI deadline regression failed against the old two-minute defaults
+  for create/resume/ensure/password setup, then passed after the change. It
+  observes actual outgoing request contexts with a longer request budget and
+  tests explicit overrides, disabled overall deadlines, parent deadlines and
+  cancellation before network access. It does not wait for real timers to expire.
+- Rebuilt CLI help reports `5m0s` for all four provisioning/setup paths.
+- The [fresh-state live comparison](LIVE_TESTING.md#fresh-state-version-comparison-and-v060-live-checks--2026-10-11)
+  passed v0.3.0/v0.5.0/current embedded examples and actual CLI forwarding, plus
+  final direct listening and public plain/v1/v2 preambles. Fresh CLI provisioning
+  took 186 seconds with `--timeout 5m`. All five owned remote identities returned
+  authenticated API 404 after deletion; saved profiles and the existing proxy
+  process were untouched. The first v0.5.0 attempt remained pending at 120 seconds;
+  a later fresh attempt passed with a longer test window.
+
+Earlier terminal hosted nonce failures remain unexplained. Longer pending waits
+do not prove that the service's earlier failure was a timeout. These tests did
+not establish the deployed server revision or induce provider rate limits.
+
 ## v0.5.0 publication and stable Homebrew — 2026-10-10
 
 Published [v0.5.0](https://github.com/darron/go-opentunnel/releases/tag/v0.5.0)

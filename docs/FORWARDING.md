@@ -1,6 +1,6 @@
 # Forward to a PROXY-aware backend
 
-These additions are on `main`; they are not included in v0.5.0 binaries.
+Available in v0.6.0 and later.
 
 Use PROXY protocol when your TCP backend needs the visitor address. The backend
 must understand the selected version. A normal HTTP server expects an HTTP

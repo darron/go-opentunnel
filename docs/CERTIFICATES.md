@@ -1,6 +1,13 @@
 # Diagnose certificate issuance failures
 
-These additions are on `main`; they are not included in v0.5.0 binaries.
+Available in v0.6.0 and later.
+
+CLI provisioning (`create`, `resume`, `ensure`) and password setup wait up to
+five minutes by default. Use `--timeout` to choose another limit; `0` disables
+the overall CLI deadline. An HTTP request still has a separate finite timeout.
+DNS validation and certificate issuance can take longer than two minutes.
+This longer wait applies to pending work; a terminal provider failure returns
+immediately and remains a failure until a later successful issuance attempt.
 
 A failed certificate request now returns `*CertificateIssuanceError`. Existing
 `errors.Is(err, opentunnel.ErrCertificateIssuance)` checks continue to work.
