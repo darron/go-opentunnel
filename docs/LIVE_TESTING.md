@@ -1,5 +1,108 @@
 # Public-service validation
 
+## Post-Amp auth lifecycle repeat — 2026-10-10
+
+After fixing the cancelled-wizard save race and late revocation close, the final
+CLI and embedding example were rebuilt. Both public-service drivers completed
+with exit 0:
+
+- `python3 scripts/auth_smoke.py`: anonymous methods/routes denied with zero
+  backend calls; MCP token access; running-profile inspection/token creation;
+  browser login, CSRF/Origin, credential stripping, public cache/referrer
+  overrides, foreign subresource denial/top-level navigation, eight concurrent
+  2 MiB uploads, corruption denial, restart, logout and two-profile isolation.
+  SSE/WSS revocation closed both streams in **0.236 seconds**.
+- The full CLI/listener/embedding-app workflow repeated provisioning cancellation
+  and resume, identity reuse/redaction, interactive inputs, root/named routes,
+  target replacement/refusal isolation, transfers, stream/WSS contents, route
+  suspension, quit/deadline/SIGINT, direct-listener TLS/peer/SNI behavior and
+  embedded app provisioning/serving/shutdown.
+- Cleanup confirmed API 404 for every temporary identity, idempotent removal,
+  empty local identity views and every owned process stopped.
+
+Real GitHub OAuth and App registration passed in the post-Claude run recorded
+below, before the last two lifecycle fixes. The changed wizard shutdown paths
+passed real loopback HTTP/provider-fixture regressions, including conversion
+cancellation and a committed callback paused beyond HTTP graceful shutdown.
+A third real-provider App was not created for those narrow corrections.
+
+## GitHub auth and security follow-up — 2026-10-10
+
+The later post-Claude-fix password run passed the full smoke again, including
+foreign cookie subresource denial/top-level navigation and the backend response
+referrer policy. SSE/WSS revocation took **0.389 seconds**. Two-profile isolation,
+logout, restart, process/local-credential cleanup and remote API 404 all passed.
+The 0.370-second result below belongs to the preceding cache/admission build.
+
+The new one-use `/__otgo/github/setup` wizard was also exercised against real
+GitHub after the Claude fixes: the owner created the App, conversion/persistence
+succeeded and real OAuth established a session, verified by the protected sign-out
+page. The anonymous GitHub matrix and token stripping/revocation passed. Chrome
+initially blocked the plain-text root display with `ERR_BLOCKED_BY_CLIENT`. After
+the owner dismissed an extension panel, the protected backend was visible in the
+current tab. Logout returned to login. Reconfiguring the existing App to allow
+only `octocat` left the owner behind login after a real OAuth attempt; automated
+callback tests separately assert 403/no session. Restoring the owner’s allowlist permitted a session again, and restarting the
+proxy invalidated that session: the public root returned to login. The newest
+profile’s processes stopped, its local auth credentials were removed and remote
+deletion was confirmed with API 404. With owner approval, GitHub removed the
+test App from the list and reported its deletion queued.
+
+
+A dedicated profile and instrumented loopback backend exercised real GitHub App
+registration and OAuth through the hosted OpenTunnel service with normal public
+TLS verification. The owner approved creation and the identity grant. No existing
+user profile was modified.
+
+| Check | Observed outcome |
+| --- | --- |
+| Guided registration | GitHub returned a manifest code; the CLI converted it and privately saved GitHub mode. No repository permissions/webhook deliveries were requested. |
+| Allowed account | Real OAuth/state/PKCE established a local session; the public root displayed `protected-backend`, confirmed by the owner and native browser inspection. |
+| Logout | Sign-out form returned to the GitHub login page. |
+| Denied account | With only `octocat` allowlisted, the owner's real login did not redirect to the backend; the root remained behind login. Local callback tests separately assert 403 and no session. |
+| Restore/restart | Restoring the owner's allowlist permitted login. A further restart invalidated that authenticated browser session and the root returned to login. |
+| Anonymous boundary | Nine methods across ten routes, including MCP/discovery/assets/SSE/WebSocket and path variants, were denied; backend counters stayed unchanged. Forged session/token/identity and callback attempts were denied; password POST returned 405 in GitHub mode. |
+| Machine boundary | A real CLI-created token enabled access; gate cookies, authorization and spoofed identity were stripped upstream; client-secret canary was absent; revoked token returned 401. |
+| Protected cache headers | The rebuilt GitHub-mode proxy returned `private, no-store`, `Pragma: no-cache`, expired `Expires`, without secret values in the upstream response. Local tests in both modes separately verify overriding an intentionally public-cacheable backend. |
+| Cleanup | Owned processes stopped, local auth credentials removed and remote deletion confirmed with API 404. With owner approval, GitHub accepted permanent test-App deletion and removed it from the Apps list; its UI reported asynchronous deletion queued. |
+
+After the final cache/header and password-admission fixes, the rebuilt CLI passed
+`python3 scripts/auth_smoke.py` again. It denied anonymous requests without
+backend calls, enforced MCP tokens, stripped gate credentials, overrode a public
+cache fixture including `X-Accel-Expires`, and preserved eight simultaneous 2 MiB
+uploads. SSE/WSS revocation closed both streams in **0.370 seconds**. Corrupt
+registry denial, browser-session restart invalidation, retained machine tokens,
+logout and two concurrent isolated profiles with cross-token denial passed.
+Every owned process stopped; local credentials were removed and API 404
+confirmed remote cleanup. This repeat required no interactive GitHub approval.
+
+Chrome intermittently showed `ERR_BLOCKED_BY_CLIENT`, including after successful
+registration conversion and authenticated requests. Extension UI also interrupted
+automation. The responsible extension was not established. The owner subsequently
+saw the protected backend; no TLS verification or browser security protection was
+disabled. Automated tests, rather than Chrome's blocked error display, establish
+failure status/body and secret-reflection assertions.
+
+See [AUTH_SECURITY_REVIEW.md](AUTH_SECURITY_REVIEW.md) for findings, fixes and
+remaining availability/session limits. Public cache-policy tests verify response
+headers and access denial; they do not claim a browser cache-replay experiment.
+
+## Post-Claude CLI and app repeat — 2026-10-10
+
+The CLI and embedding app were rebuilt and retested after the auth hardening.
+The complete run passed interrupted provisioning/resume, saved identity reuse,
+JSON redaction, online/offline inspection, interactive invalid inputs, root/named
+routes, target replacement and refused-target isolation, route suspension,
+timeout/quit/SIGINT, direct listener TLS/peer/deadline behavior, embedding-app
+HTTPS/streaming/WSS, 2 MiB and concurrent transfers, pending deletion and cleanup.
+API 404 confirmed all temporary remote identities were removed, all local identity
+views were empty, and every owned process stopped.
+
+The first copied harness omitted its Go deletion-inspection executable. Traffic
+checks passed, but cleanup confirmation failed because the helper was missing.
+The harness was corrected and the full run repeated successfully; this was a
+harness failure, not a passing cleanup result from the first run.
+
 ## Browser login regression — 2026-10-10
 
 A user reported `Invalid request origin` after password submission. The running
@@ -19,7 +122,8 @@ temporary tunnels were stopped and removed; API 404 confirmed deletion.
 Regression tests cover form policies, root redirect, rejection of null/missing/
 foreign Origins and the GitHub setup/external registration policy boundary.
 `make check` passed with zero lint issues; `make race` and an independent focused
-review/race run passed. Real GitHub owner registration remains unverified.
+review/race run passed. Real GitHub registration was not covered by that run;
+the follow-up above records its completed interactive test.
 
 ## Auth proxy and full CLI/app retest — 2026-10-10
 
@@ -46,17 +150,19 @@ cause of those earlier issuance failures was not established.
 
 The auth run is repeatable with `make build` and `python3 scripts/auth_smoke.py`.
 It does not implement a full MCP OAuth client/server exchange; it verifies HTTP
-MCP gating with configured machine credentials. Provider-owner browser approval,
-non-allowlisted real GitHub accounts, long-term renewal and runtime behavior on
-other operating systems remain separate from this smoke test. Local GitHub
+MCP gating with configured machine credentials. Real GitHub browser approval and
+allowlist denial were exercised separately in the follow-up above. Long-term
+renewal and runtime behavior on other operating systems remain outside this
+smoke test. Local GitHub
 fixtures cover registration, PKCE/state/replay/expiry, numeric account IDs,
 allow/deny behavior, errors/timeouts and restart configuration.
 
 The installed Plannotator Inbox additionally returned its real HTML after
 password login through public HTTPS. Chrome's initial form submission was blocked
 with `ERR_BLOCKED_BY_CLIENT`; the equivalent HTTP login succeeded. Browser live
-updates, attachment/reply interactions and real GitHub owner registration are
-not claimed as passed here until their interactive checks complete. The temporary
+updates and attachment/reply interactions were not verified in this run. The
+follow-up above records real GitHub registration; the preceding browser-regression
+record verifies the corrected Inbox login. The temporary
 Inbox proxy was stopped and removed; API 404 confirmed deletion.
 
 The dated SDK records below describe their own revisions.

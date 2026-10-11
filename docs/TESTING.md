@@ -4,6 +4,8 @@ Auth regressions and the Homebrew updater:
 
 ```sh
 go test -race ./internal/authproxy ./cmd/otgo
+go test -count=1 ./internal/authproxy -run 'TestBothAuthModes|TestGitHubCallbackFailures|TestRejectedPasswordForms|TestGateLoginBounds|TestGateLoginLimiterAndConcurrency|TestGitHubSetup|TestPrivateRead|TestProxyBrowserFetchMetadata|TestProxyResponsePreservesSameOriginForms'
+go test -count=1 ./cmd/otgo -run 'TestEmptyAuthProfile|TestFreshAuthInit|TestProxyTimeouts'
 go test -race ./internal/authproxy -run 'TestRevocationAbortsTLS|TestRuntimeFormatting|TestSlowLoginBody|TestDeniedRequestBodies|TestAuthenticatedUpload'
 python3 -m unittest discover -s scripts -p 'test_update_homebrew.py'
 ```
@@ -21,6 +23,31 @@ The fixture becomes public only through the authenticated proxy. The test uses
 normal public HTTPS trust and never prints passwords/token values. Failed cleanup
 retains its private temporary directory and reports its location. GitHub owner
 approval and browser/app integration are separate checks.
+
+## Repeat GitHub browser checks
+
+Use a dedicated profile and private storage overrides from [AUTH_PROXY.md](AUTH_PROXY.md).
+Start an instrumented loopback backend such as the `scripts/auth-smoke` fixture.
+Provision with `auth init`, then run `auth github --allow-user YOUR_LOGIN`, complete
+the owner registration/identity approvals and start `proxy` with the same paths.
+
+1. Visit the HTTPS root signed out; expect the GitHub login page. Anonymous MCP,
+   assets and discovery must be denied without incrementing the backend counter.
+2. Sign in; verify the root body and logout. Sign in again, restart the proxy and
+   verify the old browser session no longer grants access.
+3. Stop the profile; repeat `auth github` with the existing client ID, secret via
+   stdin and an allowlist excluding your account. Restart and attempt login;
+   expect denial and no backend body. Restore the original allowlist while stopped.
+4. Exercise CLI token creation/revocation while running; check stripped gate
+   credentials and no-store response headers. The password smoke automates the
+   corresponding machine-client checks.
+5. Stop owned processes, `auth reset`, `remove` the temporary identity and verify
+   remote deletion. Delete the temporary GitHub App separately in its settings;
+   local reset does not delete it.
+
+Do not commit private configuration, tokens, callback URLs containing codes or
+screenshots containing credentials. Dated observations and browser limitations
+are in [LIVE_TESTING.md](LIVE_TESTING.md).
 
 ## Local checks
 
@@ -202,3 +229,14 @@ renewal, pending recovery, reconnect, route conflicts with forwarding, terminal
 errors, concurrent Accept, removal/client shutdown, and deadline-worker joins.
 `otgo listen --route @` serves the public API's transport diagnostics. The webapp
 example defaults to direct listening; `--forward` keeps the forwarding example.
+
+Auth lifecycle race regressions:
+
+```sh
+go test -race ./internal/authproxy -run 'Test(GitHubSetupCancellation|LeaseCompletionWaitsForTransportAbort|CompletedLeaseCannotAbortReusedConnection|RevocationAbortsTLSWithoutCloseNotify)' -count=3
+```
+
+These cover cancellation before/during conversion and after persistence, callback
+joining beyond graceful HTTP shutdown, and request completion during a paused
+revocation close. The provider is an HTTP fixture; real GitHub evidence is in
+[LIVE_TESTING.md](LIVE_TESTING.md).

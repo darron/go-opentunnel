@@ -3,9 +3,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,5 +198,112 @@ func TestAuthGitHubManualValidation(t *testing.T) {
 		if strings.Contains(out.String(), "never-print-secret") || strings.Contains(errout.String(), "never-print-secret") {
 			t.Fatal("GitHub secret leaked")
 		}
+	}
+}
+
+func TestEmptyAuthProfileUsesDefaultProfileLock(t *testing.T) {
+	root := t.TempDir()
+	paths, err := authproxy.ResolvePaths("default", filepath.Join(root, "tunnels"), filepath.Join(root, "auth", "auth.json"), filepath.Join(root, "tokens", "tokens.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := authproxy.Config{Binding: authproxy.Binding{TunnelID: "id", Hostname: "demo.test", APIOrigin: opentunnel.DefaultAPI}, Upstream: "http://127.0.0.1:8000", Mode: "password"}
+	cfg.Password, err = authproxy.NewPasswordVerifier([]byte("fixture-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := authproxy.SaveConfig(paths.AuthConfig, cfg); err != nil {
+		t.Fatal(err)
+	}
+	err = authproxy.WithProfileLock(filepath.Join(paths.TunnelRoot, "default", "otgo-proxy"), func() error {
+		flags := []string{"--profile", "", "--data-dir", paths.TunnelRoot, "--auth-config", paths.AuthConfig, "--token-file", paths.TokenFile}
+		if err := run(t.Context(), append([]string{"auth", "reset"}, flags...), strings.NewReader(""), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "lock") {
+			t.Errorf("empty profile bypasses running proxy lock: %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authproxy.LoadConfig(paths.AuthConfig); err != nil {
+		t.Fatal("running default profile's config was removed")
+	}
+}
+
+func TestFreshAuthInitRevokesOrphanedMachineTokens(t *testing.T) {
+	for _, failSave := range []bool{false, true} {
+		t.Run(map[bool]string{false: "successful-save", true: "failed-save"}[failSave], func(t *testing.T) {
+			flags, paths := authFixture(t)
+			old, _, err := authproxy.NewTokenStore(paths.TokenFile).Create(time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(paths.AuthConfig); err != nil {
+				t.Fatal(err)
+			}
+			key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expiry := time.Now().Add(time.Hour)
+			template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"test.opentunnel.test", "*.test.opentunnel.test"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: expiry}
+			der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkcs8, err := x509.MarshalPKCS8PrivateKey(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" || r.URL.Path != "/api/tunnel/id/certificate" {
+					t.Error("unexpected provisioning request")
+					w.WriteHeader(400)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(opentunnel.CertificateInfo{ID: "cert", State: opentunnel.CertificateState{Type: "ready", Certificate: cert, Chain: cert, Expiry: expiry}})
+			}))
+			defer api.Close()
+			id := opentunnel.Identity{ID: "id", Hostname: "test.opentunnel.test", Token: "fixture-token", PrivateKey: string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8})), Certificate: cert, Chain: cert, CertificateExpiry: expiry}
+			if err := opentunnel.NewFileStorage(paths.TunnelRoot).Save(t.Context(), "inbox", id); err != nil {
+				t.Fatal(err)
+			}
+			if failSave {
+				if err := os.Remove(paths.AuthConfig + ".lock"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(paths.AuthConfig+".lock", 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := append([]string{"auth", "init", "--api", api.URL, "--upstream", "http://127.0.0.1:8001", "--password-stdin"}, flags...)
+			err = run(t.Context(), args, strings.NewReader("replacement-password\n"), io.Discard, io.Discard)
+			if (err != nil) != failSave {
+				t.Fatalf("setup result: %v", err)
+			}
+			if _, err := authproxy.NewTokenStore(paths.TokenFile).Authenticate(old); err == nil {
+				t.Fatal("old token authorized the new backend")
+			}
+			if !failSave {
+				cfg, err := authproxy.LoadConfig(paths.AuthConfig)
+				if err != nil || cfg.Upstream != "http://127.0.0.1:8001" {
+					t.Fatalf("new backend not saved: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestProxyTimeoutsBoundIdleConnectionsWithoutExpiringStreams(t *testing.T) {
+	server := newProxyServer(http.NotFoundHandler())
+	if server.IdleTimeout <= 0 || server.IdleTimeout > 30*time.Second {
+		t.Fatal("idle clients can hold a visitor channel indefinitely")
+	}
+	if server.ReadTimeout != 0 || server.WriteTimeout != 0 {
+		t.Fatal("server timeouts expire authenticated SSE/WebSocket streams")
+	}
+	if server.ReadHeaderTimeout <= 0 {
+		t.Fatal("slow headers are unbounded")
 	}
 }

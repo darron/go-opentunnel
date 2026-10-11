@@ -131,7 +131,7 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 		if e = authproxy.ValidateBinding(cfg, actual); e != nil {
 			return e
 		}
-		server := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 32 << 10, ConnContext: authproxy.WithClientConnection}
+		server := newProxyServer(h)
 		served := make(chan error, 1)
 		go func() { served <- server.Serve(listener); close(served) }()
 		defer func() { _ = listener.Close(); _ = server.Close(); _ = h.Close(); <-served }()
@@ -165,4 +165,8 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 			}
 		}
 	})
+}
+
+func newProxyServer(h http.Handler) *http.Server {
+	return &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 32 << 10, ConnContext: authproxy.WithClientConnection}
 }

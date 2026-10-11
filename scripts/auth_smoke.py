@@ -158,6 +158,19 @@ def main():
         status, response_headers, _ = fetch(origin, "/redirect", headers=bearer)
         assert status == 302 and response_headers["Location"] == origin + "/next?q=1"
         passed("backend credentials preserved; gate credentials/spoofed identity headers stripped; redirects/cookies adapted")
+        status, response_headers, body = fetch(origin, "/cache", headers=bearer)
+        assert status == 200 and body == b"protected-cache-canary\n"
+        assert response_headers["Cache-Control"] == "private, no-store"
+        assert response_headers["Referrer-Policy"] == "same-origin"
+        assert response_headers["Pragma"] == "no-cache" and response_headers["Expires"] == "0"
+        assert response_headers.get("CDN-Cache-Control") is None
+        assert response_headers.get("X-Accel-Expires") is None
+        assert fetch(origin, "/cache")[0] == 401
+        passed("public backend cache policy overridden; anonymous cache endpoint denied")
+        for site, mode, dest in [("same-site", "no-cors", "script"), ("cross-site", "no-cors", "image"), ("same-site", "navigate", "iframe")]:
+            assert fetch(origin, "/", headers={"Sec-Fetch-Site": site, "Sec-Fetch-Mode": mode, "Sec-Fetch-Dest": dest}, agent=browser)[0] == 403
+        assert fetch(origin, "/", headers={"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}, agent=browser)[0] == 200
+        passed("browser foreign subresources denied; top-level navigation preserved")
         payload = b"x" * (2 << 20)
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             results = list(executor.map(lambda _: fetch(origin, "/upload", "POST", payload, bearer), range(8)))

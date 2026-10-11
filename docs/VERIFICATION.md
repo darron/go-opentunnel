@@ -1,5 +1,53 @@
 # Local verification record
 
+## Pre-v0.4.0 security follow-up — 2026-10-10
+
+The final source/tests passed `make check`: all package tests, vet, formatting,
+full golangci-lint (**0 issues**) and CLI build. A fresh
+`go test -race -count=1 ./...` passed all packages (auth: **61.758 seconds**).
+The example rebuilt and all five Homebrew updater tests passed.
+
+Claude’s focused confirmation resolved its original findings with no new blocker.
+Amp/Oracle then found two P2 lifecycle races and no P0/P1: cancellation could save
+GitHub credentials during shutdown, and a revocation close could reach a reused
+connection. Both reproduced in regressions and were fixed; focused Amp confirmation
+and Oracle found both resolved and no new material finding/commit blocker. Wizard cancellation/commit and TLS/keep-alive regressions also passed
+three focused race repetitions. Removing callback joining reproduced the committed
+callback failure again before restoring the correction. The conversion-cancellation
+regression also passed 100 race-enabled repetitions.
+
+The post-Amp rebuilt password smoke and full public CLI/listener/embedding-app
+workflow both passed, including cleanup API 404; SSE/WSS revocation was **0.236
+seconds**. Real GitHub wizard/OAuth, visible backend, logout, excluded/restored
+identity and restart checks passed before these final lifecycle changes, with
+local cleanup and remote API 404. Their changed wizard paths were retested through
+loopback HTTP/provider fixtures. GitHub accepted the approved test-App deletions
+and queued them. Exact-commit Linux/macOS CI remains required before release.
+
+See [AUTH_SECURITY_REVIEW.md](AUTH_SECURITY_REVIEW.md) and the
+[final live repeat](LIVE_TESTING.md#post-amp-auth-lifecycle-repeat--2026-10-10).
+The 0.389-second record is the preceding post-Claude build; 0.370 seconds refers
+to the earlier cache/admission build.
+
+
+After the cache-policy and password-admission corrections, `make check` passed
+all package tests, vet, formatting, full golangci-lint (**0 issues**) and CLI build.
+A fresh `go test -race -count=1 ./...` passed all packages; the affected auth
+package passed another fresh race run after the final NGINX-header filter.
+New regressions cover both-mode anonymous access/cache policy, OAuth failure
+boundaries and rejected
+password forms; occupied hash slots preserve the budget. The cache and admission
+regressions were observed failing before their production corrections.
+
+An independent fresh-context reviewer rechecked the fixes and ran focused tests.
+Real GitHub registration, allowed/denied identity, logout/restart invalidation,
+public-service anonymous gating, token stripping/revocation and protected-response
+headers passed. That cache/admission build also repeated the full public password
+smoke, including cache overrides, uploads, streams, restart and profile isolation;
+revocation closed SSE/WSS in 0.370 seconds and API 404 confirmed cleanup. See
+[AUTH_SECURITY_REVIEW.md](AUTH_SECURITY_REVIEW.md) and the
+[dated live record](LIVE_TESTING.md#github-auth-and-security-follow-up--2026-10-10).
+
 Browser form policy correction: regression tests, `make check` (zero lint issues),
 `make race`, and native Chrome password login/root redirect/logout passed. See
 [LIVE_TESTING.md](LIVE_TESTING.md#browser-login-regression--2026-10-10).

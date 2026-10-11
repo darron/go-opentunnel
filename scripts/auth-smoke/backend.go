@@ -92,6 +92,13 @@ func run() error {
 		case "/redirect":
 			w.Header().Set("Location", "http://"+r.Host+"/next?q=1")
 			w.WriteHeader(http.StatusFound)
+		case "/cache":
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			w.Header().Set("CDN-Cache-Control", "public, max-age=3600")
+			w.Header().Set("X-Accel-Expires", "3600")
+			w.Header().Set("Expires", "Wed, 21 Oct 2037 07:28:00 GMT")
+			_, _ = io.WriteString(w, "protected-cache-canary\n")
 		case "/headers":
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Add("Set-Cookie", "__Host-otgo-session=forged; Secure; Path=/")

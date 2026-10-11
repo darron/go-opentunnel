@@ -15,8 +15,8 @@ func randomSecret() string              { return base64.RawURLEncoding.EncodeToS
 func randomBytes(n int) []byte          { b := make([]byte, n); _, _ = rand.Read(b); return b }
 func GeneratePassword() (string, error) { return randomSecret(), nil }
 func NewPasswordVerifier(password []byte) (PasswordVerifier, error) {
-	if len(password) == 0 || len(password) > 1024 {
-		return PasswordVerifier{}, errors.New("password must contain 1 to 1024 bytes")
+	if len(password) < 12 || len(password) > 1024 {
+		return PasswordVerifier{}, errors.New("password must contain 12 to 1024 bytes")
 	}
 	salt := randomBytes(32)
 	key, err := pbkdf2.Key(sha256.New, string(password), salt, passwordIterations, 32)

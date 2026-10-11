@@ -15,7 +15,9 @@ func ownedByUser(info os.FileInfo) bool {
 	return ok && int64(s.Uid) == int64(os.Geteuid())
 }
 func openNoFollow(path string, flags int, mode os.FileMode) (*os.File, error) {
-	fd, e := syscall.Open(path, flags|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, uint32(mode))
+	// Nonblocking open lets callers reject FIFOs by fstat without waiting for a
+	// writer. It does not change regular-file reads or our explicit flock calls.
+	fd, e := syscall.Open(path, flags|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, uint32(mode))
 	if e != nil {
 		return nil, e
 	}

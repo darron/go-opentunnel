@@ -77,6 +77,21 @@ func (h *Handler) validOrigin(r *http.Request, c credential) bool {
 	if len(origins) == 1 && origins[0] != h.origin {
 		return false
 	}
+	if !c.machine {
+		for _, key := range []string{"Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest"} {
+			if len(r.Header.Values(key)) > 1 {
+				return false
+			}
+		}
+		// Keep links and bookmarks usable, but do not let another site load
+		// authenticated scripts, images, frames or API responses with cookies.
+		site := r.Header.Get("Sec-Fetch-Site")
+		if site == "same-site" || site == "cross-site" {
+			if r.Method != "GET" || r.Header.Get("Sec-Fetch-Mode") != "navigate" || r.Header.Get("Sec-Fetch-Dest") != "document" {
+				return false
+			}
+		}
+	}
 	unsafe := r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS"
 	ws := r.Header.Get("Upgrade") != ""
 	return c.machine || (!unsafe && !ws) || len(origins) == 1
@@ -171,10 +186,6 @@ func (p *PasswordBrowserAuthenticator) login(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Invalid request origin", http.StatusForbidden)
 		return
 	}
-	if !p.admit() {
-		http.Error(w, "Too many login attempts", http.StatusTooManyRequests)
-		return
-	}
 	if e := parseOwnedForm(w, r); e != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(e, &tooLarge) {
@@ -193,6 +204,10 @@ func (p *PasswordBrowserAuthenticator) login(w http.ResponseWriter, r *http.Requ
 		defer func() { <-p.slots }()
 	default:
 		http.Error(w, "Login service busy", http.StatusTooManyRequests)
+		return
+	}
+	if !p.admit() {
+		http.Error(w, "Too many login attempts", http.StatusTooManyRequests)
 		return
 	}
 	if len(r.PostForm["password"]) != 1 || !VerifyPassword(p.verifier, []byte(r.PostForm.Get("password"))) {

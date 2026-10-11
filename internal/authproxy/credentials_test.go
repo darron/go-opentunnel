@@ -29,7 +29,7 @@ func TestPasswordVerificationAndBounds(t *testing.T) {
 	if !VerifyPassword(a, p) || VerifyPassword(a, []byte("wrong")) {
 		t.Fatal("password verification")
 	}
-	for _, input := range [][]byte{nil, bytes.Repeat([]byte("a"), 1025)} {
+	for _, input := range [][]byte{nil, []byte("a"), bytes.Repeat([]byte("a"), 11), bytes.Repeat([]byte("a"), 1025)} {
 		if _, err := NewPasswordVerifier(input); err == nil {
 			t.Fatal("accepted invalid size")
 		}

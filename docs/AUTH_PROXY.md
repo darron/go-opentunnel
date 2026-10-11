@@ -13,7 +13,8 @@ otgo proxy --profile inbox
 
 Setup provisions or reuses an OpenTunnel identity and prints a generated password
 once. Save it in your password manager. Alternatively, use `--password-stdin` to
-supply one line through stdin; the CLI does not echo it or accept it in a flag.
+supply one line of 12–1024 bytes through stdin; the CLI does not echo it or
+accept it in a flag. Prefer the generated password over a memorable phrase.
 Open the printed HTTPS URL and sign in. Browser sessions last eight hours and
 end on restart. Sign out at `/__otgo/logout`. A shared password grants whole-backend
 access, without identifying individual people.
@@ -45,7 +46,8 @@ origin. Missing/mismatched state fails startup instead of silently provisioning.
 Retrieve a hostname while running with `otgo get --profile inbox --json`. The
 password cannot be recovered from its verifier. To replace it or the backend,
 stop the proxy and run `auth init --replace` with the new settings. Replacement
-revokes machine tokens. `auth reset` removes known local auth files, retaining
+revokes machine tokens. Every `auth init` revokes any leftover token registry,
+even when the auth configuration is missing. `auth reset` removes known local auth files, retaining
 the tunnel and GitHub App. `otgo remove` separately deletes the tunnel. Lock files
 are retained to prevent simultaneous lock owners.
 
@@ -55,22 +57,43 @@ ACL validation is implemented; the SDK and other CLI commands remain available.
 
 ## GitHub login
 
-Stop the proxy, then run:
+First run `auth init` to save the backend and tunnel. Stop that profile’s proxy,
+then switch its browser login to GitHub:
 
 ```sh
 otgo auth github --profile inbox --allow-user darron
 otgo proxy --profile inbox
 ```
 
-Open the temporary loopback URL and follow its buttons to GitHub. GitHub asks
+Open the exact temporary loopback URL printed by the CLI. Its one-use capability
+binds one browser, then redirects to `/__otgo/github/setup` without the token.
+The create/callback routes stay under that prefix. Another visitor cannot replace
+your setup browser; concurrent wizards use distinct cookies. Follow its buttons
+to GitHub. GitHub asks
 you to approve App creation. otgo converts the registration code and privately
 saves client credentials. It requests no repository permissions or webhook
 deliveries. Owner approval remains a GitHub step. Repeat `--allow-user` as needed.
 
+Cancelling before credentials begin saving preserves the previous login mode.
+Once saving begins, the command waits for it and reports the save result, even
+if you interrupt it. No callback continues changing configuration after the
+command returns. App creation at GitHub can precede local cancellation; check
+your GitHub Apps list and remove an unused App if setup stops before conversion.
+
 The allowlist stores numeric GitHub account IDs, so renames do not transfer access.
 GitHub mode replaces password login; provider failures deny access without password
 fallback. OAuth uses single-use browser-bound state and PKCE. Provider access tokens
-are not persisted or forwarded to the backend.
+are not persisted or forwarded to the backend. They are discarded after identity
+lookup, rather than explicitly revoked at GitHub. Existing machine tokens retain
+their lifetime when switching to GitHub login; revoke them separately if access
+should change. Returning to password login through `auth init` resets machine
+tokens, including when the backend stays the same.
+
+GitHub browser sessions also last eight hours and end on logout or proxy restart.
+Removing a GitHub authorization, deleting the App or suspending an account does
+not immediately revoke an existing local session: GitHub identity is checked at
+login. To revoke all browser access immediately, stop/restart the proxy. Stop it
+before changing the allowlist; setup requires the profile lock.
 
 For an existing OAuth/GitHub App, register
 `https://HOSTNAME/__otgo/github/callback`, then use `--client-id ID` and
@@ -105,13 +128,41 @@ machine tokens, hostname, password verifier/GitHub credentials and backend setti
 ## HTTP behavior and trust
 
 Host/TLS SNI must match the public hostname. Browser writes/WebSockets require
-the public Origin. Login/logout forms use CSRF tokens, bounded bodies and short
+the public Origin. For cookie-authenticated requests, browser fetch metadata
+rejects foreign scripts, images, frames and API calls, while permitting top-level
+GET navigation. Clients without that metadata still require the exact Origin for
+writes and WebSockets; use explicit machine tokens for non-browser clients.
+Login/logout forms use CSRF tokens, bounded bodies and short
 read deadlines; password hashing has a global rate limit and two concurrent slots.
 Sessions use Secure, HttpOnly, SameSite=Lax host cookies.
 
+Authenticated backend responses override public caching directives with
+`Cache-Control: private, no-store`, `Pragma: no-cache` and an expired `Expires`
+value. Common CDN override headers are removed. This prevents compliant HTTP
+caches from storing protected responses. It cannot erase content already seen
+or prevent an allowed backend from saving content in browser application storage.
+
+Login resource limits protect the process, but do not guarantee availability
+under attack. Password verification allows a burst of ten attempts, refills one
+per second and uses two hashing slots. Malformed/oversized form encoding, invalid CSRF and busy hashing slots do not
+spend that budget; an attacker with valid CSRF can still compete for it. GitHub
+allows 256 pending logins with ten-minute expiry; a flood can fill those slots
+and temporarily deny new logins. Pending states are not evicted to admit newer
+ones. Tunnel connections also have a finite capacity; connection floods can deny
+service before authentication. Slow login bodies are bounded and idle HTTP
+keep-alive connections close after 30 seconds. Active authenticated streams do
+not inherit a server-wide read/write timeout.
+
 Backend Host/Origin/Referer are adapted to its fixed origin, and redirects to that
 origin are translated back. `/__otgo/` and `__Host-otgo-` cookie names are reserved.
+Responses use `Referrer-Policy: same-origin` so ordinary same-origin forms keep
+their Origin while external sites receive no referrer. An HTML meta policy,
+sandboxed iframe or other backend behavior that produces `Origin: null` still
+fails closed; this proxy does not rewrite arbitrary HTML.
 Apps with hard-coded absolute URLs, another required origin or reserved names may
-need their own proxy settings. Allowed users can exercise all backend functionality.
+need their own proxy settings. Trust the backend’s code: its same-origin scripts
+and service workers can act as the authenticated visitor and store already
+received content. The gate does not sandbox an authorized application. Allowed users can exercise all backend functionality.
 OpenTunnel's operator/certificate trust boundary still applies; see
-[SECURITY.md](SECURITY.md) and [AUTH_PROXY_REVIEW.md](AUTH_PROXY_REVIEW.md).
+[SECURITY.md](SECURITY.md), [AUTH_PROXY_REVIEW.md](AUTH_PROXY_REVIEW.md) and the
+[pre-v0.4.0 security review](AUTH_SECURITY_REVIEW.md).

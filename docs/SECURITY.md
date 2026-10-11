@@ -1,16 +1,36 @@
 # Security model
 
 For the CLI gate, see [AUTH_PROXY.md](AUTH_PROXY.md) and the
-[auth review](AUTH_PROXY_REVIEW.md). `otgo proxy` protects every backend path/method;
+[auth review](AUTH_PROXY_REVIEW.md) and [pre-v0.4.0 review](AUTH_SECURITY_REVIEW.md).
+`otgo proxy` protects every backend path/method;
 ordinary `connect` and `listen` do not add login protection.
 
 Auth secrets require account-owned 0700 directories, regular 0600 files, bounded
 strict JSON, no-follow opens, atomic replacement and OS file locks. Password
 verifiers use PBKDF2-HMAC-SHA256 with 600,000 iterations and random salts. Generated
-passwords/tokens use cryptographic randomness. Token hashes are reloaded on each
+passwords/tokens use cryptographic randomness. New supplied passwords require
+12–1024 bytes. Private reads validate the opened descriptor, so atomic registry
+replacement does not falsely revoke unrelated tokens. Token hashes are reloaded on each
 authentication; expiry/revocation aborts active streams. Browser sessions live in
 memory and end on restart. Login uses CSRF, rate/concurrency limits and bounded
-body reads. The operator guide specifies lifetimes and MCP compatibility limits.
+body reads. Protected responses use `private, no-store` and override upstream
+public caching policies; application storage and content already received by an
+authorized visitor remain outside HTTP cache controls.
+
+GitHub identity is checked at login, not on each request. Provider-side revocation
+does not immediately end an eight-hour local browser session; logout or proxy
+restart does. Bounded password work and GitHub pending-state storage can still
+be crowded out by a login flood. These availability limits do not grant access
+to the backend. Connection floods can still exhaust the outer transport limit;
+idle HTTP connections close after 30 seconds. The operator guide specifies lifetimes and MCP compatibility limits.
+
+The setup wizard uses a one-use loopback capability and a browser-bound cookie;
+all its routes use `/__otgo/github/setup`. Cookie-authenticated foreign
+subresources are rejected using browser fetch metadata; normal top-level GET
+navigation remains available. Backend responses use `Referrer-Policy: same-origin`.
+HTML meta policies or sandboxing can still produce a refused null Origin. Treat
+backend JavaScript and service workers as trusted application code: authentication
+does not prevent them from acting as the visitor or retaining received content.
 
 Windows auth storage is refused until private ACL validation is available; SDK
 and other CLI commands remain available. Same-account compromise can read/replace

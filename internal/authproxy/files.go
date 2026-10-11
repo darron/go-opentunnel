@@ -45,6 +45,10 @@ func checkPrivateFile(path string) (os.FileInfo, error) {
 	return info, nil
 }
 func readPrivate(path string) ([]byte, error) {
+	return readPrivateWithOpen(path, openNoFollow)
+}
+
+func readPrivateWithOpen(path string, open func(string, int, os.FileMode) (*os.File, error)) ([]byte, error) {
 	if !protectedStorageSupported {
 		return nil, errUnsupportedStorage
 	}
@@ -53,21 +57,17 @@ func readPrivate(path string) ([]byte, error) {
 	if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByUser(info) {
 		return nil, errors.New("unsafe or missing credential directory")
 	}
-	before, e := checkPrivateFile(path)
-	if e != nil {
-		return nil, errors.New("credential file is missing or unsafe")
-	}
-	if before.Size() > maxFileBytes {
-		return nil, errors.New("credential file exceeds size limit")
-	}
-	f, e := openNoFollow(path, os.O_RDONLY, 0600)
+	f, e := open(path, os.O_RDONLY, 0600)
 	if e != nil {
 		return nil, errors.New("cannot open credential file")
 	}
 	defer func() { _ = f.Close() }()
 	after, e := f.Stat()
-	if e != nil || !os.SameFile(before, after) {
-		return nil, errors.New("credential file changed while opening")
+	if e != nil || !after.Mode().IsRegular() || after.Mode().Perm() != 0600 || !ownedByUser(after) {
+		return nil, errors.New("unsafe credential file; require account ownership and mode 0600")
+	}
+	if after.Size() > maxFileBytes {
+		return nil, errors.New("credential file exceeds size limit")
 	}
 	b, e := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
 	if e != nil || len(b) > maxFileBytes {

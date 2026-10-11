@@ -263,3 +263,80 @@ func TestProxyStreamAdmissionLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestProxyBrowserFetchMetadata(t *testing.T) {
+	for _, mode := range []string{"password", "github"} {
+		t.Run(mode, func(t *testing.T) {
+			h, s, tokens := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+			h.config.Mode = mode
+			cookie := browserSession(t, s)
+			token, _, err := tokens.Create(time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, tc := range []struct {
+				site, mode, dest, origin string
+				machine                  bool
+				want                     int
+			}{
+				{"same-site", "no-cors", "script", "", false, 403},
+				{"cross-site", "no-cors", "image", "", false, 403},
+				{"same-site", "navigate", "iframe", "", false, 403},
+				{"cross-site", "navigate", "document", "", false, 204},
+				{"same-site", "navigate", "document", "", false, 204},
+				{"same-origin", "cors", "empty", "", false, 204},
+				{"none", "navigate", "document", "", false, 204},
+				{"", "", "", "", false, 204},
+				{"cross-site", "navigate", "document", "https://evil.test", false, 403},
+				{"cross-site", "cors", "empty", "", true, 204},
+			} {
+				r := publicRequest("GET", "/private.js")
+				if tc.machine {
+					r.Header.Set("Authorization", "Bearer "+token)
+				} else {
+					addSession(r, cookie)
+				}
+				for key, value := range map[string]string{"Sec-Fetch-Site": tc.site, "Sec-Fetch-Mode": tc.mode, "Sec-Fetch-Dest": tc.dest, "Origin": tc.origin} {
+					if value != "" {
+						r.Header.Set(key, value)
+					}
+				}
+				if w := runRequest(h, r); w.Code != tc.want {
+					t.Errorf("site=%s mode=%s dest=%s machine=%t: %d, want %d", tc.site, tc.mode, tc.dest, tc.machine, w.Code, tc.want)
+				}
+			}
+			r := publicRequest("GET", "/")
+			addSession(r, cookie)
+			r.Header.Add("Sec-Fetch-Site", "same-origin")
+			r.Header.Add("Sec-Fetch-Site", "cross-site")
+			if w := runRequest(h, r); w.Code != 403 {
+				t.Fatal("ambiguous browser metadata accepted")
+			}
+		})
+	}
+}
+
+func TestProxyResponsePreservesSameOriginFormsAndGateCookieNames(t *testing.T) {
+	h, s, _ := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Add("Set-Cookie", "=__Host-otgo-session=forged; Path=/; Secure")
+		w.Header().Add("Set-Cookie", "__host-OTGO-session=forged; Path=/; Secure")
+		w.Header().Add("Set-Cookie", "backend=keep; Path=/")
+		w.WriteHeader(200)
+	}))
+	r := publicRequest("GET", "/form")
+	addSession(r, browserSession(t, s))
+	w := runRequest(h, r)
+	if w.Header().Get("Referrer-Policy") != "same-origin" {
+		t.Fatal("backend policy breaks same-origin form POSTs")
+	}
+	if got := w.Header().Values("Set-Cookie"); len(got) != 1 || got[0] != "backend=keep; Path=/" {
+		t.Fatal("backend can set ambiguous or reserved gate cookies")
+	}
+	r = publicRequest("POST", "/form")
+	addSession(r, browserSession(t, s))
+	r.Header.Set("Origin", "null")
+	if w := runRequest(h, r); w.Code != 403 {
+		t.Fatal("opaque form origin accepted")
+	}
+}

@@ -246,3 +246,57 @@ func TestAuthenticatedUploadClearsUntrustedDeadline(t *testing.T) {
 		t.Fatal("authenticated upload inherited the untrusted body deadline")
 	}
 }
+
+// A handler must finish revocation's transport abort before net/http can reuse
+// its client connection for the next request.
+type pausedCloseConn struct {
+	net.Conn
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (c *pausedCloseConn) Close() error {
+	close(c.entered)
+	<-c.release
+	return c.Conn.Close()
+}
+func TestLeaseCompletionWaitsForTransportAbort(t *testing.T) {
+	server, client := net.Pipe()
+	defer func() { _ = client.Close() }()
+	conn := &pausedCloseConn{Conn: server, entered: make(chan struct{}), release: make(chan struct{})}
+	releaseClosed := false
+	defer func() {
+		if !releaseClosed {
+			close(conn.release)
+		}
+	}()
+	lease := &requestLease{cancel: func() {}, client: conn}
+	aborted := make(chan struct{})
+	go func() { lease.terminate(); close(aborted) }()
+	select {
+	case <-conn.entered:
+	case <-time.After(time.Second):
+		t.Fatal("revocation did not close its transport")
+	}
+	finished := make(chan struct{})
+	go func() { lease.finish(); close(finished) }()
+	select {
+	case <-finished:
+		t.Fatal("handler completed while an old revocation close could still reach a reused connection")
+	case <-time.After(100 * time.Millisecond):
+	}
+	// Finish the abort before waiting for completion, without leaving goroutines
+	// behind even when the pre-fix assertion above fails.
+	close(conn.release)
+	releaseClosed = true
+	select {
+	case <-aborted:
+	case <-time.After(time.Second):
+		t.Fatal("abort did not finish")
+	}
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not finish after abort")
+	}
+}

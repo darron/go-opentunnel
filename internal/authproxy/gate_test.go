@@ -238,7 +238,14 @@ func withForm(r *http.Request, body string) *http.Request {
 }
 func ioNop(s string) io.ReadCloser { return io.NopCloser(strings.NewReader(s)) }
 func TestGateLoginBounds(t *testing.T) {
-	h, _, _ := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	s := NewSessions(1024)
+	defer s.Close()
+	p := NewPasswordBrowserAuthenticator(fixtureConfig(), s)
+	now := time.Now()
+	p.now = func() time.Time { return now }
+	p.last = now
+	h := http.NewServeMux()
+	p.Register(h)
 	page := runRequest(h, publicRequest("GET", "/__otgo/login"))
 	var csrf *http.Cookie
 	for _, c := range page.Result().Cookies() {
@@ -253,7 +260,7 @@ func TestGateLoginBounds(t *testing.T) {
 		t.Fatalf("oversized login: %d", w.Code)
 	}
 	for range 12 {
-		r = withForm(publicRequest("POST", "/__otgo/login"), "password=x&csrf=wrong")
+		r = withForm(publicRequest("POST", "/__otgo/login"), "password=x&csrf="+csrf.Value)
 		r.AddCookie(csrf)
 		r.Header.Set("Origin", "https://demo.test")
 		w := runRequest(h, r)
@@ -294,6 +301,13 @@ func TestGateLoginLimiterAndConcurrency(t *testing.T) {
 	p.login(w, r)
 	if w.Code != 429 {
 		t.Fatal("unbounded password jobs")
+	}
+	<-p.slots
+	<-p.slots
+	for range 10 {
+		if !p.admit() {
+			t.Fatal("busy hash slots spent password verification budget")
+		}
 	}
 }
 

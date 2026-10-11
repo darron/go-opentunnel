@@ -55,6 +55,12 @@ type requestLease struct {
 	finished bool
 }
 
+func (l *requestLease) finish() {
+	l.mu.Lock()
+	l.finished = true
+	l.mu.Unlock()
+}
+
 func (l *requestLease) terminate() {
 	l.mu.Lock()
 	if l.finished || l.aborted {
@@ -62,11 +68,12 @@ func (l *requestLease) terminate() {
 		return
 	}
 	l.aborted = true
-	client, hijacked := l.client, l.hijacked
-	l.mu.Unlock()
+	// Keep completion behind transport abort: net/http may reuse the client
+	// connection as soon as ServeHTTP returns.
+	defer l.mu.Unlock()
 	l.cancel()
-	abortConnection(client)
-	abortConnection(hijacked)
+	abortConnection(l.client)
+	abortConnection(l.hijacked)
 }
 
 // Revocation must abort the transport, without waiting for a TLS close_notify
@@ -154,11 +161,23 @@ func NewHandler(o Options) (*Handler, error) {
 			p.Out.Header.Set("Referer", ref.String())
 		}
 	}, ModifyResponse: func(res *http.Response) error {
+		// Public backends can opt into caching. Authenticated content must not
+		// survive logout/expiry in an HTTP cache or be shared with another user.
+		res.Header.Set("Cache-Control", "private, no-store")
+		res.Header.Set("Pragma", "no-cache")
+		res.Header.Set("Expires", "0")
+		// Keep the exact Origin on same-origin form submissions while withholding
+		// referrers from external sites, including URLs with backend query data.
+		res.Header.Set("Referrer-Policy", "same-origin")
+		for _, key := range []string{"Surrogate-Control", "CDN-Cache-Control", "Cloudflare-CDN-Cache-Control", "Vercel-CDN-Cache-Control", "X-Accel-Expires"} {
+			res.Header.Del(key)
+		}
 		cookies := res.Header.Values("Set-Cookie")
 		res.Header.Del("Set-Cookie")
 		for _, c := range cookies {
 			name, _, _ := strings.Cut(c, "=")
-			if !strings.HasPrefix(strings.TrimSpace(name), "__Host-otgo-") {
+			name = strings.TrimSpace(name)
+			if name != "" && !strings.HasPrefix(strings.ToLower(name), "__host-otgo-") {
 				res.Header.Add("Set-Cookie", c)
 			}
 		}
@@ -211,9 +230,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.wg.Add(1)
 	h.mu.Unlock()
 	defer func() {
-		lease.mu.Lock()
-		lease.finished = true
-		lease.mu.Unlock()
+		lease.finish()
 		h.mu.Lock()
 		delete(h.active, lease)
 		h.mu.Unlock()

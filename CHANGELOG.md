@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Join GitHub setup callbacks before returning; cancellation preserves the old
+  mode before saving and reports the actual result once saving starts. Serialize
+  revocation closes with request completion to protect keep-alive reuse.
+
+- Bind GitHub App setup to a one-use browser capability under
+  `/__otgo/github/setup`; isolate concurrent setup cookies.
+- Revoke leftover machine tokens on every auth initialization, normalize empty
+  profiles to the default lock, and tolerate safe atomic token-registry updates.
+- Reject foreign browser subresources, preserve same-origin backend form Origins,
+  filter ambiguous gate cookies, require 12-byte supplied passwords, and bound
+  idle HTTP connections.
+
+- Prevent protected responses from inheriting public backend/CDN cache policies
+  in either auth mode. Add anonymous-route and OAuth failure regressions.
+- Preserve the password-verification budget for bounded, valid-CSRF forms with
+  an available hashing slot. Document login-flood and GitHub session limits.
+
 - Trigger Homebrew validation/updates on published stable releases, with manual
   retry support. Remove scheduled polling. The source hook uses a tap-only
   `HOMEBREW_TAP_TOKEN` with Actions write permission.

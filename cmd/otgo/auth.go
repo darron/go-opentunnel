@@ -57,6 +57,9 @@ func parseAuthFlags(fs *flag.FlagSet, args []string, a *authFlags) error {
 	if a.requestTimeout < 0 {
 		return errors.New("request-timeout must not be negative")
 	}
+	if a.profile == "" {
+		a.profile = "default"
+	}
 	return nil
 }
 func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Writer) error {
@@ -261,10 +264,10 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				cfg := authproxy.Config{Binding: binding, Upstream: upstream, Mode: "password", Password: verifier}
-				if replace {
-					if e := authproxy.ResetTokens(paths.TokenFile); e != nil {
-						return e
-					}
+				// A missing config can leave an older backend's token registry.
+				// Every initialization establishes a new authorization boundary.
+				if e := authproxy.ResetTokens(paths.TokenFile); e != nil {
+					return e
 				}
 				if e := authproxy.SaveConfig(paths.AuthConfig, cfg); e != nil {
 					return e
