@@ -41,6 +41,18 @@ buffering. Twenty repetitions and five race repetitions passed on each of
 macOS/Linux; removing the client-connection attachment still fails in Linux.
 The production revocation code did not change.
 
+The corrected implementation at `ced87108fd2849c74cb3209e31751e7afa75e354`
+passed [all audit CI jobs](https://github.com/darron/go-opentunnel/actions/runs/38173165835):
+Linux/macOS tests, vet, CLI/example builds and updater tests; Linux race detection;
+full golangci-lint; current-Go tests and vulnerability scan; and all five sustained
+fuzz targets. The rebuilt CLI reports `otgo 0.7.0` with that SHA and `clean` state.
+
+The README and current guides were checked against source, CLI help, defaults,
+XDG storage paths, dependencies and CI. Setup comes before validation; duplicate
+historical fix lists were removed; token migration and certificate recovery are
+explained beside their commands. Historical reviews remain labeled as records
+of older revisions. All 157 local documentation links and anchors resolve.
+
 Five 45-second current-Go fuzz targets passed with 7,316,805 executions; an
 earlier complete pass also succeeded. An initial minimum-Go 120-second `FuzzDecodeControl` run
 ended with `context deadline exceeded` and no failing-input corpus. Its cause
