@@ -1,11 +1,68 @@
 # Local verification record
 
+## v0.5.0 publication and stable Homebrew — 2026-10-10
+
+Published [v0.5.0](https://github.com/darron/go-opentunnel/releases/tag/v0.5.0)
+from `4dd2042e9e2608d51c7864c3f85a2f252e31d63d`. The CHANGELOG entry is committed;
+release notes are attached to GitHub, with no release-note document in the repo.
+The advertised client version is 0.5.0. Other changes since v0.4.0 are API
+comments, examples and documentation; public signatures and dependencies are unchanged.
+
+- Local `make check` passed tests, vet, formatting, full golangci-lint
+  (**0 issues**) and the CLI build. Go 1.25.0 passed the runnable examples;
+  all five Homebrew updater tests and `git diff --check` passed.
+- [Release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38107054170)
+  and [tag-triggered CI](https://github.com/darron/go-opentunnel/actions/runs/38107595731)
+  passed Linux/macOS tests, vet, CLI/example builds and updater tests, plus Linux
+  race detection and full lint.
+- The actual release event ran the
+  [source hook](https://github.com/darron/go-opentunnel/actions/runs/38107604014),
+  which automatically dispatched the
+  [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38107609548).
+  Its macOS source build/style/strict audit/install/test and isolated publishing
+  jobs passed. No manual dispatch was used. Tap commit
+  `143ddb221620cef01e9fb2dde3478c2b46026841` changed only `Formula/otgo.rb`.
+  The locally downloaded archive matched its SHA-256:
+  `fc1fac934452fe84371d197dd4949bd30dbe94c7441cd72d7a31dd48d08658be`.
+- Locally upgraded stable Homebrew from 0.4.0 to 0.5.0, built only the CLI and
+  passed `brew test darron/tap/otgo`, `proxy --help` and `auth github --help`.
+  `brew list --versions otgo` reports `otgo 0.4.0 0.5.0` because the old keg was
+  retained; the active executable resolves to `Cellar/otgo/0.5.0/bin/otgo`.
+  The upgrade did not touch saved XDG profiles.
+- The public module proxy returned v0.5.0 at the release commit. After an
+  indexing request, both the versioned and latest pkg.go.dev pages returned
+  HTTP 200 and selected v0.5.0. Checked the startup/lifetime/trust overview and
+  all five example sections. Three examples run locally; Connect/Listen are
+  compiled examples. The Go Reference badge returned HTTP 200.
+
+### Hosted retest: certificate issuance prevented completion
+
+The first `python3 scripts/auth_smoke.py` run passed anonymous denial for every
+tested method/route with zero backend requests, password login/CSRF, machine
+MCP access, credential/header stripping, cookie/redirect handling, cache
+protection, foreign subresource checks, eight concurrent 2 MiB uploads, corrupt
+registry denial and restart/session invalidation. Revoking a machine token
+closed SSE and WebSocket streams in **0.210 seconds**.
+
+Certificate issuance failed while provisioning the second profile. A repeat
+failed while provisioning its first profile. Both v0.5.0 attempts stopped all
+owned processes, removed local credentials and confirmed remote removal with
+API 404. The full simultaneous two-backend check did not complete.
+
+A control using the installed v0.4.0 CLI also returned
+`opentunnel: certificate issuance failed`. Its `remove` command succeeded and
+the temporary directory contained no remaining files. Independent Python HTTP
+inspection returned 403, so it did not establish the certificate failure reason
+or independently confirm API 404 for that control. The underlying service
+issuance failure remains undiagnosed; no provisioning code changed for this release.
+The earlier completed public-service tests below remain the full live evidence.
+
 ## Go API documentation — 2026-10-10
 
 Added `doc.go` with startup, lifetime, concurrency, recovery and authentication
 contracts. Expanded public declaration/field comments and added local examples.
-The runtime client version remains 0.4.0; these changes are recorded under
-Unreleased for the planned v0.5.0.
+At this stage the runtime client version remained 0.4.0; these changes were
+recorded under Unreleased for the planned v0.5.0.
 
 - A standard-library AST audit checked 184 public declarations and fields;
   none lacked a doc comment. The audit covered the public root package, not
