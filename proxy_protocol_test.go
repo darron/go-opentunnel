@@ -175,7 +175,7 @@ func TestProxyHeaderWriteDeadlineAndPartialWrites(t *testing.T) {
 	got := make([]byte, len(want))
 	result := make(chan error, 1)
 	go func() { _, err := io.ReadFull(reader, got); result <- err }()
-	if err := writeProxyHeader(shortProxyWriter{Conn: writer}, want, time.Second); err != nil {
+	if err := writeProxyHeader(shortProxyWriter{Conn: writer}, want, 100*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-result; err != nil {
@@ -185,7 +185,7 @@ func TestProxyHeaderWriteDeadlineAndPartialWrites(t *testing.T) {
 		t.Fatalf("partial preamble %q", got)
 	}
 	// A successful preamble must clear its deadline for subsequent payloads.
-	time.Sleep(40 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	go func() { _, err := reader.Read(make([]byte, 1)); result <- err }()
 	if _, err := writer.Write([]byte("x")); err != nil {
 		t.Fatalf("header deadline leaked into payload: %v", err)

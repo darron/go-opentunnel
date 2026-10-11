@@ -471,7 +471,9 @@ options, option clearing preserves existing streams, and quit exits cleanly.
 Byte-for-byte checks cover all 19 peer and 12 header vectors from upstream v0.5.0.
 Additional regressions cover malformed/oversized peers, bounded authority data,
 plain routes, rejected updates before remote creation, TLS route mismatch before
-backend dial, partial preamble writes and deadline clearing. See
+backend dial, partial preamble writes and deadline clearing. Removing deadline
+clearing made the strengthened regression fail; restoring it passed five race
+repetitions. See
 [the testing commands](TESTING.md#proxy-headers-and-certificate-diagnostics).
 
 A fresh security/correctness review found a foreground recovery-cooldown path
