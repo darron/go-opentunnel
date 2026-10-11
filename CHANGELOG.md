@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.8.0 — Dark auth pages and profile inventory — 2026-10-11
+
 - Redesign password, GitHub, setup and logout pages with a dark theme, an original
   otgo SVG mark and a clear GitHub sign-in button. Artwork, styles and the
   completion page’s clipboard script are embedded; no remote assets are loaded.
@@ -11,6 +13,10 @@
   backends, login modes and proxy launch commands. Include pending and incomplete
   state without suggesting unsafe launches. `--json` now returns objects; use
   `--names --json` for an array of names.
+- Keep the public Go API and OpenTunnel service protocol compatible. Add no
+  runtime Go dependency; include artwork attribution and verification records.
+
+[Compare v0.7.0 to v0.8.0](https://github.com/darron/go-opentunnel/compare/v0.7.0...v0.8.0)
 
 ## v0.7.0 — Security hardening and stronger verification — 2026-10-11
 
