@@ -73,8 +73,13 @@ func TestAmbiguousRuntimeBindCooldownSharedByPublicCalls(t *testing.T) {
 		if _, err := c.Resume(t.Context(), "", ProvisionOptions{}); !errors.Is(err, ErrCertificateIssuance) {
 			t.Fatalf("Resume: %v", err)
 		}
-		if _, err := c.Connect(t.Context(), ConnectOptions{Routes: Routes{"api": "127.0.0.1:8080"}}); !errors.Is(err, ErrCertificateIssuance) {
-			t.Fatalf("Connect: %v", err)
+		connected, err := c.Connect(t.Context(), ConnectOptions{Routes: Routes{"api": "127.0.0.1:8080"}})
+		if err != nil {
+			t.Fatalf("Connect with still-valid local certificate: %v", err)
+		}
+		_ = f.next(t)
+		if err := connected.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if binds.Load() != 1 {

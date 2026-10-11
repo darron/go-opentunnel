@@ -56,3 +56,43 @@ jobs:
         run: |
           golangci-lint fmt --diff
           golangci-lint run ./...
+
+  current-go:
+    name: Current Go security checks
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # actions/setup-go v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+      - name: Test on the current supported Go release
+        run: go test ./...
+      - name: Check for reachable known Go vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  fuzz:
+    name: Sustained fuzzing
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # actions/setup-go v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+      - name: Fuzz protocol parsers, routing and anonymous authentication boundary
+        run: make fuzz-sustained
+      # actions/upload-artifact v4.6.2. Fuzz crashes are written by Go under
+      # testdata/fuzz and retained even when the job fails.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: fuzz-corpus-and-crashes
+          path: |
+            testdata/fuzz
+            internal/authproxy/testdata/fuzz
+          if-no-files-found: ignore
+          retention-days: 14

@@ -114,6 +114,9 @@ func NewHandler(o Options) (*Handler, error) {
 	if e := validateConfig(o.Config); e != nil {
 		return nil, e
 	}
+	if o.TokenStore != nil && o.TokenStore.scope != tokenScope(o.Config) {
+		return nil, errors.New("token store does not match auth configuration")
+	}
 	if o.Sessions == nil {
 		o.Sessions = NewSessions(1024)
 	}
@@ -203,13 +206,34 @@ func stripRequestCredentials(r *http.Request) {
 	if len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") && strings.HasPrefix(fields[1], "otgo_") {
 		r.Header.Del("Authorization")
 	}
-	cookies := r.Cookies()
+	cookies := r.Header.Values("Cookie")
 	r.Header.Del("Cookie")
-	for _, c := range cookies {
-		if !strings.HasPrefix(c.Name, "__Host-otgo-") {
-			r.AddCookie(c)
+	for _, line := range cookies {
+		if line = stripGateCookies(line); line != "" {
+			r.Header.Add("Cookie", line)
 		}
 	}
+}
+
+func stripGateCookies(line string) string {
+	parts := strings.Split(line, ";")
+	kept := parts[:0]
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		name, value, found := strings.Cut(trimmed, "=")
+		reserved := strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), "__host-otgo-")
+		if !reserved && found && strings.TrimSpace(name) == "" {
+			ambiguous, _, _ := strings.Cut(strings.TrimSpace(value), "=")
+			reserved = strings.HasPrefix(strings.ToLower(strings.TrimSpace(ambiguous)), "__host-otgo-")
+		}
+		if !reserved {
+			kept = append(kept, part)
+		}
+	}
+	return strings.Join(kept, ";")
 }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Even a denied request can make net/http drain an unfinished body. Bound

@@ -39,7 +39,8 @@ directly; use **`proxy`** for authentication.
 A profile is a name for one saved tunnel, backend and auth configuration.
 Use a different profile for each backend. They can run concurrently on one
 machine; a second proxy for the same profile is refused. Stop that profile's
-proxy before setup, replacement or reset. Token commands work while it runs.
+proxy before setup, replacement or `auth reset`. Machine-token commands,
+including `auth token reset`, work while it runs.
 
 | Item | Default path |
 | --- | --- |
@@ -135,6 +136,22 @@ expiry is one hour, maximum 24 hours. Send `Authorization: Bearer TOKEN`. If the
 backend needs its own Authorization value, send the gate token in `X-Otgo-Token`.
 Gate tokens/cookies and spoofed forwarding/identity headers are stripped upstream.
 
+Tokens are bound to the saved tunnel, hostname, API origin and backend. Use a
+separate registry for each protected boundary, including when overriding
+`--token-file`. Password-to-GitHub changes retain tokens for the same boundary.
+
+After upgrading from an unbound version-1 token registry, old machine tokens are
+denied. Reset that registry and issue replacements with the same profile/storage
+flags; browser login and the saved tunnel/backend remain available:
+
+```sh
+otgo auth token reset --profile inbox
+otgo auth token create --profile inbox --ttl 1h
+```
+
+Reset revokes every machine token in that file. Existing registries are never
+silently migrated or overwritten.
+
 HTTP MCP clients that can send a configured token can use it. Unauthenticated
 clients receive 401, including for MCP discovery. This is not an MCP OAuth
 authorization server: automatic negotiation/client registration is not implemented.
@@ -171,8 +188,8 @@ or prevent an allowed backend from saving content in browser application storage
 
 Login resource limits protect the process, but do not guarantee availability
 under attack. Password verification allows a burst of ten attempts, refills one
-per second and uses two hashing slots. Malformed/oversized form encoding, invalid CSRF and busy hashing slots do not
-spend that budget; an attacker with valid CSRF can still compete for it. GitHub
+per second and uses two hashing slots. Malformed/oversized forms, invalid CSRF and busy hashing slots do not spend
+that budget; an attacker with valid CSRF can still compete for it. GitHub
 allows 256 pending logins with ten-minute expiry; a flood can fill those slots
 and temporarily deny new logins. Pending states are not evicted to admit newer
 ones. Tunnel connections also have a finite capacity; connection floods can deny
@@ -191,6 +208,7 @@ fails closed; this proxy does not rewrite arbitrary HTML.
 Apps with hard-coded absolute URLs, another required origin or reserved names may
 need their own proxy settings. Trust the backend’s code: its same-origin scripts
 and service workers can act as the authenticated visitor and store already
-received content. The gate does not sandbox an authorized application. Allowed users can exercise all backend functionality.
+received content. The gate does not sandbox the application. Allowed users can exercise all backend
+functionality.
 Read the [security model](SECURITY.md) for OpenTunnel's operator/certificate trust
 boundary and the [v0.4.0 auth review](AUTH_SECURITY_REVIEW.md) for findings and fixes.

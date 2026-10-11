@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -48,6 +49,91 @@ func TestBothAuthModesDenyAnonymousBackendAccess(t *testing.T) {
 				t.Fatalf("anonymous requests reached backend: %d", calls.Load())
 			}
 		})
+	}
+}
+
+func TestMachineTokenRegistryBindsEveryAuthConfigurationField(t *testing.T) {
+	shared := filepath.Join(secureTempDir(t), "tokens.json")
+	var firstCalls atomic.Int32
+	firstBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		firstCalls.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(firstBackend.Close)
+	first := fixtureConfig()
+	first.Upstream = firstBackend.URL
+	firstStore := NewTokenStore(shared, first)
+	secret, _, err := firstStore.Create(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstHandler, err := NewHandler(Options{Config: first, TokenStore: firstStore})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = firstHandler.Close() })
+
+	var otherUpstreamCalls atomic.Int32
+	otherUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		otherUpstreamCalls.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(otherUpstream.Close)
+	tests := []struct {
+		name   string
+		change func(*Config)
+	}{
+		{"tunnel ID", func(cfg *Config) { cfg.Binding.TunnelID = "other-id" }},
+		{"hostname", func(cfg *Config) { cfg.Binding.Hostname = "other.test" }},
+		{"API origin", func(cfg *Config) { cfg.Binding.APIOrigin = "https://other-api.test" }},
+		{"upstream", func(cfg *Config) { cfg.Upstream = otherUpstream.URL }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := firstStore.Authenticate(secret); err != nil {
+				t.Fatalf("control token did not authenticate against its bound registry: %v", err)
+			}
+			controlBefore := firstCalls.Load()
+			controlRequest := publicRequest(http.MethodGet, "/private")
+			controlRequest.Header.Set("Authorization", "Bearer "+secret)
+			if got := runRequest(firstHandler, controlRequest).Code; got != http.StatusNoContent || firstCalls.Load() != controlBefore+1 {
+				t.Fatalf("control token did not reach its bound backend: status=%d calls=%d", got, firstCalls.Load()-controlBefore)
+			}
+
+			candidate := first
+			test.change(&candidate)
+			candidateStore := NewTokenStore(shared, candidate)
+			if _, err := candidateStore.Authenticate(secret); err == nil {
+				t.Fatal("token authenticated against a registry bound to another configuration")
+			}
+			h, err := NewHandler(Options{Config: candidate, TokenStore: candidateStore})
+			if err != nil {
+				t.Fatalf("changed configuration is not valid: %v", err)
+			}
+			t.Cleanup(func() { _ = h.Close() })
+			beforeFirst := firstCalls.Load()
+			beforeOther := otherUpstreamCalls.Load()
+			r := publicRequest(http.MethodGet, "/private")
+			r.Host = candidate.Binding.Hostname
+			r.TLS.ServerName = candidate.Binding.Hostname
+			r.Header.Set("Authorization", "Bearer "+secret)
+			if got := runRequest(h, r).Code; got != http.StatusUnauthorized {
+				t.Fatalf("token returned %d for changed configuration, want 401", got)
+			}
+			if firstCalls.Load() != beforeFirst || otherUpstreamCalls.Load() != beforeOther {
+				t.Fatal("token for another configuration reached a backend")
+			}
+		})
+	}
+}
+
+func TestHandlerRejectsTokenStoreForDifferentAuthConfiguration(t *testing.T) {
+	first := fixtureConfig()
+	second := fixtureConfig()
+	second.Upstream = "http://127.0.0.1:8001"
+	store := NewTokenStore(filepath.Join(secureTempDir(t), "tokens.json"), first)
+	if _, err := NewHandler(Options{Config: second, TokenStore: store}); err == nil || !strings.Contains(err.Error(), "token store does not match") {
+		t.Fatalf("handler accepted mismatched token store: %v", err)
 	}
 }
 

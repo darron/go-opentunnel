@@ -11,7 +11,7 @@ and builds only `./cmd/otgo`. It installs no library source, examples or fixture
 Go is a build dependency; the CLI includes the packages it needs. `make build`
 also builds only the CLI; `make build-example` separately builds the example.
 
-From v0.6.0, `otgo version` (or `otgo --version`) reports the binary version,
+`otgo version` (or `otgo --version`) reports the binary version,
 full Git SHA and source state at build time (`clean`, `dirty` or `unknown`).
 Checkout builds read Go's recorded VCS metadata. Stable Homebrew builds use the
 release tag's verified commit SHA because source archives contain no `.git`.
@@ -83,23 +83,24 @@ Use an expiry and replace the repository secret when renewing it. Never commit
 or paste the token into a source file. Missing/expired credentials fail the release
 hook visibly; the release remains published and can be retried.
 
-After adding the secret, test the complete hook without creating a release:
+After adding the secret, retry the complete hook for an already-published release:
 
 ```sh
-gh workflow run update-homebrew.yml --repo darron/go-opentunnel -f tag=v0.5.0
+gh workflow run update-homebrew.yml --repo darron/go-opentunnel -f tag=v0.7.0
 ```
 
 To run the tap directly using your local GitHub login:
 
 ```sh
-gh workflow run update-otgo.yml --repo darron/homebrew-tap -f tag=v0.5.0
+gh workflow run update-otgo.yml --repo darron/homebrew-tap -f tag=v0.7.0
 ```
 
-Leave the tap workflow's tag empty to select the latest stable release. Drafts and prereleases
-are refused. Updates are serialized; non-fast-forward pushes fail instead of
+The commands above require a published `v0.7.0` release. For another release,
+replace the tag. Leave the tap workflow's tag empty to select the latest stable
+release. Drafts and prereleases are refused. Updates are serialized; non-fast-forward pushes fail instead of
 overwriting another change. Rerun after a failure. Actions failures appear in the
-tap's Actions tab and do not roll back a release. The source dispatch completing means the tap workflow was started; check its
-Actions run for the eventual validation/publishing result.
+tap's Actions tab and do not roll back a release. A successful source dispatch
+means the tap workflow started; check that run for its validation/publishing result.
 
 CI tests invalid/injected tags and checksums, formula slots, symlinks, numeric
 version ordering, downgrades, idempotence and preservation of other formulae.

@@ -42,11 +42,11 @@ routes suspend attachment.
   Listener close also aborts accepted sockets; application handlers are not joined.
 - `Client.Close` cancels and joins its owned operations and connections.
 - `Client.API()` calls use their own contexts.
-- Custom storage must honor cancellation; coordinate shared-profile provisioning
-  across separate clients or processes.
-- Custom `Storage.Save` must successfully store the completed identity before it
-  clears pending state. Persist token and private-key fields explicitly;
-  `json.Marshal` on an `Identity` intentionally omits them.
+
+Custom storage must honor cancellation and coordinate shared-profile provisioning
+across separate clients or processes. `Storage.Save` must store the completed
+identity before clearing pending state. Persist token and private-key fields
+explicitly: `json.Marshal` on an `Identity` intentionally omits them.
 
 ## Default resource limits
 
@@ -54,18 +54,22 @@ routes suspend attachment.
 | --- | ---: |
 | Active channels | 256 |
 | Pending inbound bytes per channel | 8 MiB |
+| Pending inbound bytes per relay session | 64 MiB |
 | Queued events | 256 |
 | Outbound data queue | 32 messages |
-| Cleanup-control queue | 32 messages; saturation closes the session |
+| Reader-reply queue | 32 messages; reader replies wait for capacity; heartbeat pings coalesce/skip when busy |
+| Teardown-control queue | 32 messages reserved; saturation closes the session |
 | Outbound payload per message | 32 KiB |
 | Per-channel idle timeout | Disabled unless `TransportOptions.IdleTimeout` is positive |
 
-The maximum aggregate inbound payload budget is **2 GiB**. Coalesced 32 KiB
+The aggregate inbound payload budget is **64 MiB per relay session**. Coalesced 32 KiB
 blocks add at most 64 KiB capacity per channel plus bounded slice metadata; TLS,
 sockets, and other memory remain additional overhead. Lower
-`TransportOptions.MaxConnections` and `MaxInboundBytes` for smaller applications.
+`TransportOptions.MaxConnections`, `MaxInboundBytes` and `MaxInboundTotalBytes`
+for smaller applications. Separate relay sessions have separate budgets.
 
-An inbound overflow resets that channel. A large upload to a slow target can
+Exceeding either inbound budget resets only the channel receiving that frame.
+Reads and aborts release its aggregate reservation. A large upload to a slow target can
 reach this limit even when the session is healthy. A configured idle timeout
 closes inactive channels: Connect counts application bytes, while Listen counts
 TLS records consumed or written by the application. Slow event consumers lose events;
@@ -81,47 +85,26 @@ channels because the wire protocol has no per-channel flow control.
   `omitzero`.
 - `Event.Delay` is a Go `time.Duration`; JSON represents it as integer
   nanoseconds.
+- Visitor open/close events retain `conn=0`; unrelated events omit unused IDs.
 - Protocol controls use custom JSON marshaling where required zero values must
   remain on the wire.
 
-## Review fixes covered by regressions
+## CLI authentication
 
-Lifecycle and credentials:
+| Location | Responsibility |
+| --- | --- |
+| `cmd/otgo/auth.go` | Password/GitHub setup, profile locks and machine-token commands |
+| `cmd/otgo/proxy.go` | Saved identity validation, listener startup and proxy lifetime |
+| `internal/authproxy/` | Login gate, sessions, OAuth wizard, bound token registries, private storage and backend forwarding |
 
-- Preserve pending credentials after a known remote creation even if startup
-  cancels; attempt remote deletion on persistence failure and return
-  `ProvisioningError` if manual recovery remains necessary.
-- Finish local cleanup after confirmed remote deletion, even if the caller cancels.
-- Share a profile lock between renewal and deletion to prevent credential recreation.
-- Reuse the stored key when retrying failed issuance, with a shared per-profile
-  cooldown and no profile lock held across issuance polling.
-- Attach an expired stored identity to trigger server renewal, but wait for a
-  valid certificate before `Connect` returns.
-- Require the wildcard SAN itself, rather than accepting a sample subdomain.
-- Permit disjoint same-profile connections and reject overlapping route names
-  with `ErrRouteInUse`.
+The gate is internal to the CLI. The public SDK exposes transport APIs without
+adding application authentication. See [AUTH_PROXY.md](AUTH_PROXY.md) for setup,
+migration and compatibility limits.
 
-I/O and shutdown:
+## Verification
 
-- Cancel blocked upstream sockets and logical outbound sends on channel reset or
-  overflow. Keep physical writes session-owned and discard canceled queued data.
-- Coalesce tiny inbound fragments to bound allocation overhead.
-- Normalize unknown API error tags and attachment codes to prevent credential
-  reflection into errors.
-- Keep invalid interactive route targets and route conflicts nonfatal.
-- Require ClientHello SNI to select the same route as the relay; reject missing
-  SNI and expired certificates before dialing the target.
-- Allow an optional application-byte idle timeout; keep zero disabled.
-- Keep API deadlines active through response-body consumption.
-- Restrict plain HTTP APIs to literal loopback/`localhost` and reject HTTPS
-  downgrade and cross-origin redirects before another request is made.
-- Preserve route-name changes that race session publication.
-- Stop interactive CLI shutdown from waiting for EOF on inherited stdin. `quit`
-  stops scanning; cancellation leaves native stdin to process exit after SDK cleanup.
-
-Use [TESTING.md](TESTING.md) to rerun checks. Read
-[VERIFICATION.md](VERIFICATION.md) for local evidence,
-[LIVE_TESTING.md](LIVE_TESTING.md) for hosted-service evidence, and
-[SECURITY.md](SECURITY.md) for trust boundaries. Earlier hardening decisions are
-in the [review archive](archive/README.md); the
-[v0.4.0 auth review](AUTH_SECURITY_REVIEW.md) covers the CLI gate.
+Use [TESTING.md](TESTING.md) for commands. The [current audit](SECURITY_AUDIT.md)
+records reproduced defects and test-quality checks; [local results](VERIFICATION.md)
+and [hosted results](LIVE_TESTING.md) identify the revisions tested.
+[SECURITY.md](SECURITY.md) describes trust boundaries. Earlier review decisions
+remain in the [archive](archive/README.md).

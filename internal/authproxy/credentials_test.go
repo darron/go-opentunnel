@@ -101,7 +101,7 @@ func TestSessionsRestartInvalidates(t *testing.T) {
 func TestTokenLifecycleAndHashOnlyPersistence(t *testing.T) {
 	path := filepath.Join(secureTempDir(t), "tokens.json")
 	now := time.Now()
-	s := newTokenStore(path, func() time.Time { return now })
+	s := newTokenStore(path, fixtureConfig(), func() time.Time { return now })
 	secret, id, err := s.Create(0)
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestTokenLifecycleAndHashOnlyPersistence(t *testing.T) {
 	if bytes.Contains(raw, []byte(secret)) || strings.Contains(fmt.Sprintf("%+v", s), secret) {
 		t.Fatal("plaintext token persisted")
 	}
-	if _, err := NewTokenStore(filepath.Join(secureTempDir(t), "tokens.json")).Authenticate(secret); err == nil {
+	if _, err := NewTokenStore(filepath.Join(secureTempDir(t), "tokens.json"), fixtureConfig()).Authenticate(secret); err == nil {
 		t.Fatal("cross-profile token")
 	}
 	if _, err := s.Authenticate("bad"); err == nil {
@@ -153,15 +153,113 @@ func TestTokenLifecycleAndHashOnlyPersistence(t *testing.T) {
 	}
 }
 
+func TestLegacyTokenRegistryFailsClosedWithoutMigration(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "tokens.json")
+	store := NewTokenStore(path, fixtureConfig())
+	secret, id, err := store.Create(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := store.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.Version = 1
+	registry.Scope = ""
+	if err := store.save(registry); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Authenticate(secret); err == nil {
+		t.Fatal("legacy unbound token authenticated")
+	}
+	checks := []struct {
+		name string
+		run  func() error
+	}{
+		{"create", func() error { _, _, err := store.Create(time.Hour); return err }},
+		{"list", func() error { _, err := store.List(); return err }},
+		{"revoke", func() error { return store.Revoke(id) }},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			err := check.run()
+			if err == nil || !strings.Contains(err.Error(), "otgo auth token reset") {
+				t.Fatalf("legacy registry error is not actionable: %v", err)
+			}
+		})
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("legacy token registry was silently migrated or overwritten")
+	}
+}
+
+func TestTokenRegistryBindingAndGitHubTransition(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "tokens.json")
+	passwordConfig := fixtureConfig()
+	passwordConfig.Upstream = "http://127.0.0.1:8001"
+	original := NewTokenStore(path, passwordConfig)
+	secret, _, err := original.Create(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherConfig := passwordConfig
+	otherConfig.Upstream = "http://127.0.0.1:8002"
+	other := NewTokenStore(path, otherConfig)
+	if _, err := other.Authenticate(secret); err == nil {
+		t.Fatal("token authenticated for a different upstream")
+	}
+	if _, err := other.List(); err == nil || !strings.Contains(err.Error(), "does not match this auth configuration") {
+		t.Fatalf("scope mismatch did not fail clearly: %v", err)
+	}
+	if _, _, err := other.Create(time.Hour); err == nil || !strings.Contains(err.Error(), "does not match this auth configuration") {
+		t.Fatalf("scope mismatch overwrote registry: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("mismatched token store changed the original registry")
+	}
+	if _, err := original.Authenticate(secret); err != nil {
+		t.Fatalf("mismatch damaged original token: %v", err)
+	}
+
+	githubConfig := passwordConfig
+	githubConfig.Mode = "github"
+	githubConfig.Password = PasswordVerifier{}
+	githubConfig.GitHub = GitHubConfig{
+		ClientID:     "client",
+		ClientSecret: "secret",
+		Users:        []GitHubAccount{{ID: 1, Login: "allowed"}},
+	}
+	if _, err := NewTokenStore(path, githubConfig).Authenticate(secret); err != nil {
+		t.Fatalf("password-to-GitHub transition invalidated machine token: %v", err)
+	}
+}
+
 func TestTokenConcurrentMutationsAndBounds(t *testing.T) {
 	path := filepath.Join(secureTempDir(t), "tokens.json")
-	s := NewTokenStore(path)
+	s := NewTokenStore(path, fixtureConfig())
 	var wg sync.WaitGroup
 	for range 12 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, _, err := NewTokenStore(path).Create(time.Hour); err != nil {
+			if _, _, err := NewTokenStore(path, fixtureConfig()).Create(time.Hour); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -204,7 +302,7 @@ func TestTokenProcessHelper(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	} else if _, _, err := NewTokenStore(path).Create(time.Hour); err != nil {
+	} else if _, _, err := NewTokenStore(path, fixtureConfig()).Create(time.Hour); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -225,7 +323,7 @@ func TestTokenInterprocessSerializationAndCrashRelease(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	entries, err := NewTokenStore(path).List()
+	entries, err := NewTokenStore(path, fixtureConfig()).List()
 	if err != nil || len(entries) != 5 {
 		t.Fatalf("process lost update: %d %v", len(entries), err)
 	}
@@ -244,21 +342,21 @@ func TestTokenInterprocessSerializationAndCrashRelease(t *testing.T) {
 	if _, err = stdout.Read(line); err != nil || string(line) != "locked\n" {
 		t.Fatal("lock not held")
 	}
-	if _, _, err = NewTokenStore(path).Create(time.Hour); err == nil {
+	if _, _, err = NewTokenStore(path, fixtureConfig()).Create(time.Hour); err == nil {
 		t.Fatal("did not time out waiting for lock")
 	}
 	if err = cmd.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
 	_ = cmd.Wait()
-	if _, _, err = NewTokenStore(path).Create(time.Hour); err != nil {
+	if _, _, err = NewTokenStore(path, fixtureConfig()).Create(time.Hour); err != nil {
 		t.Fatalf("crash retained lock: %v", err)
 	}
 }
 
 func TestTokenRejectsDuplicateIDsAndConcurrentRevocation(t *testing.T) {
 	path := filepath.Join(secureTempDir(t), "tokens.json")
-	s := NewTokenStore(path)
+	s := NewTokenStore(path, fixtureConfig())
 	secret, id, err := s.Create(time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +373,7 @@ func TestTokenRejectsDuplicateIDsAndConcurrentRevocation(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, _, err := NewTokenStore(path).Create(time.Hour); err != nil {
+			if _, _, err := NewTokenStore(path, fixtureConfig()).Create(time.Hour); err != nil {
 				t.Error(err)
 			}
 		}()

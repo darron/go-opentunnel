@@ -1,9 +1,18 @@
 # Security model
 
-For the CLI gate, see the [auth guide](AUTH_PROXY.md) and
-[v0.4.0 security review](AUTH_SECURITY_REVIEW.md).
+For setup, use the [auth guide](AUTH_PROXY.md). The
+[current audit](SECURITY_AUDIT.md) records tested fixes and remaining limits.
 `otgo proxy` protects every backend path/method;
 ordinary `connect` and `listen` do not add login protection.
+
+## Build toolchain
+
+Use a patched, supported Go release for production builds. The module's Go 1.25
+minimum is a source-compatibility contract; it does not mean that old toolchains
+have current HTTP/TLS security fixes. Go supports a major release until two newer
+major releases exist; see its [release policy](https://go.dev/doc/devel/release#policy).
+Rebuild embedded applications as well as the CLI when updating Go. CI runs
+`govulncheck` on current Go separately from minimum-version compatibility tests.
 
 ## CLI authentication
 
@@ -18,6 +27,12 @@ memory and end on restart. Login uses CSRF, rate/concurrency limits and bounded
 body reads. Protected responses use `private, no-store` and override upstream
 public caching policies; application storage and content already received by an
 authorized visitor remain outside HTTP cache controls.
+
+Machine-token registries are bound to the tunnel ID, hostname, API origin and
+backend. Reusing one `--token-file` for a different boundary denies its tokens.
+Legacy unbound registries fail closed; reset and reissue them as described in the
+[auth guide](AUTH_PROXY.md#machine-clients-and-mcp). Switching password login to
+GitHub with the same tunnel/backend retains bound machine tokens.
 
 GitHub identity is checked at login, not on each request. Provider-side revocation
 does not immediately end an eight-hour local browser session; logout or proxy
@@ -140,6 +155,12 @@ and redirect hook remain trusted code with access to credentials.
   explicit field access, reflection, or a custom serializer can expose them.
 - Unknown API error tags and attachment codes become generic diagnostics rather
   than retaining arbitrary server text. Recognized protocol errors remain typed.
+- Relay session/peer metadata is bounded and becomes `unknown` if it contains
+  control characters or the known tunnel credential. Event route lists are
+  bounded too. These checks make diagnostics safer; they do not verify peer identity.
+- Visitor TLS handshake errors use fixed diagnostics or trusted local error
+  classifications. Raw TLS errors can include attacker-controlled ALPN and are
+  not copied into connection-close events.
 - A `ProvisioningError` contains secret recovery credentials when persistence
   and remote cleanup both fail. Handle it with `errors.As`, persist its pending
   record securely, or use its ID/token with `API.Remove`. Ordinary error rendering

@@ -1,5 +1,54 @@
 # Local verification record
 
+## v0.7.0 security and test audit — 2026-10-11
+
+The [audit record](SECURITY_AUDIT.md) separates reproduced defects, test gaps,
+compatibility changes and remaining boundaries. Baseline: `a574449`; changes are
+recorded in the v0.7.0 changelog. No runtime dependency or service wire format changed.
+
+| Final local check | Result |
+| --- | --- |
+| Go 1.27.2 `go test ./... -count=1` | All packages passed |
+| Go 1.25.0 `go test -race ./... -count=1` | All packages passed |
+| Current Go `make vet lint build build-example` | Vet, formatting, full golangci-lint and CLI/app builds passed; lint 0 issues |
+| Seven Python Homebrew-updater tests and `actionlint` | Passed |
+| Linux/Windows amd64 cross-builds | Passed; Windows runtime was not exercised |
+| Relative Markdown links and anchors | 157 checked, all resolved |
+| Current Go `govulncheck` v1.9.0 | No known vulnerabilities found |
+| Gitleaks, complete local history and working directory | No findings; reports were redacted and kept private |
+
+An intentional Go 1.25.0 vulnerability scan reported 44 reachable standard-library
+advisories. The source minimum remains compatible, but production builds should
+use a patched supported toolchain. This scan is not evidence of 44 exploitable
+defects in this package. The installed Homebrew v0.6.0 binary uses Go 1.27.2.
+
+Deliberate mutations in isolated code copies established that the revised tests
+reject an incorrect admission limit, corrupted version state, missing TLS client
+connection attachment, incomplete token scope and stale serving certificate.
+The original admission test measured only a closed handler; it now holds 256
+authenticated requests at the backend and checks overflow and recovery. A dial
+burst initially made the new test flaky; per-request upstream barriers removed
+that OS-dependent setup assumption. Ten current-Go repetitions and three
+minimum-Go race repetitions passed.
+
+Five 45-second current-Go fuzz targets passed with 7,316,805 executions; an
+earlier complete pass also succeeded. An initial minimum-Go 120-second `FuzzDecodeControl` run
+ended with `context deadline exceeded` and no failing-input corpus. Its cause
+was not established. Repeating with an isolated fuzz cache on the same Go 1.25.0
+toolchain passed 4,582,160 executions; the anomaly is not claimed as a reproduced
+parser defect or silently counted as a pass.
+
+Claude's final focused confirmation passed its sustained-ping and mixed-teardown
+probes, including repeated race runs. Reconstructing the shared-queue defect made
+both probes fail. Amp/Oracle's focused confirmation found no unresolved P0/P1,
+repeated the changed security regressions five times under race and confirmed
+both independent route-cap mutants fail. These are local reviewer checks;
+[the audit](SECURITY_AUDIT.md) records their scope and residual limits.
+
+Connect/Listen examples compile in CI; the [fresh-state hosted checks](LIVE_TESTING.md#v070-security-audit--2026-10-11)
+exercise their runtime behavior. Fixture recovery tests deliberately induce
+certificate failures; the hosted check did not. No new GitHub App grant was made.
+
 ## v0.6.0 release checks — 2026-10-11
 
 Added optional per-route PROXY v1/v2 forwarding and safe certificate diagnostics,

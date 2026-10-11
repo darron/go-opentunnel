@@ -1,8 +1,8 @@
 # Historical reviews
 
-These records describe earlier revisions. Start with the current
-[security model](../SECURITY.md) and [v0.4.0 auth review](../AUTH_SECURITY_REVIEW.md)
-for today's behavior and limits. An old finding may already have been fixed.
+These records describe earlier revisions. Use the current
+[security model](../SECURITY.md) and [v0.7.0 audit](../SECURITY_AUDIT.md)
+for current behavior and limits. An old finding may already have been fixed.
 
 | Record | Purpose |
 | --- | --- |

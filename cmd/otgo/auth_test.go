@@ -64,8 +64,23 @@ func TestAuthPathsAndMissingProxy(t *testing.T) {
 		t.Fatal("missing setup accepted")
 	}
 }
+
+func TestAuthHelpListsTokenReset(t *testing.T) {
+	var out bytes.Buffer
+	if err := run(t.Context(), []string{"auth", "--help"}, strings.NewReader(""), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "token reset") {
+		t.Fatal("auth help omitted token reset")
+	}
+}
+
 func TestAuthTokenCommandsAndReset(t *testing.T) {
 	flags, paths := authFixture(t)
+	cfg, err := authproxy.LoadConfig(paths.AuthConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out, errout bytes.Buffer
 	args := append([]string{"auth", "token", "create", "--json"}, flags...)
 	if err := run(t.Context(), args, strings.NewReader(""), &out, &errout); err != nil {
@@ -89,8 +104,29 @@ func TestAuthTokenCommandsAndReset(t *testing.T) {
 	if err := run(t.Context(), append([]string{"auth", "token", "revoke", "--id", result.ID}, flags...), strings.NewReader(""), &out, &errout); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authproxy.NewTokenStore(paths.TokenFile).Authenticate(result.Token); err == nil {
+	if _, err := authproxy.NewTokenStore(paths.TokenFile, cfg).Authenticate(result.Token); err == nil {
 		t.Fatal("CLI revocation failed")
+	}
+	out.Reset()
+	if err := run(t.Context(), append([]string{"auth", "token", "create", "--json"}, flags...), strings.NewReader(""), &out, &errout); err != nil {
+		t.Fatal(err)
+	}
+	var replacement struct{ Token string }
+	if err := json.Unmarshal(out.Bytes(), &replacement); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := run(t.Context(), append([]string{"auth", "token", "reset"}, flags...), strings.NewReader(""), &out, &errout); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(paths.TokenFile); !os.IsNotExist(err) {
+		t.Fatal("token registry survived token reset")
+	}
+	if _, err := authproxy.LoadConfig(paths.AuthConfig); err != nil {
+		t.Fatal("token reset removed auth config")
+	}
+	if _, err := authproxy.NewTokenStore(paths.TokenFile, cfg).Authenticate(replacement.Token); err == nil {
+		t.Fatal("token reset left machine token usable")
 	}
 	unknown := filepath.Join(filepath.Dir(paths.AuthConfig), "unrelated.txt")
 	if err := os.WriteFile(unknown, []byte("keep"), 0600); err != nil {
@@ -234,7 +270,12 @@ func TestFreshAuthInitRevokesOrphanedMachineTokens(t *testing.T) {
 	for _, failSave := range []bool{false, true} {
 		t.Run(map[bool]string{false: "successful-save", true: "failed-save"}[failSave], func(t *testing.T) {
 			flags, paths := authFixture(t)
-			old, _, err := authproxy.NewTokenStore(paths.TokenFile).Create(time.Hour)
+			cfg, err := authproxy.LoadConfig(paths.AuthConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tokens := authproxy.NewTokenStore(paths.TokenFile, cfg)
+			old, _, err := tokens.Create(time.Hour)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -282,7 +323,7 @@ func TestFreshAuthInitRevokesOrphanedMachineTokens(t *testing.T) {
 			if (err != nil) != failSave {
 				t.Fatalf("setup result: %v", err)
 			}
-			if _, err := authproxy.NewTokenStore(paths.TokenFile).Authenticate(old); err == nil {
+			if _, err := tokens.Authenticate(old); err == nil {
 				t.Fatal("old token authorized the new backend")
 			}
 			if !failSave {
@@ -295,7 +336,7 @@ func TestFreshAuthInitRevokesOrphanedMachineTokens(t *testing.T) {
 	}
 }
 
-func TestProxyTimeoutsBoundIdleConnectionsWithoutExpiringStreams(t *testing.T) {
+func TestProxyServerTimeoutConfiguration(t *testing.T) {
 	server := newProxyServer(http.NotFoundHandler())
 	if server.IdleTimeout <= 0 || server.IdleTimeout > 30*time.Second {
 		t.Fatal("idle clients can hold a visitor channel indefinitely")

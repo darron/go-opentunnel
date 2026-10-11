@@ -63,7 +63,8 @@ Events remain bounded and lossy.
 
 `TransportOptions.MaxConnections` includes handshaking, queued, and accepted
 sockets. The accept queue has the same fixed capacity; stale entries are discarded
-on reconnect. Each channel retains the existing `MaxInboundBytes` bound. A slow
+on reconnect. Each channel retains the `MaxInboundBytes` bound, and the session
+shares the `MaxInboundTotalBytes` budget (64 MiB by default). A slow
 handshake or application cannot block delivery to healthy channels. A full inbound
 buffer resets that channel; there is no protocol-level per-channel flow control.
 Optional `IdleTimeout` counts TLS records consumed or written by the application
@@ -77,8 +78,9 @@ half remains relay-owned. Failures/forced shutdown abort channels or the session
 ## Peer trust
 
 `Request.TLS` describes the actual locally terminated handshake. `RemoteAddr`
-preserves the exact `open.peer` string supplied by the relay, including whatever
-address/port format the service sends. It is not independently verified against
+preserves ordinary `open.peer` address/port strings supplied by the relay.
+Oversized values, control characters or reflected tunnel credentials become
+`unknown`; session/event metadata is bounded too. It is not independently verified against
 an end-to-end visitor identity. A compromised or malicious relay can forge it;
 IP-based quotas and access rules inherit that trust. The package does not consult
 `Forwarded`, `X-Forwarded-For`, or `X-Forwarded-Proto`. Applications must not let

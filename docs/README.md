@@ -1,7 +1,7 @@
 # Documentation
 
-Start with the guide for your task. The [project README](../README.md) has the
-installation commands and quick starts.
+Start with one of these guides. The [project README](../README.md) has install
+commands and the shortest working examples.
 
 ## Use otgo
 
@@ -29,6 +29,7 @@ installation commands and quick starts.
 
 | Record | Scope |
 | --- | --- |
+| [Security and test audit](SECURITY_AUDIT.md) | v0.7.0 hardening, meaningful test checks and compatibility evidence |
 | [Auth security review](AUTH_SECURITY_REVIEW.md) | v0.4.0 password/GitHub findings, fixes and remaining limits |
 | [Verification](VERIFICATION.md) | Dated local checks, CI, release and Homebrew results |
 | [Live testing](LIVE_TESTING.md) | Dated public-service and browser observations |

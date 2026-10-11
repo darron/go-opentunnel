@@ -1,5 +1,37 @@
 # Public-service validation
 
+## v0.7.0 security audit — 2026-10-11
+
+Built the v0.7.0 CLI and embedding example with Go 1.27.2 after the final queue
+and diagnostic fixes. Tests used private,
+empty state directories, ordinary HTTPS certificate verification and owned
+temporary tunnels. Existing profiles and the running inbox proxy were untouched.
+
+| Check | Result |
+| --- | --- |
+| Fresh CLI provisioning | Certificate ready in 62 seconds, within the five-minute default |
+| CLI forwarding and embedded listener | Public root, streaming, actual TLS request metadata, text/binary WebSocket echo and clean shutdown passed |
+| Plain, PROXY v1 and PROXY v2 forwarding | Public HTTPS response and backend preambles passed, including v2 authority |
+| Password proxy anonymous boundary | Methods/routes, MCP and discovery denied with zero backend calls |
+| Password/browser and machine authentication | Correct/wrong passwords, secure cookies, CSRF/origin rules, invalid-token denial and authenticated MCP HTTP requests passed |
+| Credentials, cache and browser policy | Gate credentials/spoofed identity headers stripped; backend credentials preserved; redirects/cookies adapted; public-cache and foreign-subresource checks passed |
+| Streaming and uploads | Eight simultaneous 2 MiB uploads intact; token revocation closed SSE/WSS in 0.186 seconds |
+| CLI lifecycle | Live hostname/token inspection, duplicate-profile refusal, corrupt-registry denial, restart, logout and two-profile isolation passed |
+| Cleanup | Every owned remote identity returned authenticated API 404; local credentials removed and all owned test processes stopped |
+
+The password run used `python3 scripts/auth_smoke.py`. CLI/embedding/PROXY checks
+used private adaptations of the existing service-test coordinator and forwarding
+driver, sharing one fresh identity before confirmed deletion. Both drivers also
+passed earlier hardening iterations. Raw logs, helpers and credentials stayed
+outside the repo. Each run confirmed remote deletion, empty local profiles and
+shutdown of all owned test processes.
+
+No new GitHub App grant was made in this audit. Current GitHub-provider behavior
+was checked with local fixtures; earlier owner-approved hosted GitHub checks
+remain recorded below. These HTTP/MCP checks establish gating, not automatic MCP
+OAuth client interoperability. Hosted certificate-renewal failure was not induced.
+See [the audit](SECURITY_AUDIT.md) for fixture coverage and remaining boundaries.
+
 ## v0.4.0 release-candidate service check — 2026-10-10
 
 After updating the advertised client version to `0.4.0`, `make check` passed and

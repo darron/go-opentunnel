@@ -29,7 +29,8 @@ func main() {
 }
 
 func run() (result error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	// Allow the CLI's five-minute provisioning window plus time for forwarding.
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	client, err := opentunnel.NewClient(opentunnel.ClientOptions{Storage: opentunnel.NewMemoryStorage()})
 	if err != nil {
@@ -63,7 +64,9 @@ func run() (result error) {
 		}
 		fmt.Println("PASS: temporary identity removed; remote API 404 confirmed")
 	}()
-	identity, err := client.Create(ctx, "proxy-smoke", opentunnel.ProvisionOptions{})
+	provisionCtx, provisionCancel := context.WithTimeout(ctx, 5*time.Minute)
+	identity, err := client.Create(provisionCtx, "proxy-smoke", opentunnel.ProvisionOptions{})
+	provisionCancel()
 	if err != nil {
 		return err
 	}

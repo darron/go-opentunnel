@@ -25,7 +25,9 @@ For the Go library:
 go get github.com/darron/go-opentunnel
 ```
 
-Go 1.25 or newer is required to build from source. The sole external Go module is
+Source compatibility starts at Go 1.25. Build production binaries with the latest
+patched release of a [supported Go version](https://go.dev/doc/devel/release#policy).
+The sole external Go module is
 `github.com/coder/websocket`. Licensed under [MIT](LICENSE).
 See the [changelog](CHANGELOG.md) for release highlights and the
 [Homebrew guide](docs/HOMEBREW.md) for updates and HEAD installs.
@@ -84,10 +86,13 @@ needs its own Authorization header. Tokens grant access to the whole backend.
 Clients that cannot supply a session cookie or token are denied. otgo does not
 implement an MCP OAuth authorization server or automatic client registration.
 
+Upgrading to v0.7.0 requires resetting and reissuing existing machine tokens;
+see the [migration instructions](docs/AUTH_PROXY.md#machine-clients-and-mcp).
+
 The [auth guide](docs/AUTH_PROXY.md) covers token revocation, password replacement,
 GitHub setup, saved file paths and HTTP compatibility.
 
-On `main` (unreleased), `connect` supports per-route PROXY headers for a TCP
+`connect` supports per-route PROXY headers for a TCP
 backend that understands them. See the
 [PROXY v1/v2 options](docs/FORWARDING.md). [Certificate diagnostics](docs/CERTIFICATES.md)
 explain typed failures and safe CLI summaries.
@@ -168,5 +173,5 @@ make fuzz
 See [testing instructions](docs/TESTING.md) for local and public-service checks.
 
 Browse the [documentation index](docs/README.md) for guides, security reviews and
-dated validation records. The [v0.4.0 auth review](docs/AUTH_SECURITY_REVIEW.md)
-records findings, fixes and remaining limits.
+dated validation records. The [v0.7.0 audit](docs/SECURITY_AUDIT.md) records
+security fixes, test-quality checks and remaining limits.

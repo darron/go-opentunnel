@@ -3,6 +3,7 @@ package authproxy
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,19 +24,36 @@ type tokenRecord struct {
 }
 type tokenRegistry struct {
 	Version int           `json:"version"`
+	Scope   string        `json:"scope"`
 	Tokens  []tokenRecord `json:"tokens"`
 }
 type TokenStore struct {
-	path string
-	now  func() time.Time
+	path  string
+	scope [32]byte
+	now   func() time.Time
 }
 
 func (s *TokenStore) Format(f fmt.State, _ rune) {
 	_, _ = fmt.Fprint(f, "TokenStore{credentials:[REDACTED]}")
 }
-func NewTokenStore(path string) *TokenStore { return newTokenStore(path, time.Now) }
-func newTokenStore(path string, now func() time.Time) *TokenStore {
-	return &TokenStore{path: path, now: now}
+func tokenScope(c Config) [32]byte {
+	h := sha256.New()
+	var size [8]byte
+	for _, value := range []string{"otgo-token-scope-v1", c.Binding.TunnelID, c.Binding.Hostname, c.Binding.APIOrigin, c.Upstream} {
+		binary.BigEndian.PutUint64(size[:], uint64(len(value)))
+		_, _ = h.Write(size[:])
+		_, _ = h.Write([]byte(value))
+	}
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func NewTokenStore(path string, config Config) *TokenStore {
+	return newTokenStore(path, config, time.Now)
+}
+func newTokenStore(path string, config Config, now func() time.Time) *TokenStore {
+	return &TokenStore{path: path, scope: tokenScope(config), now: now}
 }
 func (s *TokenStore) load() (tokenRegistry, error) {
 	b, e := readPrivate(s.path)
@@ -43,8 +61,14 @@ func (s *TokenStore) load() (tokenRegistry, error) {
 		return tokenRegistry{}, e
 	}
 	var r tokenRegistry
-	if e = decodeStrict(b, &r); e != nil || r.Version != 1 || len(r.Tokens) > 256 {
+	if e = decodeStrict(b, &r); e != nil {
 		return tokenRegistry{}, errors.New("invalid token registry")
+	}
+	if r.Version == 1 && r.Scope == "" {
+		return tokenRegistry{}, errors.New("legacy machine token registry is not bound to an auth configuration; run otgo auth token reset with the same profile and storage flags, then create new tokens")
+	}
+	if r.Version != 2 || r.Scope != hex.EncodeToString(s.scope[:]) || len(r.Tokens) > 256 {
+		return tokenRegistry{}, errors.New("token registry does not match this auth configuration; use its original profile and storage flags, or reset and reissue its tokens")
 	}
 	ids := make(map[string]bool)
 	hashes := make(map[string]bool)
@@ -80,7 +104,7 @@ func (s *TokenStore) Create(ttl time.Duration) (secret, id string, err error) {
 			if _, statErr := os.Lstat(s.path); !os.IsNotExist(statErr) {
 				return e
 			}
-			r = tokenRegistry{Version: 1, Tokens: []tokenRecord{}}
+			r = tokenRegistry{Version: 2, Scope: hex.EncodeToString(s.scope[:]), Tokens: []tokenRecord{}}
 		}
 		now := s.now().UTC()
 		active := r.Tokens[:0]

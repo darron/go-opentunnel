@@ -50,7 +50,7 @@ def main():
 
     def command(words, profile="first", auth=True, success=True, extra=()):
         result = subprocess.run([str(cli), *words, *flags(profile, auth), *extra],
-                                capture_output=True, text=True, timeout=210)
+                                capture_output=True, text=True, timeout=330)
         if success and result.returncode:
             raise RuntimeError("CLI command failed: " + " ".join(words) + ": " + result.stderr)
         return result
@@ -104,7 +104,7 @@ def main():
         backend = spawn([str(helper)], "backend")
         upstream = line(backend)
         profiles.append("first")
-        setup = value(["auth", "init"], extra=("--upstream", upstream, "--timeout", "3m"))
+        setup = value(["auth", "init"], extra=("--upstream", upstream))
         password = setup["password"]
         hostname = setup["Hostname"]
         origin = "https://" + hostname
@@ -218,7 +218,7 @@ def main():
         backend2 = spawn([str(helper)], "backend-second")
         upstream2 = line(backend2)
         profiles.append("second")
-        setup2 = value(["auth", "init"], "second", extra=("--upstream", upstream2, "--timeout", "3m"))
+        setup2 = value(["auth", "init"], "second", extra=("--upstream", upstream2))
         proxy("second", "proxy-second")
         token2 = value(["auth", "token", "create"], "second")
         origin2 = "https://" + setup2["Hostname"]

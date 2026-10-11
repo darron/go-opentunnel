@@ -1,7 +1,5 @@
 # Diagnose certificate issuance failures
 
-Available in v0.6.0 and later.
-
 CLI provisioning (`create`, `resume`, `ensure`) and password setup wait up to
 five minutes by default. Use `--timeout` to choose another limit; `0` disables
 the overall CLI deadline. An HTTP request still has a separate finite timeout.
@@ -9,7 +7,7 @@ DNS validation and certificate issuance can take longer than two minutes.
 This longer wait applies to pending work; a terminal provider failure returns
 immediately and remains a failure until a later successful issuance attempt.
 
-A failed certificate request now returns `*CertificateIssuanceError`. Existing
+A failed certificate request returns `*CertificateIssuanceError`. Existing
 `errors.Is(err, opentunnel.ErrCertificateIssuance)` checks continue to work.
 
 The CLI prints a safe classification and the HTTP status when the provider
@@ -25,6 +23,14 @@ does not identify the provider's quota, retry time or deployed server version.
 No new retry policy is added. Failed renewal still observes the existing recovery
 cooldown; interrupted provisioning retains pending credentials for `otgo resume`
 or cleanup with `otgo remove`.
+
+## Start with an existing certificate
+
+`Connect` and `Listen` can use a validated, still-valid local certificate while
+failed remote issuance recovers in the background. Recovery reuses the tunnel's
+key and reports progress through events. An expired local certificate cannot
+complete visitor TLS or satisfy startup; the client waits for a valid replacement.
+`Create`, `Ensure` and `Resume` still wait for provisioning to succeed.
 
 ## Inspect in Go
 

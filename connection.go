@@ -504,7 +504,7 @@ func (x *Connection) refreshOnce() error {
 		return nil
 	}
 	x.recoveryPending.Store(false)
-	if remote.State.Certificate == id.Certificate {
+	if remote.State.Certificate == id.Certificate && remote.State.Chain == id.Chain {
 		return nil
 	}
 	id.Certificate = remote.State.Certificate

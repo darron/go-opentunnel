@@ -175,6 +175,11 @@ client's sessions for that profile. Renewal and deletion share the profile lock
 so renewal cannot recreate a removed identity. Confirmed remote deletion uses a
 bounded cleanup context even if the caller cancels.
 
+`Connect` and `Listen` can start with a validated, still-valid local certificate
+when remote issuance reports failure. Same-key recovery then runs in the
+background. `Create`, `Ensure` and `Resume` still wait for their provisioning
+result; they do not use this startup shortcut.
+
 `Connect` can attach an expired stored identity because the hosted protocol uses
 attachment to trigger server-side renewal. It does not report startup success
 until refresh installs a valid certificate. Visitor handshakes reject expired or
@@ -302,20 +307,29 @@ are enforced before allocating channel TLS state. Duplicate IDs abort the
 existing channel rather than silently replacing it.
 
 A single writer uses a 32-message data queue of at most 32 KiB payloads,
-approximately 1 MiB, and a separate 32-message cleanup-control queue. Cleanup
-controls get priority; exhausting that queue closes the session rather than
-dropping resets. Logical sends have channel cancellation and a finite timeout
+approximately 1 MiB, with separate 32-message reader-reply and teardown-control
+queues. Reader replies wait for their own capacity or session cancellation, so
+healthy bursts apply backpressure. Teardown controls have reserved capacity and
+writer priority; exhausting that reserve cancels rather than dropping controls.
+Heartbeat pings are coalesced and skipped when reader capacity is busy. Logical
+sends have channel cancellation and a finite timeout
 that includes queue admission. Physical WebSocket writes use session cancellation
 and the transport timeout, so canceling one channel does not close the shared
 socket. Changes to a pending write deadline wake a joined per-call watcher.
 Canceled queued sends are discarded.
 
-Each channel has an 8 MiB inbound payload cap. Fragments coalesce into blocks of
+Each channel has an 8 MiB inbound payload cap, with a shared 64 MiB cap across
+one relay session (`MaxInboundTotalBytes`). Fragments coalesce into blocks of
 at most 32 KiB, bounding allocation and slice metadata independently of frame
 count. A partial head and spare tail can add up to 64 KiB of block capacity above
 the payload cap, plus bounded slice headers. Overflow resets the channel without
 blocking the bridge reader; blocked writes stop local reads. Events use a
 bounded, lossy queue with a dropped-event counter.
+
+Heartbeat ping/pong and rejected-channel resets use the reader-reply queue,
+so they do not wait for ordinary data queue admission or consume teardown capacity.
+The relay idle deadline is
+checked independently of its heartbeat interval.
 
 Set `TransportOptions.IdleTimeout` to close a channel after that duration with no
 application bytes in either direction. Zero disables it. Use a value longer than

@@ -114,7 +114,7 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 			return e
 		}
 		defer func() { _ = client.Close() }()
-		h, e := authproxy.NewHandler(authproxy.Options{Config: cfg, TokenStore: authproxy.NewTokenStore(paths.TokenFile)})
+		h, e := authproxy.NewHandler(authproxy.Options{Config: cfg, TokenStore: authproxy.NewTokenStore(paths.TokenFile, cfg)})
 		if e != nil {
 			return e
 		}

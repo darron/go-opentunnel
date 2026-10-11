@@ -15,18 +15,31 @@ import (
 )
 
 func testHandler(t *testing.T, upstream http.Handler) (*Handler, *Sessions, *TokenStore) {
+	return testHandlerForMode(t, upstream, "password")
+}
+
+func testHandlerForMode(t *testing.T, upstream http.Handler, mode string) (*Handler, *Sessions, *TokenStore) {
 	t.Helper()
 	backend := httptest.NewServer(upstream)
 	t.Cleanup(backend.Close)
 	cfg := fixtureConfig()
 	cfg.Upstream = backend.URL
-	v, err := NewPasswordVerifier([]byte("test-password"))
-	if err != nil {
-		t.Fatal(err)
+	switch mode {
+	case "password":
+		v, err := NewPasswordVerifier([]byte("test-password"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.Password = v
+	case "github":
+		cfg.Mode = "github"
+		cfg.Password = PasswordVerifier{}
+		cfg.GitHub.Users = []GitHubAccount{{ID: 1, Login: "allowed"}}
+	default:
+		t.Fatalf("unsupported test auth mode %q", mode)
 	}
-	cfg.Password = v
 	s := NewSessions(1024)
-	tokens := NewTokenStore(filepath.Join(secureTempDir(t), "tokens.json"))
+	tokens := NewTokenStore(filepath.Join(secureTempDir(t), "tokens.json"), cfg)
 	h, err := NewHandler(Options{Config: cfg, Sessions: s, TokenStore: tokens})
 	if err != nil {
 		t.Fatal(err)

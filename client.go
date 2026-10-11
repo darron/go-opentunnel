@@ -63,8 +63,8 @@ func transportDefaults(o TransportOptions) (TransportOptions, error) {
 	if o.IdleTimeout < 0 {
 		return o, fmt.Errorf("%w: negative idle timeout", ErrInvalid)
 	}
-	ints := []*int{&o.MaxConnections, &o.EventBuffer, &o.MaxInboundBytes}
-	defaults := []int{256, 256, 8 * 1024 * 1024}
+	ints := []*int{&o.MaxConnections, &o.EventBuffer, &o.MaxInboundBytes, &o.MaxInboundTotalBytes}
+	defaults := []int{256, 256, 8 * 1024 * 1024, 64 * 1024 * 1024}
 	for i, p := range ints {
 		if *p < 0 {
 			return o, fmt.Errorf("%w: negative transport limit", ErrInvalid)
@@ -455,6 +455,14 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard 
 		return nil, e
 	}
 	if cert.State.Type == "failed" {
+		// A locally valid certificate remains usable while the connection's
+		// background refresh worker replaces a remotely failed issuance.
+		if allowExpired {
+			if local, valid := parseCertificate(*id); valid == nil {
+				id.CertificateExpiry = local.Leaf.NotAfter
+				return id, nil
+			}
+		}
 		pending, err := c.startCertificateRecovery(ctx, p, *id)
 		if err != nil {
 			if errors.Is(err, ErrCertificateIssuance) {

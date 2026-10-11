@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## v0.7.0 — Security hardening and stronger verification — 2026-10-11
+
+- Bind machine tokens to their saved tunnel/API/backend boundary. Unbound legacy
+  tokens are denied; `otgo auth token reset` supports explicit reset and reissue.
+- Limit aggregate inbound payload to 64 MiB per relay session, configurable with
+  `TransportOptions.MaxInboundTotalBytes`, alongside the existing per-channel cap.
+- Bound untrusted relay diagnostics, reject literal tunnel-token reflection, and
+  keep visitor-controlled TLS errors out of close-event diagnostics.
+  Prioritize heartbeats and rejection resets; check relay idle expiry independently.
+- Reuse a valid local certificate while failed remote issuance recovers in the
+  background, and install certificate-chain changes even when the leaf is unchanged.
+- Preserve backend cookie syntax while stripping gate cookies, and preserve
+  visitor connection ID zero in JSON lifecycle events.
+- Add mutation-proven admission, version, token-binding and TLS regressions,
+  anonymous-gate fuzzing, current-Go
+  vulnerability checks and bounded sustained fuzzing in CI. No runtime dependency
+  or OpenTunnel wire-format change.
+
+[Compare v0.6.0 to v0.7.0](https://github.com/darron/go-opentunnel/compare/v0.6.0...v0.7.0)
+
 ## v0.6.0 — PROXY protocol and certificate diagnostics — 2026-10-11
 
 - Add opt-in PROXY protocol v1/v2 forwarding per route, compatible with upstream

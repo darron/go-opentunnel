@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,32 +15,117 @@ import (
 )
 
 type outbound struct {
-	ctx    context.Context
-	kind   websocket.MessageType
-	data   []byte
-	result chan error
+	ctx       context.Context
+	kind      websocket.MessageType
+	data      []byte
+	result    chan error
+	heartbeat bool
 }
 type session struct {
-	owner         *Connection
-	routes        Routes
-	ctx           context.Context
-	cancel        context.CancelFunc
-	ws            *websocket.Conn
-	queue         chan outbound
-	controls      chan outbound
-	mu            sync.Mutex
-	channels      map[uint32]*channel
-	wg            sync.WaitGroup
-	workers       sync.WaitGroup
-	attachedAt    time.Time
-	attached      atomic.Bool
-	routesChanged atomic.Bool
-	lastReceived  atomic.Int64
+	owner            *Connection
+	routes           Routes
+	ctx              context.Context
+	cancel           context.CancelFunc
+	ws               *websocket.Conn
+	queue            chan outbound
+	controls         chan outbound
+	readerControls   chan outbound
+	mu               sync.Mutex
+	channels         map[uint32]*channel
+	wg               sync.WaitGroup
+	workers          sync.WaitGroup
+	attachedAt       time.Time
+	attached         atomic.Bool
+	routesChanged    atomic.Bool
+	lastReceived     atomic.Int64
+	heartbeatPending atomic.Bool
+	inboundBytes     atomic.Int64
+	inboundLimit     int64
 }
 
 func newSession(x *Connection, r Routes) *session {
 	ctx, cancel := context.WithCancel(x.ctx)
-	return &session{owner: x, routes: r, ctx: ctx, cancel: cancel, channels: make(map[uint32]*channel), queue: make(chan outbound, 32), controls: make(chan outbound, 32)}
+	var inboundLimit int64
+	if x.client != nil {
+		inboundLimit = int64(x.client.options.MaxInboundTotalBytes)
+	}
+	return &session{
+		owner:          x,
+		routes:         r,
+		ctx:            ctx,
+		cancel:         cancel,
+		channels:       make(map[uint32]*channel),
+		queue:          make(chan outbound, 32),
+		controls:       make(chan outbound, 32),
+		readerControls: make(chan outbound, 32),
+		inboundLimit:   inboundLimit,
+	}
+}
+
+func (s *session) reserveInbound(n int) bool {
+	if s == nil || n == 0 {
+		return true
+	}
+	limit := s.inboundLimit
+	if n < 0 {
+		return false
+	}
+	// Sessions created by newSession always have a positive configured limit.
+	// A zero limit keeps package-internal standalone bridge connections usable.
+	if limit <= 0 {
+		s.inboundBytes.Add(int64(n))
+		return true
+	}
+	amount := int64(n)
+	for {
+		current := s.inboundBytes.Load()
+		if amount > limit-current {
+			return false
+		}
+		if s.inboundBytes.CompareAndSwap(current, current+amount) {
+			return true
+		}
+	}
+}
+
+func (s *session) releaseInbound(n int) {
+	if s == nil || n <= 0 {
+		return
+	}
+	s.inboundBytes.Add(-int64(n))
+}
+
+const (
+	maxRelayMetadataBytes   = 256
+	maxRelayEventRoutes     = 256
+	maxRelayEventRouteBytes = 16 * 1024
+)
+
+func safeRelayMetadata(value, token string) string {
+	if len(value) > maxRelayMetadataBytes || token != "" && strings.Contains(value, token) {
+		return "unknown"
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f || r >= 0x80 && r <= 0x9f {
+			return "unknown"
+		}
+	}
+	return value
+}
+
+func safeRelayRoutes(routes []string, token string) []string {
+	count := min(len(routes), maxRelayEventRoutes)
+	safe := make([]string, 0, count)
+	total := 0
+	for _, route := range routes[:count] {
+		route = safeRelayMetadata(route, token)
+		if total+len(route) > maxRelayEventRouteBytes {
+			break
+		}
+		safe = append(safe, route)
+		total += len(route)
+	}
+	return safe
 }
 
 func (s *session) run() error {
@@ -115,13 +201,15 @@ func (s *session) run() error {
 	s.attachedAt = time.Now()
 	s.attached.Store(true)
 	s.lastReceived.Store(time.Now().UnixNano())
+	safeSession := safeRelayMetadata(reply.Session, id.Token)
+	safeRoutes := safeRelayRoutes(reply.Routes, id.Token)
 	s.owner.mu.Lock()
 	s.owner.status.State = "connected"
-	s.owner.status.Session = reply.Session
+	s.owner.status.Session = safeSession
 	s.owner.status.LastError = ""
 	s.owner.status.ConnectedAt = time.Now()
 	s.owner.mu.Unlock()
-	s.owner.emit(Event{Type: "connected", Session: reply.Session, Routes: append([]string(nil), reply.Routes...)})
+	s.owner.emit(Event{Type: "connected", Session: safeSession, Routes: safeRoutes})
 	s.owner.markReady()
 	s.workers.Add(2)
 	go func() { defer s.workers.Done(); s.writer() }()
@@ -156,9 +244,7 @@ func (s *session) run() error {
 		case "open":
 			s.open(m)
 		case "ping":
-			if e := s.control(controlMessage{Type: "pong", TimeSent: m.TimeSent}); e != nil {
-				return e
-			}
+			s.replyToPing(m.TimeSent)
 		case "end", "reset":
 			s.mu.Lock()
 			ch := s.channels[m.Conn]
@@ -179,8 +265,8 @@ func (s *session) run() error {
 func (s *session) writer() {
 	for {
 		var msg outbound
-		// Cleanup has a separate bounded queue so a blocked data producer cannot
-		// retain a channel slot while waiting to send its reset.
+		// Teardown controls have reserved capacity and strict priority. Relay
+		// replies share the remaining writer fairly with application data.
 		select {
 		case msg = <-s.controls:
 		default:
@@ -188,10 +274,14 @@ func (s *session) writer() {
 			case <-s.ctx.Done():
 				return
 			case msg = <-s.controls:
+			case msg = <-s.readerControls:
 			case msg = <-s.queue:
 			}
 		}
 		if e := msg.ctx.Err(); e != nil {
+			if msg.heartbeat {
+				s.heartbeatPending.Store(false)
+			}
 			if msg.result != nil {
 				msg.result <- e
 			}
@@ -203,6 +293,9 @@ func (s *session) writer() {
 		ctx, cancel := context.WithTimeout(s.ctx, s.owner.client.options.WriteTimeout)
 		e := s.ws.Write(ctx, msg.kind, msg.data)
 		cancel()
+		if msg.heartbeat {
+			s.heartbeatPending.Store(false)
+		}
 		if msg.result != nil {
 			msg.result <- e
 		}
@@ -257,6 +350,48 @@ func (s *session) enqueueControl(m controlMessage) {
 		s.cancel()
 	}
 }
+
+// enqueueReaderControl applies bounded backpressure to the bridge reader. Its
+// separate queue cannot consume the capacity reserved for channel teardown.
+func (s *session) enqueueReaderControl(m controlMessage) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		s.cancel()
+		return
+	}
+	select {
+	case <-s.ctx.Done():
+	case s.readerControls <- outbound{ctx: s.ctx, kind: websocket.MessageText, data: b}:
+	}
+}
+
+// enqueueHeartbeat coalesces heartbeat pings. A busy but responsive bridge can
+// skip a tick; the independent idle timer remains responsible for detecting a
+// bridge that has stopped sending traffic.
+func (s *session) enqueueHeartbeat() {
+	if !s.heartbeatPending.CompareAndSwap(false, true) {
+		return
+	}
+	b, err := json.Marshal(controlMessage{Type: "ping", TimeSent: time.Now().UnixMilli()})
+	if err != nil {
+		s.heartbeatPending.Store(false)
+		s.cancel()
+		return
+	}
+	msg := outbound{ctx: s.ctx, kind: websocket.MessageText, data: b, heartbeat: true}
+	select {
+	case <-s.ctx.Done():
+		s.heartbeatPending.Store(false)
+	case s.readerControls <- msg:
+	default:
+		s.heartbeatPending.Store(false)
+	}
+}
+
+func (s *session) replyToPing(timeSent int64) {
+	s.enqueueReaderControl(controlMessage{Type: "pong", TimeSent: timeSent})
+}
+
 func (s *session) heartbeat(heartbeatMS, idleMS int) {
 	interval := time.Duration(heartbeatMS) * time.Millisecond
 	if interval < time.Second {
@@ -268,18 +403,28 @@ func (s *session) heartbeat(heartbeatMS, idleMS int) {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	idleRemaining := func() time.Duration {
+		remaining := idle - time.Since(time.Unix(0, s.lastReceived.Load()))
+		if remaining < 0 {
+			return 0
+		}
+		return remaining
+	}
+	idleTimer := time.NewTimer(idleRemaining())
+	defer idleTimer.Stop()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		case <-ticker.C:
-			if time.Since(time.Unix(0, s.lastReceived.Load())) > idle {
+		case <-idleTimer.C:
+			remaining := idleRemaining()
+			if remaining == 0 {
 				s.cancel()
 				return
 			}
-			if s.control(controlMessage{Type: "ping", TimeSent: time.Now().UnixMilli()}) != nil {
-				return
-			}
+			idleTimer.Reset(remaining)
+		case <-ticker.C:
+			s.enqueueHeartbeat()
 		}
 	}
 }
@@ -290,9 +435,10 @@ func (s *session) open(m controlMessage) {
 	target, claimed := x.routes[route]
 	option := x.routeOptions[route]
 	cert := x.cert
+	token := x.identity.Token
 	x.mu.Unlock()
 	if !ok || !claimed {
-		_ = s.control(controlMessage{Type: "reset", Conn: m.Conn, Code: "unknown_route"})
+		s.enqueueReaderControl(controlMessage{Type: "reset", Conn: m.Conn, Code: "unknown_route"})
 		return
 	}
 	s.mu.Lock()
@@ -303,19 +449,20 @@ func (s *session) open(m controlMessage) {
 	}
 	if len(s.channels) >= x.client.options.MaxConnections {
 		s.mu.Unlock()
-		_ = s.control(controlMessage{Type: "reset", Conn: m.Conn, Code: "too_many_connections"})
+		s.enqueueReaderControl(controlMessage{Type: "reset", Conn: m.Conn, Code: "too_many_connections"})
 		return
 	}
 	channelCtx, channelCancel := context.WithCancel(s.ctx)
+	peer := safeRelayMetadata(m.Peer, token)
 	ch := &channel{ctx: channelCtx, cancel: channelCancel, id: m.Conn, route: route, target: target, proxyProtocol: option.ProxyProtocol, sni: m.SNI, session: s, cert: cert}
-	ch.raw = newBridgeConn(s, m.Conn, m.Peer, x.client.options.MaxInboundBytes)
+	ch.raw = newBridgeConn(s, m.Conn, peer, x.client.options.MaxInboundBytes)
 	s.channels[m.Conn] = ch
 	s.wg.Add(1)
 	x.mu.Lock()
 	x.status.Connections = len(s.channels)
 	x.mu.Unlock()
 	s.mu.Unlock()
-	x.emit(Event{Type: "connection-opened", Conn: m.Conn, Route: route, Peer: m.Peer})
+	x.emit(Event{Type: "connection-opened", Conn: m.Conn, Route: route, Peer: peer})
 	go func() { defer s.wg.Done(); ch.forward() }()
 }
 func (s *session) finished(ch *channel, err error) {

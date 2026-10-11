@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,6 +78,29 @@ func TestProxyRemovesGateCredentials(t *testing.T) {
 		t.Fatal("gate bearer leaked")
 	}
 }
+
+func TestProxyPreservesBackendCookieSyntaxWhileRemovingGateCookies(t *testing.T) {
+	var seen string
+	h, _, tokens := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Get("Cookie")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	secret, _, err := tokens.Create(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := publicRequest(http.MethodGet, "/")
+	r.Header.Set("X-Otgo-Token", secret)
+	r.Header.Set("Cookie", `cart[items]=2; raw={"theme":"dark"}; spaced = keep me; __Host-otgo-session=private; __host-OTGO-csrf=forged; =__Host-otgo-session=ambiguous`)
+	if w := runRequest(h, r); w.Code != http.StatusNoContent {
+		t.Fatalf("authenticated request returned %d", w.Code)
+	}
+	want := `cart[items]=2; raw={"theme":"dark"}; spaced = keep me`
+	if seen != want {
+		t.Fatalf("backend cookies changed:\n got %q\nwant %q", seen, want)
+	}
+}
+
 func TestProxyRejectsUnsupportedProtocolsAndForeignOrigin(t *testing.T) {
 	calls := 0
 	h, s, _ := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++; w.WriteHeader(204) }))
@@ -253,7 +277,7 @@ func TestProxyWebSocketRevocationAndClose(t *testing.T) {
 		})
 	}
 }
-func TestProxyStreamAdmissionLimit(t *testing.T) {
+func TestProxyClosedHandlerDeniesRequests(t *testing.T) {
 	h, _, _ := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	_ = h.Close()
 	if w := runRequest(h, publicRequest("GET", "/")); w.Code != 503 {
@@ -267,8 +291,11 @@ func TestProxyStreamAdmissionLimit(t *testing.T) {
 func TestProxyBrowserFetchMetadata(t *testing.T) {
 	for _, mode := range []string{"password", "github"} {
 		t.Run(mode, func(t *testing.T) {
-			h, s, tokens := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
-			h.config.Mode = mode
+			var backendCalls atomic.Int32
+			h, s, tokens := testHandlerForMode(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				backendCalls.Add(1)
+				w.WriteHeader(204)
+			}), mode)
 			cookie := browserSession(t, s)
 			token, _, err := tokens.Create(time.Hour)
 			if err != nil {
@@ -301,16 +328,28 @@ func TestProxyBrowserFetchMetadata(t *testing.T) {
 						r.Header.Set(key, value)
 					}
 				}
+				before := backendCalls.Load()
 				if w := runRequest(h, r); w.Code != tc.want {
 					t.Errorf("site=%s mode=%s dest=%s machine=%t: %d, want %d", tc.site, tc.mode, tc.dest, tc.machine, w.Code, tc.want)
+				}
+				after := backendCalls.Load()
+				if tc.want >= 400 && after != before {
+					t.Errorf("denied site=%s mode=%s dest=%s reached backend", tc.site, tc.mode, tc.dest)
+				}
+				if tc.want < 400 && after != before+1 {
+					t.Errorf("allowed site=%s mode=%s dest=%s did not reach backend", tc.site, tc.mode, tc.dest)
 				}
 			}
 			r := publicRequest("GET", "/")
 			addSession(r, cookie)
 			r.Header.Add("Sec-Fetch-Site", "same-origin")
 			r.Header.Add("Sec-Fetch-Site", "cross-site")
+			before := backendCalls.Load()
 			if w := runRequest(h, r); w.Code != 403 {
 				t.Fatal("ambiguous browser metadata accepted")
+			}
+			if backendCalls.Load() != before {
+				t.Fatal("ambiguous browser metadata reached backend")
 			}
 		})
 	}

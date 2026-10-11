@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -106,6 +108,20 @@ func TestSlowLoginBodyDoesNotOccupyHashSlots(t *testing.T) {
 	}
 }
 
+type readSignalBody struct {
+	io.ReadCloser
+	onRead chan<- struct{}
+	active *atomic.Bool
+	once   sync.Once
+}
+
+func (b *readSignalBody) Read(p []byte) (int, error) {
+	if b.active.Load() {
+		b.once.Do(func() { b.onRead <- struct{}{} })
+	}
+	return b.ReadCloser.Read(p)
+}
+
 func slowLoginBody(t *testing.T, contentType string) {
 	cfg := fixtureConfig()
 	verifier, err := NewPasswordVerifier([]byte("test-password"))
@@ -114,17 +130,53 @@ func slowLoginBody(t *testing.T, contentType string) {
 	}
 	cfg.Password = verifier
 	sessions := NewSessions(1024)
+	defer sessions.Close()
 	p := NewPasswordBrowserAuthenticator(cfg, sessions)
 	mux := http.NewServeMux()
 	p.Register(mux)
-	started := make(chan struct{}, 2)
+	bodyReads := make(chan struct{}, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var active atomic.Bool
 		if r.Method == "POST" && r.ContentLength == 99 {
-			started <- struct{}{}
+			active.Store(true)
+			r.Body = &readSignalBody{ReadCloser: r.Body, onRead: bodyReads, active: &active}
 		}
 		mux.ServeHTTP(w, r)
+		active.Store(false)
 	}))
 	defer server.Close()
+	dial := func() net.Conn {
+		t.Helper()
+		c, e := (&net.Dialer{Timeout: time.Second}).DialContext(context.Background(), "tcp", strings.TrimPrefix(server.URL, "http://"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		_, e = io.WriteString(c, "POST /__otgo/login HTTP/1.1\r\nHost: demo.test\r\nOrigin: https://demo.test\r\nContent-Type: "+contentType+"\r\nContent-Length: 99\r\n\r\npassword=")
+		if e != nil {
+			_ = c.Close()
+			t.Fatal(e)
+		}
+		return c
+	}
+	if contentType != "application/x-www-form-urlencoded" {
+		c := dial()
+		defer func() { _ = c.Close() }()
+		_ = c.SetReadDeadline(time.Now().Add(4 * time.Second))
+		res, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			t.Fatalf("non-form login was not rejected promptly: %v", err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("non-form login returned %d", res.StatusCode)
+		}
+		select {
+		case <-bodyReads:
+			t.Fatal("non-form login read the request body before rejection")
+		default:
+		}
+		return
+	}
 	peers := make([]net.Conn, 0, 2)
 	defer func() {
 		for _, c := range peers {
@@ -132,19 +184,16 @@ func slowLoginBody(t *testing.T, contentType string) {
 		}
 	}()
 	for range 2 {
-		c, e := (&net.Dialer{Timeout: time.Second}).DialContext(context.Background(), "tcp", strings.TrimPrefix(server.URL, "http://"))
-		if e != nil {
-			t.Fatal(e)
-		}
+		c := dial()
 		peers = append(peers, c)
-		_, e = io.WriteString(c, "POST /__otgo/login HTTP/1.1\r\nHost: demo.test\r\nOrigin: https://demo.test\r\nContent-Type: "+contentType+"\r\nContent-Length: 99\r\n\r\npassword=")
-		if e != nil {
-			t.Fatal(e)
+		select {
+		case <-bodyReads:
+		case <-time.After(time.Second):
+			t.Fatal("URL-encoded login did not enter its bounded body read")
 		}
-		<-started
 	}
-	// The handlers have entered body parsing; neither peer supplies the remaining bytes.
-	time.Sleep(50 * time.Millisecond)
+	// Both handlers are blocked in bounded form parsing; neither peer supplies
+	// the remaining bytes, and neither request has acquired a hash slot.
 	form := url.Values{"password": {"test-password"}, "csrf": {strings.Repeat("c", 43)}}
 	r, err := http.NewRequestWithContext(context.Background(), "POST", server.URL+"/__otgo/login", strings.NewReader(form.Encode()))
 	if err != nil {

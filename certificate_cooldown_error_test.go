@@ -32,14 +32,18 @@ func TestForegroundCertificateCooldownPreservesObservedReason(t *testing.T) {
 	}{
 		{name: "Ensure", run: func() error { _, err := c.Ensure(t.Context(), ""); return err }},
 		{name: "Resume", run: func() error { _, err := c.Resume(t.Context(), "", ProvisionOptions{}); return err }},
-		{name: "Connect", run: func() error {
-			_, err := c.Connect(t.Context(), ConnectOptions{Routes: Routes{"api": echoTarget(t)}})
-			return err
-		}},
 	}
 	for _, operation := range operations {
 		err := operation.run()
 		assertCertificateIssuanceFailure(t, operation.name, err, reason, "dns_error", 400)
+	}
+	connected, err := c.Connect(t.Context(), ConnectOptions{Routes: Routes{"api": echoTarget(t)}})
+	if err != nil {
+		t.Fatalf("Connect with still-valid local certificate: %v", err)
+	}
+	_ = f.next(t)
+	if err := connected.Close(); err != nil {
+		t.Fatal(err)
 	}
 	if got := f.api.submissions.Load() - base; got != 1 {
 		t.Fatalf("submitted %d CSRs during one cooldown, want 1", got)

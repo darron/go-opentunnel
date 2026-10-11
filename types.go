@@ -12,7 +12,7 @@ import (
 const DefaultAPI = "https://opentunnel.xyz"
 
 // Version is this module's protocol client version.
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 var (
 	// ErrClosed reports an operation attempted after its Client, Connection, or Listener was closed.
@@ -154,6 +154,9 @@ type TransportOptions struct {
 	EventBuffer int
 	// MaxInboundBytes defaults to 8 MiB buffered per visitor channel.
 	MaxInboundBytes int
+	// MaxInboundTotalBytes defaults to 64 MiB buffered across all visitor
+	// channels in one relay session.
+	MaxInboundTotalBytes int
 	// AttachTimeout defaults to 10 seconds for one bridge attachment.
 	AttachTimeout time.Duration
 	// HandshakeTimeout defaults to 10 seconds for each visitor TLS handshake.

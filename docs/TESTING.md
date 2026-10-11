@@ -18,25 +18,39 @@ These commands do not create a public tunnel.
    go test -race -run 'TestLifecycle|TestTunnelStalledChannel|TestTunnelRoutesReconnect' -count=10 .
    ```
 
-3. Run the focused hardening regressions:
+3. Run the focused audit regressions:
 
    ```sh
-   go test -run 'TestTunnelHandshakeRouteIsolation|TestConnectStartupContextDoesNotOwnLifetime' -count=1 .
-   go test -run 'TestConnectExplicitLifetimeCancellation|TestConnectRejectsOverlappingRoutes' -count=1 .
-   go test -run 'TestRuntimeFailedCertificateRecoversSameKey|TestExpiredIdentityAttachesToTriggerServerRenewal|TestFileStorage' -count=1 .
-   go test -run 'Test(ChannelAbort|ChannelReset|WriterDiscards|QueuedSend|WriteDeadline|CleanupQueueSaturation)' -count=1 .
-   go test -run 'Test(ForegroundCertificate|RemoveDuringForeground|DifferentExpiredRemote|Ambiguous|ResumeDoesNotRebind)' -count=1 .
-   go test -run 'Test(CancellationAfterRemote|PendingPersistence|MalformedKnownCreation|TinyInboundFragments)' -count=1 .
-   go test -run 'Test(APIErrorTag|RecognizedAPITags|AttachErrorCode)' -count=1 .
-   go test -run 'TestInteractiveInvalidRoutes' -count=1 ./cmd/otgo
-   go test -run 'TestEstablishedChannelIdleLimit|TestActiveChannelRenewsIdleDeadline|TestJSONOmitsUnsetEventTimes|TestAPI|TestIdentityFormatting' -count=1 .
+   go test -race -count=1 -run 'Test(AggregateInbound|ConcurrentInbound|RelayMetadata|RelayEventRoutes|TLSHandshakeDiagnostic|CertificateRefreshAppliesChainOnlyChange|ConnectAndListenRecoverFailedRemoteCertificateInBackground|IdleDetection|Heartbeat|Pong|RejectedOpen|ReaderControl|Live)' .
+   go test -race -count=1 -run 'Test(ProxyAdmissionLimit|TLSStreamRevocation|Token|MachineTokenRegistry|HandlerRejectsTokenStore|LegacyTokenRegistry)' ./internal/authproxy
+   go test -count=1 -run 'Test(Version|AuthToken)' ./cmd/otgo
    ```
 
-4. Run a five-second fuzz smoke test for each parser:
+   These cover transport budgets and queues, diagnostic redaction, certificate
+   recovery/installation, token boundaries, admission and actual TLS revocation.
+   The full suite in steps 1–2 also checks earlier lifecycle, storage and protocol
+   regressions. The [audit](SECURITY_AUDIT.md) explains which broken-code mutations
+   these tests detect.
+
+4. Run five-second parser fuzz smoke tests:
 
    ```sh
    make fuzz
    ```
+
+5. Run the longer parser and authentication-boundary checks, using a patched
+   supported Go toolchain:
+
+   ```sh
+   make fuzz-sustained
+   go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+   ```
+
+   Sustained fuzzing runs four protocol/routing targets plus the anonymous auth
+   boundary for 45 seconds each, with two workers. Override `FUZZ_TIME` and
+   `FUZZ_PROCS` for a longer bounded run. The auth property is zero backend
+   requests without issued credentials; it does not replace OAuth provider,
+   successful-login, TLS, or machine-token lifecycle tests.
 
 Local fixtures use a fake API/relay with real WebSockets, TLS handshakes, and
 generated test certificates. They cover request encoding, redaction,
@@ -45,9 +59,13 @@ renewal, framing, forwarding, and CLI dispatch. Hosted API, certificate issuance
 and relay interoperability have a separate dated [live test record](LIVE_TESTING.md).
 Each entry identifies what was tested; it does not cover later changes.
 Recorded local results are in [VERIFICATION.md](VERIFICATION.md). Read the
-[security model](SECURITY.md) and [v0.4.0 auth review](AUTH_SECURITY_REVIEW.md)
-for current trust boundaries and limits. Earlier review decisions are in the
+[security model](SECURITY.md) and [current audit](SECURITY_AUDIT.md)
+for trust boundaries and tested limits. Earlier review decisions are in the
 [archive](archive/README.md).
+
+CI repeats the full suite on Go 1.25 for Linux and macOS. A separate current-Go
+job runs the suite and `govulncheck`; a bounded eight-minute fuzz job saves any
+new crash input for 14 days. These jobs do not create public tunnels.
 
 ## Check Go API documentation
 
@@ -276,7 +294,7 @@ revocation close. The provider is an HTTP fixture; real GitHub evidence is in
 
 ## PROXY headers and certificate diagnostics
 
-Run the new local regressions without creating a public tunnel:
+Run the local regressions without creating a public tunnel:
 
 ```sh
 go test -race -count=5 -run 'TestProxy|TestTunnelProxy|TestRouteOptions|TestCLIProxyProtocol|TestCertificate.*(Failure|Cooldown|Retains)' .

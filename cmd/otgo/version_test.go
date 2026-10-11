@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"runtime/debug"
 	"strings"
@@ -19,8 +20,30 @@ func TestVersionCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			fields := strings.Fields(out.String())
-			if len(fields) != 4 || fields[0] != "otgo" || fields[1] != opentunnel.Version || !strings.HasPrefix(fields[2], "sha=") || errout.Len() != 0 {
+			if len(fields) != 4 || fields[0] != "otgo" || fields[1] != opentunnel.Version || errout.Len() != 0 {
 				t.Fatalf("version output = %q, stderr = %q", out.String(), errout.String())
+			}
+			sha, found := strings.CutPrefix(fields[2], "sha=")
+			if !found {
+				t.Fatalf("version SHA field = %q", fields[2])
+			}
+			if sha == "unknown" {
+				if fields[3] != "unknown" {
+					t.Fatalf("unknown SHA has state %q", fields[3])
+				}
+			} else {
+				if len(sha) != 40 && len(sha) != 64 {
+					t.Fatalf("version SHA length = %d, want 40 or 64", len(sha))
+				}
+				if sha != strings.ToLower(sha) {
+					t.Fatalf("version SHA is not lower-case hex: %q", sha)
+				}
+				if _, err := hex.DecodeString(sha); err != nil {
+					t.Fatalf("version SHA is not hex: %q: %v", sha, err)
+				}
+				if fields[3] != "clean" && fields[3] != "dirty" && fields[3] != "unknown" {
+					t.Fatalf("version state = %q", fields[3])
+				}
 			}
 			out.Reset()
 			if err := run(context.Background(), []string{command, "unexpected"}, strings.NewReader(""), &out, &errout); err == nil || out.Len() != 0 {

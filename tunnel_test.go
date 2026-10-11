@@ -24,6 +24,9 @@ type relayFixture struct {
 	mu         sync.Mutex
 	all        []*relaySession
 	attachCode string
+	sessionID  string
+	peer       string
+	routes     []string
 	heartbeat  int
 	idle       int
 	noPong     bool
@@ -53,7 +56,7 @@ type relaySession struct {
 }
 
 func newRelay(t *testing.T) *relayFixture {
-	f := &relayFixture{api: newTestAPI(t), sessions: make(chan *relaySession, 32), heartbeat: 15000, idle: 45000}
+	f := &relayFixture{api: newTestAPI(t), sessions: make(chan *relaySession, 32), sessionID: "test-session", peer: "127.0.0.1", heartbeat: 15000, idle: 45000}
 	f.api.mu.Lock()
 	f.api.bridge = f.accept
 	f.api.mu.Unlock()
@@ -74,10 +77,11 @@ func (f *relayFixture) accept(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(1024 * 1024)
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &relaySession{fixture: f, ws: ws, ctx: ctx, cancel: cancel, channels: make(map[uint32]*relayChannel), controls: make(chan controlMessage, 512)}
+	s := &relaySession{fixture: f, ws: ws, ctx: ctx, cancel: cancel, channels: make(map[uint32]*relayChannel), controls: make(chan controlMessage, 8192)}
 	f.mu.Lock()
 	f.all = append(f.all, s)
-	code, hb, idle := f.attachCode, f.heartbeat, f.idle
+	code, sessionID, hb, idle := f.attachCode, f.sessionID, f.heartbeat, f.idle
+	routes := append([]string(nil), f.routes...)
 	f.mu.Unlock()
 	_, b, e := ws.Read(ctx)
 	if e != nil {
@@ -95,7 +99,10 @@ func (f *relayFixture) accept(w http.ResponseWriter, r *http.Request) {
 		s.close()
 		return
 	}
-	_ = s.control(controlMessage{Type: "attached", Session: "test-session", Routes: m.Routes, HeartbeatMS: hb, IdleTimeoutMS: idle})
+	if routes == nil {
+		routes = m.Routes
+	}
+	_ = s.control(controlMessage{Type: "attached", Session: sessionID, Routes: routes, HeartbeatMS: hb, IdleTimeoutMS: idle})
 	s.wg.Add(1)
 	go func() { defer s.wg.Done(); s.read() }()
 	f.sessions <- s
@@ -255,7 +262,10 @@ func (s *relaySession) publicRaw(t *testing.T, id uint32, sni string) net.Conn {
 			}
 		}
 	}()
-	if e := s.control(controlMessage{Type: "open", Conn: id, Peer: "127.0.0.1", SNI: sni, ALPN: "h2,http/1.1"}); e != nil {
+	s.fixture.mu.Lock()
+	peer := s.fixture.peer
+	s.fixture.mu.Unlock()
+	if e := s.control(controlMessage{Type: "open", Conn: id, Peer: peer, SNI: sni, ALPN: "h2,http/1.1"}); e != nil {
 		t.Fatal(e)
 	}
 	go func() {

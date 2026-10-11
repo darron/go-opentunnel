@@ -63,7 +63,7 @@ func (ch *channel) forward() {
 	err := secure.HandshakeContext(ctx)
 	cancel()
 	if err != nil {
-		final = fmt.Errorf("TLS handshake failed: %w", err)
+		final = tlsHandshakeFailure(err)
 		ch.reset("client_io_error")
 		return
 	}
@@ -135,6 +135,24 @@ func (ch *channel) forward() {
 		ch.reset("upstream_io_error")
 	}
 }
+
+// tlsHandshakeFailure retains package-defined causes while discarding raw TLS
+// errors, which can contain attacker-controlled SNI or ALPN text.
+func tlsHandshakeFailure(err error) error {
+	switch {
+	case errors.Is(err, ErrRouteMismatch):
+		return fmt.Errorf("TLS handshake failed: %w", ErrRouteMismatch)
+	case errors.Is(err, ErrCertificateExpired):
+		return fmt.Errorf("TLS handshake failed: %w", ErrCertificateExpired)
+	case errors.Is(err, ErrInvalid):
+		return fmt.Errorf("TLS handshake failed: %w", ErrInvalid)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("TLS handshake timed out: %w", context.DeadlineExceeded)
+	default:
+		return errors.New("TLS handshake failed")
+	}
+}
+
 func (ch *channel) abort(e error) { ch.raw.abort(e); ch.cancel() }
 func (ch *channel) reset(code string) {
 	if !ch.remoteReset.Load() && ch.session.ctx.Err() == nil {
@@ -226,6 +244,9 @@ func (b *bridgeConn) push(data []byte) bool {
 		return false
 	}
 	if len(data) > 0 {
+		if !b.session.reserveInbound(len(data)) {
+			return false
+		}
 		b.bytes += len(data)
 		// Coalescing bounds allocation and slice metadata even for one-byte frames.
 		for len(data) > 0 {
@@ -252,6 +273,7 @@ func (b *bridgeConn) abort(err error) {
 	b.cancel()
 	b.err = err
 	b.chunks = nil
+	b.session.releaseInbound(b.bytes)
 	b.bytes = 0
 	b.signal()
 	b.signalWrite()
@@ -279,6 +301,7 @@ func (b *bridgeConn) Read(p []byte) (int, error) {
 			b.lastActivity.Store(time.Now().UnixNano())
 			b.offset += n
 			b.bytes -= n
+			b.session.releaseInbound(n)
 			if b.offset == len(b.chunks[0]) {
 				b.chunks[0] = nil
 				b.chunks = b.chunks[1:]

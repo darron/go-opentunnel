@@ -64,20 +64,20 @@ func parseAuthFlags(fs *flag.FlagSet, args []string, a *authFlags) error {
 }
 func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Writer) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "help" {
-		_, e := io.WriteString(out, "Usage: otgo auth <init|github|paths|reset|token create|token list|token revoke> [flags]\n")
+		_, e := io.WriteString(out, "Usage: otgo auth <init|github|paths|reset|token create|token list|token reset|token revoke> [flags]\n")
 		return e
 	}
 	name := args[0]
 	args = args[1:]
 	if name == "token" {
 		if len(args) == 0 {
-			return errors.New("token requires create, list or revoke")
+			return errors.New("token requires create, list, reset or revoke")
 		}
 		name = "token " + args[0]
 		args = args[1:]
 	}
 	switch name {
-	case "init", "github", "paths", "reset", "token create", "token list", "token revoke":
+	case "init", "github", "paths", "reset", "token create", "token list", "token reset", "token revoke":
 	default:
 		return errors.New("unknown auth command")
 	}
@@ -317,7 +317,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		if e = authproxy.ValidateBinding(cfg, b); e != nil {
 			return e
 		}
-		tokens := authproxy.NewTokenStore(paths.TokenFile)
+		tokens := authproxy.NewTokenStore(paths.TokenFile, cfg)
 		switch name {
 		case "token create":
 			secret, id, e := tokens.Create(ttl)
@@ -346,6 +346,17 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 				}
 			}
 			return nil
+		case "token reset":
+			if e := authproxy.ResetTokens(paths.TokenFile); e != nil {
+				return e
+			}
+			if a.json {
+				return json.NewEncoder(out).Encode(struct {
+					Reset bool `json:"reset"`
+				}{true})
+			}
+			_, e = fmt.Fprintln(out, "removed machine tokens; create new tokens before reconnecting clients")
+			return e
 		default:
 			if id == "" {
 				return errors.New("token revoke requires --id")

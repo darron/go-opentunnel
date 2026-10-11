@@ -207,8 +207,13 @@ func TestForegroundCertificateRecoverySharesRuntimeCooldown(t *testing.T) {
 		if _, err := c.Resume(t.Context(), "", ProvisionOptions{}); !errors.Is(err, ErrCertificateIssuance) {
 			t.Fatalf("Resume: %v", err)
 		}
-		if _, err := c.Connect(t.Context(), ConnectOptions{Routes: Routes{"api": echoTarget(t)}}); !errors.Is(err, ErrCertificateIssuance) {
-			t.Fatalf("Connect: %v", err)
+		x, err := c.Connect(t.Context(), ConnectOptions{Routes: Routes{"api": echoTarget(t)}})
+		if err != nil {
+			t.Fatalf("Connect with still-valid local certificate: %v", err)
+		}
+		_ = f.next(t)
+		if err := x.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if got := f.api.submissions.Load() - base; got != 1 {
