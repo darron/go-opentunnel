@@ -20,7 +20,7 @@ recorded in the v0.7.0 changelog. No runtime dependency or service wire format c
 An intentional Go 1.25.0 vulnerability scan reported 44 reachable standard-library
 advisories. The source minimum remains compatible, but production builds should
 use a patched supported toolchain. This scan is not evidence of 44 exploitable
-defects in this package. The installed Homebrew v0.6.0 binary uses Go 1.27.2.
+defects in this package. At audit startup, the installed Homebrew v0.6.0 binary used Go 1.27.2.
 
 Deliberate mutations in isolated code copies established that the revised tests
 reject an incorrect admission limit, corrupted version state, missing TLS client
@@ -70,6 +70,38 @@ both independent route-cap mutants fail. These are local reviewer checks;
 Connect/Listen examples compile in CI; the [fresh-state hosted checks](LIVE_TESTING.md#v070-security-audit--2026-10-11)
 exercise their runtime behavior. Fixture recovery tests deliberately induce
 certificate failures; the hosted check did not. No new GitHub App grant was made.
+
+### Publication and installed Homebrew
+
+Published [v0.7.0](https://github.com/darron/go-opentunnel/releases/tag/v0.7.0)
+from `5fca156c7257fd6ff4bab1a0687ea1a70d3cfcc7`. The annotated tag resolves to
+that commit. Its CHANGELOG entry is committed; release notes are attached to the
+GitHub release, with no release-note document under `docs/`.
+
+- [Main CI](https://github.com/darron/go-opentunnel/actions/runs/38174069499) and
+  [tag CI](https://github.com/darron/go-opentunnel/actions/runs/38174078595) passed
+  every job: Linux/macOS tests, vet, builds, updater tests, Linux race detection,
+  full lint, current-Go vulnerability checks and sustained fuzzing.
+- The published-release event ran the
+  [source hook](https://github.com/darron/go-opentunnel/actions/runs/38174083463),
+  which dispatched the
+  [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38174089495).
+  Candidate style/strict audit/source build/install/test and publishing passed.
+  No manual dispatch was needed. Tap commit
+  `18808593f504ffc0807803173f02ae7df5aefec9` changed only `Formula/otgo.rb`.
+  Its source archive SHA-256 is
+  `32fc5d56303df4d22a7f62b1c473a621c01b1df241d7309e2273011045d4004e`.
+- The local stable Homebrew installation upgraded from 0.6.0 to 0.7.0.
+  `brew test darron/tap/otgo`, `proxy --help` and `create --help` passed. Both
+  version aliases report
+  `otgo 0.7.0 sha=5fca156c7257fd6ff4bab1a0687ea1a70d3cfcc7 clean`.
+  `go version -m` reports Go 1.27.2. Saved auth profiles were not changed.
+- Go's public module proxy resolves `github.com/darron/go-opentunnel@v0.7.0`
+  to the same release commit, with minimum source version Go 1.25.0.
+
+Existing unbound machine-token registries require explicit reset and reissue;
+[the migration guide](AUTH_PROXY.md#machine-clients-and-mcp) gives the commands.
+Publication and CLI installation do not automatically reset them.
 
 ## v0.6.0 release checks — 2026-10-11
 

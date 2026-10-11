@@ -140,7 +140,7 @@ The Go 1.27.2 scan found no known vulnerabilities. An intentional scan using
 Go 1.25.0 reported 44 reachable standard-library advisories; this is a scanner
 reachability result, not proof of 44 exploitable package bugs. Production builds
 must use a [patched supported Go release](https://go.dev/doc/devel/release#policy).
-The installed Homebrew v0.6.0 binary was built with Go 1.27.2.
+At audit startup, the installed Homebrew v0.6.0 binary used Go 1.27.2.
 
 ## Compatibility and remaining boundaries
 
