@@ -26,8 +26,10 @@ produces only the CLI; the example has a separate target.
 | Tap-owned Actions workflow | Manual v0.3.0 run passed macOS validation and isolated publishing jobs |
 
 The [live tap run](https://github.com/darron/homebrew-tap/actions/runs/38096719658)
-validated the existing stable release without changing it. Hourly polling is
-enabled for future stable releases; no new tag/release was published.
+validated the existing stable release without changing it. The hourly schedule was
+subsequently removed in favor of a published-release hook. `HOMEBREW_TAP_TOKEN` is
+configured; the new cross-repository dispatch is pending live validation.
+No new tag/release was published.
 
 The first Linux CI run exposed a test fixture race: manual renewal competed with
 a newly started background worker. Four manual renewal tests now use a worker-free

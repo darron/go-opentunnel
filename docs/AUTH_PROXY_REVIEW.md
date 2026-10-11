@@ -25,7 +25,8 @@ Follow-up review found two further gaps:
 - The tap workflow published before testing the candidate. It now installs/tests
   on macOS before pushing. A further token-boundary finding led to tap-owned
   updater code, read-only validation and a fresh write-authorized publishing job.
-  Release binaries never run in the publisher; no extra secret is needed.
+  Release binaries never run in the publisher. The publisher uses its own token;
+  the later release-triggered dispatch uses a tap-only Actions-write secret.
 
 No concrete anonymous-forwarding bypass was found in the universal gate,
 Host/SNI/Origin validation, fixed upstream rewrite, credential stripping, OAuth

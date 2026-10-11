@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Trigger Homebrew validation/updates on published stable releases, with manual
+  retry support. Remove scheduled polling. The source hook uses a tap-only
+  `HOMEBREW_TAP_TOKEN` with Actions write permission.
+
 - Fix browser password login, logout and GitHub setup form submissions: preserve
   same-origin Origin headers while retaining strict Origin/CSRF checks. Successful
   password login redirects to `/`.
