@@ -53,6 +53,9 @@ func startRegistration(t *testing.T, s *githubSetup) *http.Cookie {
 	if w.Code != 200 {
 		t.Fatal("start page")
 	}
+	if w.Header().Get("Referrer-Policy") != "same-origin" {
+		t.Fatal("registration start page suppresses the local form Origin")
+	}
 	var cookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
 		if c.Name == setupCookie {
@@ -68,6 +71,9 @@ func startRegistration(t *testing.T, s *githubSetup) *http.Cookie {
 	w = runRequest(s, r)
 	if w.Code != 200 {
 		t.Fatalf("create form: %d", w.Code)
+	}
+	if w.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatal("external registration page exposes a referrer")
 	}
 	pattern := regexp.MustCompile(`name="manifest" value="([^"]*)"`)
 	match := pattern.FindStringSubmatch(w.Body.String())

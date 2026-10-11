@@ -90,6 +90,13 @@ func ownedHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 }
+
+// HTML form POSTs under no-referrer send Origin: null. Preserve their real
+// same-origin Origin without exposing a Referer to other sites.
+func ownedFormHeaders(w http.ResponseWriter) {
+	ownedHeaders(w)
+	w.Header().Set("Referrer-Policy", "same-origin")
+}
 func authCookie(name, value string, maxAge int) *http.Cookie {
 	return &http.Cookie{Name: name, Value: value, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: maxAge}
 }
@@ -109,7 +116,7 @@ func csrfMatches(r *http.Request) bool {
 var loginPage = template.Must(template.New("login").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Protected by otgo</title><style>body{font:17px system-ui;margin:12vh auto;padding:24px;max-width:380px;background:#f6f5f1;color:#20242a}input,button{font:inherit;box-sizing:border-box;padding:12px;width:100%;margin-top:12px}label{display:block}button{background:#243c37;color:white;border:0;border-radius:5px}small{color:#555}</style><main><h1>Sign in</h1><p>This site is protected by otgo.</p>{{if .GitHub}}<a href="/__otgo/github">Sign in with GitHub</a>{{else}}<form method="post" action="/__otgo/login"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Password<input type="password" name="password" maxlength="1024" autocomplete="current-password" required autofocus></label><button>Sign in</button></form>{{end}}<p><small>{{.Message}}</small></p></main></html>`))
 
 func renderLogin(w http.ResponseWriter, r *http.Request, github bool, message string) {
-	ownedHeaders(w)
+	ownedFormHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	csrf := randomSecret()
 	http.SetCookie(w, authCookie(CSRFCookie, csrf, 600))
@@ -211,6 +218,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
+		ownedFormHeaders(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		csrf := randomSecret()
 		http.SetCookie(w, authCookie(CSRFCookie, csrf, 600))

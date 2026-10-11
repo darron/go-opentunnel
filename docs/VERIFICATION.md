@@ -1,5 +1,9 @@
 # Local verification record
 
+Browser form policy correction: regression tests, `make check` (zero lint issues),
+`make race`, and native Chrome password login/root redirect/logout passed. See
+[LIVE_TESTING.md](LIVE_TESTING.md#browser-login-regression--2026-10-10).
+
 ## Auth proxy and Homebrew — 2026-10-10
 
 Verified on macOS arm64 with Go 1.27.2 and golangci-lint 2.14.0. Auth adds no external

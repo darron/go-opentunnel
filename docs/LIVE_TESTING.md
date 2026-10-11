@@ -1,5 +1,26 @@
 # Public-service validation
 
+## Browser login regression — 2026-10-10
+
+A user reported `Invalid request origin` after password submission. The running
+login page sent `Referrer-Policy: no-referrer`; browser HTML form POSTs under that
+policy send `Origin: null`, which the exact-origin guard correctly refused.
+The correction applies `same-origin` only to login/logout forms and the local
+GitHub setup start form. OAuth callbacks and external registration responses
+retain `no-referrer`; Origin/CSRF validation is unchanged. See the
+[Fetch Origin algorithm](https://fetch.spec.whatwg.org/#append-a-request-origin-header).
+
+The corrected CLI was tested in Chrome through a temporary public HTTPS tunnel
+fronting the actual installed Plannotator Inbox. Password submission redirected
+to `/`, created a session and loaded the complete Inbox. The logout confirmation
+form redirected to login and revoked the session. Both pre-fix and corrected
+temporary tunnels were stopped and removed; API 404 confirmed deletion.
+
+Regression tests cover form policies, root redirect, rejection of null/missing/
+foreign Origins and the GitHub setup/external registration policy boundary.
+`make check` passed with zero lint issues; `make race` and an independent focused
+review/race run passed. Real GitHub owner registration remains unverified.
+
 ## Auth proxy and full CLI/app retest — 2026-10-10
 
 The final rebuilt binaries passed the following checks through the hosted service

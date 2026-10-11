@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix browser password login, logout and GitHub setup form submissions: preserve
+  same-origin Origin headers while retaining strict Origin/CSRF checks. Successful
+  password login redirects to `/`.
+
+
 - Add `otgo proxy` to protect every route of a fixed HTTP backend with password
   or allowlisted GitHub login, without modifying the backend.
 - Add named XDG auth profiles, concurrent proxies for different backends,

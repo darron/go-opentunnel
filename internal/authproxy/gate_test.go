@@ -191,15 +191,17 @@ func TestGatePasswordLoginAndLogout(t *testing.T) {
 	if w := login("test-password", "wrong", "https://demo.test"); w.Code != 403 {
 		t.Fatal("login CSRF accepted")
 	}
-	if w := login("test-password", csrf.Value, "https://evil.test"); w.Code != 403 {
-		t.Fatal("login foreign origin")
+	for _, origin := range []string{"https://evil.test", "null", ""} {
+		if w := login("test-password", csrf.Value, origin); w.Code != 403 {
+			t.Fatalf("login accepted untrusted origin %q", origin)
+		}
 	}
 	if w := login("wrong", csrf.Value, "https://demo.test"); w.Code != 401 {
 		t.Fatal("wrong password")
 	}
 	w = login("test-password", csrf.Value, "https://demo.test")
-	if w.Code != 303 {
-		t.Fatalf("login failed: %d %s", w.Code, w.Body.String())
+	if w.Code != 303 || w.Header().Get("Location") != "/" {
+		t.Fatalf("login did not redirect to root: %d location=%q %s", w.Code, w.Header().Get("Location"), w.Body.String())
 	}
 	var session *http.Cookie
 	for _, c := range w.Result().Cookies() {
@@ -292,5 +294,21 @@ func TestGateLoginLimiterAndConcurrency(t *testing.T) {
 	p.login(w, r)
 	if w.Code != 429 {
 		t.Fatal("unbounded password jobs")
+	}
+}
+
+// Same-origin form POSTs must retain their Origin while external navigation
+// receives no Referer. no-referrer makes HTML form POSTs send Origin: null.
+func TestOwnedFormReferrerPolicy(t *testing.T) {
+	h, sessions, _ := testHandler(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	for _, path := range []string{"/__otgo/login", "/__otgo/logout"} {
+		r := publicRequest("GET", path)
+		if path == "/__otgo/logout" {
+			addSession(r, browserSession(t, sessions))
+		}
+		w := runRequest(h, r)
+		if got := w.Header().Get("Referrer-Policy"); got != "same-origin" {
+			t.Errorf("%s cannot preserve same-origin forms and hide external referrers: %q", path, got)
+		}
 	}
 }

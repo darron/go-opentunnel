@@ -97,6 +97,7 @@ func (s *githubSetup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.Method == "GET" && r.URL.Path == "/start":
+		ownedFormHeaders(w)
 		secret := randomSecret()
 		s.mu.Lock()
 		if s.used {
