@@ -2,20 +2,23 @@
 
 This pre-v0.4.0 review examined the universal HTTP gate, password login, GitHub
 registration/OAuth, sessions, machine tokens and upstream credential handling.
-A fresh-context read-only reviewer independently inspected the implementation
-and reproduced findings. A subsequent genuine `claude -p` review inspected the full auth feature and
-identified additional defects. Findings were checked against code and reproduced
-before accepting fixes. Claude’s focused confirmation found all original findings resolved or supported
-by the dispositions below, with no new security/correctness blocker. The recorded
-local/race/password/GitHub/CLI/app checks passed; Linux CI awaits the commit.
-Amp and Oracle subsequently found two P2 shutdown/revocation races and no P0/P1
-issue. Both were reproduced and fixed. `make check` passed with zero lint issues and a
-fresh full race run passed on the final tests (auth: 61.758 seconds). Post-Amp
-public password/CLI/app repeats passed, including API 404 cleanup. Amp’s focused confirmation and Oracle agreed both original P2 findings are
-resolved, with no new material correctness/security finding and no commit blocker.
-Its release caveat referred to pending exact-commit CI and the public repeats,
-which were still running when the confirmation prompt was sent; both drivers
-subsequently completed successfully. Exact-commit CI remains pending.
+A fresh-context read-only reviewer inspected the implementation and reproduced
+findings. Genuine Claude and Amp/Oracle reviews identified additional defects;
+accepted findings were checked against code and reproduced before correction.
+
+Claude’s focused confirmation resolved its original findings or accepted the
+recorded dispositions, with no new blocker. Amp/Oracle subsequently found two P2
+shutdown/revocation races and no P0/P1 issue. Both were reproduced and fixed;
+their focused confirmation agreed both were resolved, with no new material
+security/correctness finding or commit blocker.
+
+The final local tests, race suite, zero-issue golangci-lint and public password/
+CLI/app repeats passed, including API 404 cleanup. The [hardening-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38104516058)
+also passed Linux/macOS tests, vet, builds, updater tests, Linux race and full lint.
+The Homebrew HEAD source build and `brew test` passed at `c59eeae`. Release-candidate
+CI must also pass before publishing v0.4.0. The reviewers’ pending-public-test
+caveats describe the status when their prompts were sent; both final drivers
+subsequently completed successfully.
 
 ## Findings and disposition
 

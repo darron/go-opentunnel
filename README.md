@@ -168,8 +168,9 @@ changes; the earlier run also exercised a forced bridge reconnect.
 Read the [local results](docs/VERIFICATION.md) and
 [live results and limits](docs/LIVE_TESTING.md) for the evidence. See the
 [hardening guide](docs/HARDENING.md), [v0.2.0 Amp review](docs/AMP_REVIEW.md), and
-[v0.3.0 listener review](docs/AMP_REVIEW_V0.3.0.md) for current behavior, review
-dispositions, and remaining limits.
+[v0.3.0 listener review](docs/AMP_REVIEW_V0.3.0.md) and
+[v0.4.0 auth review](docs/AUTH_SECURITY_REVIEW.md) for behavior, review
+dispositions and remaining limits.
 
 ## Protect a local application with otgo
 

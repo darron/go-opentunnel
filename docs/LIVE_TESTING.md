@@ -1,5 +1,17 @@
 # Public-service validation
 
+## v0.4.0 release-candidate service check — 2026-10-10
+
+After updating the advertised client version to `0.4.0`, `make check` passed and
+the rebuilt CLI repeated the full `python3 scripts/auth_smoke.py` run with exit 0.
+The service accepted provisioning and visitor attachment with the new version.
+Anonymous gating, browser/password/CSRF/Origin checks, machine MCP access,
+credential stripping, cache/referrer policy, uploads, corruption, restart, logout
+and two-profile isolation passed. SSE/WSS revocation took **0.222 seconds**.
+Every temporary identity returned API 404; local credentials were removed and all
+owned processes stopped. This is the version-metadata check after the complete
+post-Amp CLI/embedding-app run below.
+
 ## Post-Amp auth lifecycle repeat — 2026-10-10
 
 After fixing the cancelled-wizard save race and late revocation close, the final

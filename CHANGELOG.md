@@ -2,41 +2,34 @@
 
 ## Unreleased
 
-- Join GitHub setup callbacks before returning; cancellation preserves the old
-  mode before saving and reports the actual result once saving starts. Serialize
-  revocation closes with request completion to protect keep-alive reuse.
+## v0.4.0 — Authenticated application proxy — 2026-10-10
 
-- Bind GitHub App setup to a one-use browser capability under
-  `/__otgo/github/setup`; isolate concurrent setup cookies.
-- Revoke leftover machine tokens on every auth initialization, normalize empty
-  profiles to the default lock, and tolerate safe atomic token-registry updates.
-- Reject foreign browser subresources, preserve same-origin backend form Origins,
-  filter ambiguous gate cookies, require 12-byte supplied passwords, and bound
-  idle HTTP connections.
+- Add `otgo proxy` to protect every path and method of an existing HTTP backend
+  with password or allowlisted GitHub login. Backend code does not need to change.
+- Add guided GitHub App creation under `/__otgo/github/setup`, browser-bound
+  one-use setup, OAuth state/PKCE and numeric account allowlists. GitHub mode has
+  no password fallback and requests no repository permissions.
+- Add persistent XDG auth profiles for multiple backends and concurrent proxies,
+  hostname inspection while running, and expiring/revocable machine tokens.
+  Compatible HTTP MCP clients can supply tokens; unauthenticated clients are
+  denied. This does not implement MCP OAuth discovery/negotiation.
+- Harden credential storage and formatting, password work limits, browser
+  Origin/CSRF/fetch-metadata checks, protected-response caching, backend cookie
+  handling and streaming revocation. New supplied passwords require 12–1024 bytes.
+- Preserve same-origin form submissions and redirect successful password login
+  to `/`. Bind setup cancellation to its save boundary and join callbacks before
+  returning; serialize revocation closes with request completion.
+- Reset machine tokens on every password initialization, normalize default-profile
+  locks and tolerate safe atomic registry replacement without false revocation.
+- Add Homebrew installation and release-triggered tap updates, with manual retry
+  support and no scheduled polling. The default local build produces only the CLI.
+- Keep the public Go API compatible with v0.3.0, add no external dependency and
+  update the advertised client version. Clarify local keys, wildcard certificates
+  and the hosted operator's HTTPS trust boundary.
+- Add security regressions and document real password/GitHub testing, full
+  CLI/embedding-app retests, and [Claude/Amp/Oracle review dispositions](docs/AUTH_SECURITY_REVIEW.md).
 
-- Prevent protected responses from inheriting public backend/CDN cache policies
-  in either auth mode. Add anonymous-route and OAuth failure regressions.
-- Preserve the password-verification budget for bounded, valid-CSRF forms with
-  an available hashing slot. Document login-flood and GitHub session limits.
-
-- Trigger Homebrew validation/updates on published stable releases, with manual
-  retry support. Remove scheduled polling. The source hook uses a tap-only
-  `HOMEBREW_TAP_TOKEN` with Actions write permission.
-- Fix browser password login, logout and GitHub setup form submissions: preserve
-  same-origin Origin headers while retaining strict Origin/CSRF checks. Successful
-  password login redirects to `/`.
-- Add `otgo proxy` to protect every route of a fixed HTTP backend with password
-  or allowlisted GitHub login, without modifying the backend.
-- Add named XDG auth profiles, concurrent proxies for different backends,
-  persistent settings and expiring/revocable machine tokens, including HTTP MCP
-  clients that can send configured tokens.
-- Add guided GitHub App registration, OAuth state/PKCE protection and numeric
-  account allowlists. Keep auth code private to the CLI.
-- Harden auth storage, credential formatting, slow login bodies and stream
-  revocation; refuse platforms without the required storage protections.
-- Build only the CLI by default; add Homebrew installation and automated stable
-  release updates to `darron/homebrew-tap`.
-- Clarify local keys and operator-held wildcard certificates in the security doc.
+[Compare v0.3.0 to v0.4.0](https://github.com/darron/go-opentunnel/compare/v0.3.0...v0.4.0)
 
 ## v0.3.0 — Direct TLS listeners — 2026-10-10
 

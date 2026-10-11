@@ -11,7 +11,8 @@ Claude’s focused confirmation resolved its original findings with no new block
 Amp/Oracle then found two P2 lifecycle races and no P0/P1: cancellation could save
 GitHub credentials during shutdown, and a revocation close could reach a reused
 connection. Both reproduced in regressions and were fixed; focused Amp confirmation
-and Oracle found both resolved and no new material finding/commit blocker. Wizard cancellation/commit and TLS/keep-alive regressions also passed
+and Oracle found both resolved and no new material finding/commit blocker.
+Wizard cancellation/commit and TLS/keep-alive regressions also passed
 three focused race repetitions. Removing callback joining reproduced the committed
 callback failure again before restoring the correction. The conversion-cancellation
 regression also passed 100 race-enabled repetitions.
@@ -22,13 +23,18 @@ seconds**. Real GitHub wizard/OAuth, visible backend, logout, excluded/restored
 identity and restart checks passed before these final lifecycle changes, with
 local cleanup and remote API 404. Their changed wizard paths were retested through
 loopback HTTP/provider fixtures. GitHub accepted the approved test-App deletions
-and queued them. Exact-commit Linux/macOS CI remains required before release.
+and queued them. The [hardening-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38104516058)
+passed Linux/macOS tests, vet, CLI/example builds and updater tests, plus Linux
+race and full lint. Homebrew upgraded to `HEAD-c59eeae`; source build, `brew test`
+and auth/proxy help passed. The v0.4.0 version update passed another `make check` with zero lint issues;
+the rebuilt CLI repeated the complete hosted password smoke (revocation:
+0.222 seconds), confirming service compatibility and API 404 cleanup.
+Release-candidate CI must pass before publication.
 
 See [AUTH_SECURITY_REVIEW.md](AUTH_SECURITY_REVIEW.md) and the
 [final live repeat](LIVE_TESTING.md#post-amp-auth-lifecycle-repeat--2026-10-10).
 The 0.389-second record is the preceding post-Claude build; 0.370 seconds refers
 to the earlier cache/admission build.
-
 
 After the cache-policy and password-admission corrections, `make check` passed
 all package tests, vet, formatting, full golangci-lint (**0 issues**) and CLI build.
