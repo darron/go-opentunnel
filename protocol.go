@@ -16,6 +16,11 @@ var targetLabel = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 func validRoute(value string) bool   { return value == "@" || dnsLabel.MatchString(value) }
 func validProfile(value string) bool { return dnsLabel.MatchString(value) }
 
+// ValidateRoutes checks route names and host:port targets, returning ErrInvalid
+// for an invalid entry. Targets use a DNS hostname or literal IP and a numeric
+// port from 1 to 65535; URLs and Unix sockets are not accepted.
+// Nil and empty maps are valid here, although Client.Connect requires an initial
+// route. Validation does not resolve names, dial targets or authorize access.
 func ValidateRoutes(routes Routes) error {
 	for name, target := range routes {
 		if !validRoute(name) || !validTarget(target) {
@@ -52,6 +57,10 @@ func validTarget(value string) bool {
 	return err == nil && p >= 1 && p <= 65535
 }
 
+// RouteForSNI returns "@" for hostname itself or a lowercase route label for one
+// subdomain of hostname. Matching is case-insensitive. Unrelated hostnames and
+// multi-label subdomains return ("", false). It does not check that a route is
+// configured or perform certificate validation.
 func RouteForSNI(sni, hostname string) (string, bool) {
 	sni, hostname = strings.ToLower(sni), strings.ToLower(hostname)
 	if sni == hostname {

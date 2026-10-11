@@ -1,5 +1,7 @@
 # go-opentunnel
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/darron/go-opentunnel.svg)](https://pkg.go.dev/github.com/darron/go-opentunnel)
+
 Expose a local application over public HTTPS with [OpenTunnel](https://opentunnel.xyz).
 Use `otgo` to require password or GitHub login, or embed the client in your Go app.
 Visitor TLS terminates in your process. Read the [security model](docs/SECURITY.md)
@@ -136,8 +138,10 @@ WebSockets and shutdown. Run `go run ./examples/webapp`; use `--forward` for TCP
 forwarding or `--local-only` for a loopback test server.
 
 Read the [listener guide](docs/LISTENER.md) for shutdown and peer trust, and the
-[API reference](docs/DESIGN.md#public-package-and-api) for routes, storage,
-provisioning recovery and resource limits. `Identity` and `PendingIdentity` redact
+[Go API documentation](https://pkg.go.dev/github.com/darron/go-opentunnel) for
+types, methods and examples. The [package reference](docs/DESIGN.md#public-package-and-api)
+explains routes, storage, provisioning recovery and resource limits.
+`Identity` and `PendingIdentity` redact
 credentials in standard formatting and JSON; their exported fields still contain
 live secrets.
 

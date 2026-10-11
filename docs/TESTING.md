@@ -49,6 +49,34 @@ Recorded local results are in [VERIFICATION.md](VERIFICATION.md). Read the
 for current trust boundaries and limits. Earlier review decisions are in the
 [archive](archive/README.md).
 
+## Check Go API documentation
+
+Read the package overview and public contracts locally:
+
+```sh
+go doc .
+go doc Client.Listen
+go doc Client.Connect
+go doc -all .
+go test -count=1 -run '^Example' .
+```
+
+The route and memory-storage examples have expected output and run in the test
+suite without network access. The Connect and Listen examples compile with the
+suite but do not run automatically: they create public tunnels and have no
+`Output` comment. Their Ctrl-C shutdown contexts are for an application process.
+
+Maintain the package overview in `doc.go` and public contracts beside their
+declarations. Explain defaults, absent results, concurrency and ownership where
+they affect callers. Use Go doc links such as `[Client.Listen]` in source comments.
+Do not commit generated HTML or add a documentation runtime dependency.
+
+The [public API page](https://pkg.go.dev/github.com/darron/go-opentunnel) shows
+published module versions, not untagged main changes. After publishing a release,
+verify the new version and examples on that page. If it is missing, request it
+through pkg.go.dev or fetch its version metadata from Go's module proxy; see
+[pkg.go.dev's indexing instructions](https://pkg.go.dev/about#adding-a-package).
+
 ## Focused auth regressions
 
 Auth regressions and the Homebrew updater:

@@ -25,6 +25,8 @@ type ListenOptions struct {
 // RemoteAddr is relay-provided metadata, not an independently verified visitor IP.
 // Closing the listener also aborts accepted connections and joins package workers.
 // It does not join application handlers or remove stored credentials.
+// Methods support concurrent calls. Obtain a Listener through Client.Listen;
+// its zero value is not usable. Use http.Server.Serve, not ServeTLS.
 type Listener struct {
 	connection *Connection
 	pending    chan *tls.Conn
@@ -33,6 +35,9 @@ type Listener struct {
 // Listen provisions or resumes an identity and attaches its routes. ctx bounds
 // startup only; Lifetime or Close controls the running listener. It shares route
 // ownership with Connect: overlapping names on one client/profile are rejected.
+// Routes are copied; callers must not mutate the slice during this call. It does
+// not add authentication or HTTP request deadlines: those belong to the handler
+// and http.Server. Use a finite startup context because issuance may require polling.
 func (c *Client) Listen(ctx context.Context, o ListenOptions) (*Listener, error) {
 	routes, err := listenerRoutes(o.Routes)
 	if err != nil {
@@ -54,6 +59,7 @@ func (c *Client) Listen(ctx context.Context, o ListenOptions) (*Listener, error)
 // rejected internally. After shutdown it waits for owned workers and returns
 // net.ErrClosed for requested Close/client shutdown, the Lifetime context error,
 // or the fatal *AttachError. Queued connections from dead sessions are discarded.
+// The caller must close each accepted connection to release its admission slot.
 func (l *Listener) Accept() (net.Conn, error) {
 	x := l.connection
 	for {
@@ -84,6 +90,9 @@ func (l *Listener) acceptError() error {
 }
 
 // Close aborts Accept and active I/O, joins package workers, and retains identity.
+// It is safe to call repeatedly or concurrently. It also aborts accepted and
+// hijacked sockets, so http.Server.Shutdown does not provide a graceful drain
+// through this listener. Coordinate application draining before closing it.
 func (l *Listener) Close() error { return l.connection.Close() }
 
 // Addr identifies the tunnel root hostname; it is not a local TCP socket address.
@@ -96,7 +105,8 @@ func (l *Listener) Identity() Identity { return l.connection.Identity() }
 // listener routes have no backend targets.
 func (l *Listener) Status() Status { return l.connection.Status() }
 
-// Events returns bounded, lossy lifecycle events. It closes with Done.
+// Events returns bounded, lossy lifecycle events. Repeated calls return the same
+// channel; multiple readers divide events. It closes with Done.
 func (l *Listener) Events() <-chan Event { return l.connection.Events() }
 
 // Done closes after all package-owned workers exit.
@@ -107,6 +117,9 @@ func (l *Listener) Err() error { return l.connection.Err() }
 
 // SetRoutes changes accepted SNI names. Name changes reattach asynchronously and
 // abort existing channels. An empty list pauses attachment until routes are added.
+// Invalid or duplicate names return ErrInvalid; overlapping names on this
+// client's same-profile connections return ErrRouteInUse. Names are copied;
+// do not mutate the input slice concurrently with this call.
 func (l *Listener) SetRoutes(names []string) error {
 	routes, err := listenerRoutes(names)
 	if err != nil {

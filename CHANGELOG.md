@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Expand Go API documentation with a package overview, public field and method
+  contracts, runnable local examples, and a pkg.go.dev link in the README.
+
 - Simplify the README and auth setup instructions. Add a documentation index,
   put the protected proxy quick start before validation, and archive earlier
   reviews with updated links.

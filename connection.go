@@ -14,6 +14,8 @@ import (
 // Connection reconnects until context cancellation, Close, or a fatal attach error.
 // Events are bounded and lossy; Status gives the current state. Done closes after
 // all workers exit.
+// Methods support concurrent calls. Obtain a Connection through Client.Connect;
+// its zero value is not usable. Close does not delete the remote tunnel.
 type Connection struct {
 	listener        *Listener
 	client          *Client
@@ -41,6 +43,9 @@ type Connection struct {
 // after return without stopping the tunnel. Set Lifetime for context-owned shutdown.
 // Expired identities attach to trigger server renewal, but readiness waits for a
 // valid certificate. Overlapping routes within one client return ErrRouteInUse.
+// Routes are copied on entry; callers must not mutate the input map while this
+// call is running. At least one valid initial route is required. Cancellation
+// during startup may preserve a pending identity for Client.Resume or Client.Remove.
 func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, error) {
 	if len(o.Routes) == 0 {
 		return nil, fmt.Errorf("%w: at least one initial route is required", ErrInvalid)
@@ -153,7 +158,9 @@ func copyRoutes(r Routes) Routes {
 // Identity returns a copy of the current identity, including credentials.
 func (x *Connection) Identity() Identity { x.mu.Lock(); defer x.mu.Unlock(); return x.identity }
 
-// Events returns the bounded, lossy event stream, closed when Done closes.
+// Events returns the bounded, lossy event stream. Repeated calls return the same
+// channel, so multiple readers divide events rather than each receiving a copy.
+// It closes when Done closes. Status.DroppedEvents counts omitted events.
 func (x *Connection) Events() <-chan Event { return x.events }
 
 // Done closes after bridge, channel, and certificate-refresh workers exit.
@@ -172,11 +179,16 @@ func (x *Connection) Status() Status {
 	return s
 }
 
-// Close stops the connection and joins its workers. A requested close leaves Err nil.
+// Close stops the connection and joins its workers. It is safe to call repeatedly
+// or concurrently. A normal requested close leaves Err nil; an already recorded
+// terminal error remains available. Stored credentials and the remote tunnel remain.
 func (x *Connection) Close() error { x.closeRequested.Store(true); x.cancel(); <-x.done; return nil }
 
 // SetRoutes updates targets for new channels. Name changes reattach asynchronously
 // and close existing channels when the session changes.
+// An empty map pauses attachment. Invalid routes return ErrInvalid; overlapping
+// names on this client's same-profile connections return ErrRouteInUse. The input
+// map is copied; do not mutate it concurrently with this call.
 func (x *Connection) SetRoutes(routes Routes) error {
 	if e := ValidateRoutes(routes); e != nil {
 		return e

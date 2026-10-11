@@ -1,6 +1,3 @@
-// Package opentunnel terminates visitor TLS carried through OpenTunnel and
-// exposes it through a net.Listener or forwards decrypted bytes to TCP targets.
-// See docs/SECURITY.md for the operator trust boundary.
 package opentunnel
 
 import (
@@ -48,12 +45,19 @@ type Routes map[string]string
 // PrivateKey; custom Storage implementations must persist those secrets
 // separately if they need to restore an identity.
 type Identity struct {
-	ID                string    `json:"id"`
-	Hostname          string    `json:"hostname"`
-	Token             string    `json:"-"`
-	PrivateKey        string    `json:"-"`
-	Certificate       string    `json:"certificate"`
-	Chain             string    `json:"chain"`
+	// ID identifies the remote tunnel.
+	ID string `json:"id"`
+	// Hostname is the tunnel's public root DNS name, without a scheme or port.
+	Hostname string `json:"hostname"`
+	// Token authenticates control API and relay requests. Keep it secret.
+	Token string `json:"-"`
+	// PrivateKey is the locally generated PKCS#8 PEM key. Keep it secret.
+	PrivateKey string `json:"-"`
+	// Certificate is the PEM-encoded visitor TLS leaf certificate.
+	Certificate string `json:"certificate"`
+	// Chain is the PEM-encoded certificate chain returned by the service.
+	Chain string `json:"chain"`
+	// CertificateExpiry is the stored certificate's expiration time.
 	CertificateExpiry time.Time `json:"certificateExpiry"`
 }
 
@@ -61,11 +65,16 @@ type Identity struct {
 // JSON omits Token and PrivateKey; custom Storage implementations must persist
 // those secrets separately if they need to resume issuance.
 type PendingIdentity struct {
-	ID         string `json:"id"`
-	Hostname   string `json:"hostname"`
-	Token      string `json:"-"`
+	// ID identifies the remote tunnel awaiting issuance.
+	ID string `json:"id"`
+	// Hostname is the tunnel's public root DNS name.
+	Hostname string `json:"hostname"`
+	// Token authenticates recovery or remote deletion. Keep it secret.
+	Token string `json:"-"`
+	// PrivateKey is the PKCS#8 PEM key used for CSR. Keep it secret.
 	PrivateKey string `json:"-"`
-	CSR        string `json:"csr"`
+	// CSR is the PEM-encoded certificate signing request for this key and hostname.
+	CSR string `json:"csr"`
 }
 
 // ProvisioningError means a known remote creation could neither be persisted nor
@@ -73,13 +82,18 @@ type PendingIdentity struct {
 // Pending.ID and Pending.Token to API.Remove. Key/CSR may be absent if generation
 // failed; such a record supports deletion, not Resume.
 type ProvisioningError struct {
+	// Pending contains the remote identity's recovery credentials.
 	Pending PendingIdentity
-	Err     error
+	// Err is the underlying persistence or cleanup failure.
+	Err error
 }
 
+// Error returns a recovery-required message with the underlying failure.
 func (e *ProvisioningError) Error() string {
 	return "opentunnel: provisioning recovery required: " + e.Err.Error()
 }
+
+// Unwrap returns the underlying failure for errors.Is and errors.As.
 func (e *ProvisioningError) Unwrap() error { return e.Err }
 
 // RecoveryIdentity returns the known credentials for secure recovery or deletion.
@@ -87,8 +101,10 @@ func (e *ProvisioningError) RecoveryIdentity() PendingIdentity { return e.Pendin
 
 // StoredTunnel associates a stored completed identity with its profile name.
 type StoredTunnel struct {
-	Profile string   `json:"profile"`
-	Tunnel  Identity `json:"tunnel"`
+	// Profile is the local storage name associated with Tunnel.
+	Profile string `json:"profile"`
+	// Tunnel is the completed identity, including live credential fields.
+	Tunnel Identity `json:"tunnel"`
 }
 
 // Storage persists profiles. Implementations must support concurrent calls and
@@ -117,7 +133,8 @@ type ClientOptions struct {
 	API string
 	// Storage persists identities. Nil selects XDG-backed storage.
 	Storage Storage
-	// HTTPClient performs API and bridge handshakes. Nil uses the default client.
+	// HTTPClient performs API and bridge handshakes. Nil uses the default HTTP
+	// transport. Custom transport, cookie jar and hooks are trusted with secrets.
 	HTTPClient *http.Client
 	// RequestTimeout limits each control API request. Zero selects 15 seconds.
 	RequestTimeout time.Duration
@@ -125,8 +142,11 @@ type ClientOptions struct {
 	Transport TransportOptions
 }
 
-// TransportOptions sets resource limits and timeouts. Zero values select defaults, except IdleTimeout;
-// positive values override them.
+// TransportOptions sets resource limits and timeouts. Zero values select defaults,
+// except IdleTimeout, which stays disabled. Negative values are invalid, and
+// BackoffMax must be at least BackoffMin after defaults are applied.
+// The relay has no per-channel flow control; sustained outbound backpressure
+// can delay other channels. Inbound overflow resets the affected channel.
 type TransportOptions struct {
 	// MaxConnections defaults to 256 concurrent visitor channels.
 	MaxConnections int
@@ -182,9 +202,13 @@ const (
 	StageReady ProvisionStage = "ready"
 )
 
-// ProvisionOptions configures progress reporting. OnProgress runs synchronously;
-// callbacks must not reenter operations on the same profile.
-type ProvisionOptions struct{ OnProgress func(ProvisionStage) }
+// ProvisionOptions configures progress reporting. Its zero value disables callbacks.
+type ProvisionOptions struct {
+	// OnProgress runs synchronously during Create or Resume. It must return
+	// promptly and must not reenter operations on the same profile or call
+	// Client.Close, which waits for the operation invoking the callback.
+	OnProgress func(ProvisionStage)
+}
 
 // ConnectOptions selects the profile, routes, and lifetime of a connection.
 type ConnectOptions struct {
@@ -197,79 +221,121 @@ type ConnectOptions struct {
 	Lifetime context.Context
 }
 
-// Event reports a lifecycle transition. Type determines which optional fields
-// apply: connected uses Session and Routes; connection-opened/closed use Conn
-// and Route (opened also uses Peer); reconnecting uses Attempt and Delay;
-// certificate-expiring/expired/renewed use Expiry (expired also uses Error);
-// certificate-refresh-failed uses Error; certificate-recovery-started has no
-// extra fields. Disconnected and stopped use Reason or Error. Delay marshals
-// as integer nanoseconds.
+// Event reports a lifecycle transition. Type determines which fields apply;
+// unused fields have their zero values. Delivery is bounded and lossy; use
+// Status.DroppedEvents to detect omissions and Status for current state.
 type Event struct {
-	Type    string        `json:"type"`
-	Attempt int           `json:"attempt,omitempty"`
-	Session string        `json:"session,omitempty"`
-	Routes  []string      `json:"routes,omitempty"`
-	Reason  string        `json:"reason,omitempty"`
-	Delay   time.Duration `json:"delay,omitempty"`
-	Conn    uint32        `json:"conn,omitempty"`
-	Route   string        `json:"route,omitempty"`
-	Peer    string        `json:"peer,omitempty"`
-	Error   string        `json:"error,omitempty"`
-	Expiry  time.Time     `json:"expiry,omitzero"`
+	// Type is connecting, connected, disconnected, reconnecting, stopped,
+	// connection-opened, connection-closed, certificate-expiring,
+	// certificate-expired, certificate-renewed, certificate-refresh-failed,
+	// or certificate-recovery-started.
+	Type string `json:"type"`
+	// Attempt is the retry count for connecting or reconnecting events.
+	Attempt int `json:"attempt,omitempty"`
+	// Session is the relay session identifier for a connected event.
+	Session string `json:"session,omitempty"`
+	// Routes contains the relay-accepted route names for a connected event.
+	Routes []string `json:"routes,omitempty"`
+	// Reason explains a disconnected event.
+	Reason string `json:"reason,omitempty"`
+	// Delay is the planned reconnect wait, encoded as integer nanoseconds in JSON.
+	Delay time.Duration `json:"delay,omitempty"`
+	// Conn identifies a visitor channel within its relay session. Zero is valid.
+	Conn uint32 `json:"conn,omitempty"`
+	// Route is the route name for a connection-opened or connection-closed event.
+	Route string `json:"route,omitempty"`
+	// Peer is the relay-provided address for a connection-opened event.
+	// It is not an independently verified visitor identity.
+	Peer string `json:"peer,omitempty"`
+	// Error contains diagnostic text for a failed channel, certificate or tunnel.
+	Error string `json:"error,omitempty"`
+	// Expiry is the certificate expiration for expiring, expired or renewed events.
+	Expiry time.Time `json:"expiry,omitzero"`
 }
 
 // Status is a snapshot of one connection. DroppedEvents counts events omitted
 // because its bounded event channel was full.
 type Status struct {
-	State         string    `json:"state"`
-	Hostname      string    `json:"hostname"`
-	Routes        Routes    `json:"routes"`
-	Session       string    `json:"session,omitempty"`
-	Connections   int       `json:"connections"`
-	LastError     string    `json:"lastError,omitempty"`
-	ConnectedAt   time.Time `json:"connectedAt,omitzero"`
-	DroppedEvents uint64    `json:"droppedEvents"`
+	// State is connecting, connected, reconnecting, waiting-routes or stopped.
+	State string `json:"state"`
+	// Hostname is the tunnel's public root DNS name.
+	Hostname string `json:"hostname"`
+	// Routes is a copy of the locally configured routes. Listener targets are empty.
+	Routes Routes `json:"routes"`
+	// Session is the current relay session identifier, empty when unattached.
+	Session string `json:"session,omitempty"`
+	// Connections counts visitor channels, including handshaking and queued sockets.
+	Connections int `json:"connections"`
+	// LastError is diagnostic text, cleared after a successful bridge attachment.
+	// It is not a typed error; use Connection.Err or Listener.Err for terminal errors.
+	LastError string `json:"lastError,omitempty"`
+	// ConnectedAt is the most recent successful attachment time, zero before the first.
+	ConnectedAt time.Time `json:"connectedAt,omitzero"`
+	// DroppedEvents counts lifecycle events omitted because the event buffer was full.
+	DroppedEvents uint64 `json:"droppedEvents"`
 }
 
 // TunnelInfo is the public remote state of a tunnel.
 type TunnelInfo struct {
-	ID            string `json:"id"`
-	Hostname      string `json:"hostname"`
-	State         string `json:"state"`
+	// ID identifies the remote tunnel.
+	ID string `json:"id"`
+	// Hostname is its public root DNS name.
+	Hostname string `json:"hostname"`
+	// State is online or offline as reported by the service.
+	State string `json:"state"`
+	// CertificateID identifies its certificate, if assigned.
 	CertificateID string `json:"certificateID,omitempty"`
 }
 
 // CreateTunnelResponse is the control API response for tunnel creation.
+// Unlike Identity, this response includes Token in JSON and ordinary formatting.
 type CreateTunnelResponse struct {
+	// Tunnel contains the new remote tunnel's public metadata.
 	Tunnel TunnelInfo `json:"tunnel"`
-	Token  string     `json:"token"`
+	// Token authenticates the new tunnel. Keep it secret and persist it securely.
+	Token string `json:"token"`
 }
 
 // CertificateInfo is the control API response for certificate status.
 type CertificateInfo struct {
-	ID    string           `json:"id"`
+	// ID identifies the service's certificate record.
+	ID string `json:"id"`
+	// State contains its current issuance result or challenge.
 	State CertificateState `json:"state"`
 }
 
 // CertificateState describes the current certificate issuance state.
+// Type determines which other fields apply. Treat challenge material as sensitive;
+// this API response does not redact it in JSON or ordinary formatting.
 type CertificateState struct {
-	Type        string    `json:"type"`
-	Token       string    `json:"token,omitempty"`
-	Key         string    `json:"key,omitempty"`
-	Certificate string    `json:"certificate,omitempty"`
-	Chain       string    `json:"chain,omitempty"`
-	Expiry      time.Time `json:"expiry,omitzero"`
-	Reason      string    `json:"reason,omitempty"`
+	// Type is challenge, issuing, ready or failed.
+	Type string `json:"type"`
+	// Token is the service's ACME challenge token when Type is challenge.
+	Token string `json:"token,omitempty"`
+	// Key is the ACME DNS-01 TXT value, not the local TLS private key.
+	Key string `json:"key,omitempty"`
+	// Certificate is the PEM leaf certificate when Type is ready.
+	Certificate string `json:"certificate,omitempty"`
+	// Chain is the PEM certificate chain when Type is ready.
+	Chain string `json:"chain,omitempty"`
+	// Expiry is the certificate expiration when Type is ready.
+	Expiry time.Time `json:"expiry,omitzero"`
+	// Reason explains terminal issuance failure when Type is failed.
+	Reason string `json:"reason,omitempty"`
 }
 
 // APIError reports the remote HTTP status and a recognized protocol error tag.
 // Unknown tags become HttpError so reflected credentials cannot reach logs.
 type APIError struct {
+	// StatusCode is the rejected request's HTTP response status.
 	StatusCode int
-	Tag        string
-	Message    string
+	// Tag is a recognized service error tag, or HttpError for an unknown tag.
+	Tag string
+	// Message is diagnostic text. API-generated errors do not copy response bodies.
+	Message string
 }
 
+// Error returns HTTP status, a normalized tag and Message.
 func (e *APIError) Error() string {
 	return fmt.Sprintf("opentunnel API: HTTP %d (%q): %s", e.StatusCode, diagnosticAPITag(e.Tag), e.Message)
 }
@@ -284,8 +350,13 @@ func diagnosticAPITag(tag string) string {
 }
 
 // AttachError reports a relay bridge attachment failure code.
-type AttachError struct{ Code string }
+// bad_token and cert_not_ready stop a connection; other failures are retried.
+type AttachError struct {
+	// Code is a recognized relay error code, or unknown for an unrecognized code.
+	Code string
+}
 
+// Error returns the normalized attachment failure code.
 func (e *AttachError) Error() string {
 	return fmt.Sprintf("opentunnel: attach failed: %q", diagnosticAttachCode(e.Code))
 }

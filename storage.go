@@ -15,7 +15,8 @@ import (
 	"time"
 )
 
-// NewMemoryStorage returns a concurrent store that lasts for this process only.
+// NewMemoryStorage returns an empty, concurrent store held only in memory.
+// It keeps no files and its credentials disappear when the store is discarded.
 func NewMemoryStorage() Storage {
 	return &memoryStorage{identities: make(map[string]Identity), pending: make(map[string]PendingIdentity)}
 }
@@ -147,11 +148,20 @@ func (s *memoryStorage) List(ctx context.Context) ([]StoredTunnel, error) {
 	return result, nil
 }
 
-// NewFileStorage stores profiles directly below root.
+// NewFileStorage stores profiles directly below root using the upstream file
+// layout. It creates directories on save, with private directory/file modes on
+// Unix, and rejects symlinked profile paths and credential files.
+// Each store serializes its methods, but separate stores/processes must coordinate
+// provisioning. File replacement is atomic per file, not across an identity's
+// files; a crash can leave mixed generations. It does not change an existing
+// root's mode or implement Windows ACL validation. Constructing the store
+// performs no I/O.
 func NewFileStorage(root string) Storage { return &fileStorage{root: root} }
 
 // NewXDGStorage uses $XDG_DATA_HOME/opentunnel, falling back to
 // ~/.local/share/opentunnel for upstream compatibility.
+// Relative XDG_DATA_HOME values are ignored. An unavailable home directory returns
+// an error when the fallback is needed. No directories are created until saving.
 func NewXDGStorage() (Storage, error) {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if !filepath.IsAbs(dataHome) {

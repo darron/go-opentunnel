@@ -18,6 +18,7 @@ installation commands and quick starts.
 | Task | Guide |
 | --- | --- |
 | Serve HTTP directly through the tunnel | [TLS listener](LISTENER.md) |
+| Browse exported types, methods and Go examples | [Go API documentation](https://pkg.go.dev/github.com/darron/go-opentunnel) |
 | Find API, protocol and storage contracts | [Package reference](DESIGN.md) |
 | Navigate source files and resource limits | [Implementation](IMPLEMENTATION.md) |
 | Run local tests or repeat a public-service check | [Testing](TESTING.md) |

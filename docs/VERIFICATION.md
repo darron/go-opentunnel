@@ -1,5 +1,39 @@
 # Local verification record
 
+## Go API documentation — 2026-10-10
+
+Added `doc.go` with startup, lifetime, concurrency, recovery and authentication
+contracts. Expanded public declaration/field comments and added local examples.
+The runtime client version remains 0.4.0; these changes are recorded under
+Unreleased for the planned v0.5.0.
+
+- A standard-library AST audit checked 184 public declarations and fields;
+  none lacked a doc comment. The audit covered the public root package, not
+  implementation-only methods or internal packages.
+- Go 1.25's `go/doc` renderer checked all 32 explicit Go-symbol links without
+  unresolved references. `go doc .` and `go doc -all .` rendered the overview
+  and public contracts. Field references link to their containing types for
+  Go 1.25 compatibility.
+- All three output-bearing examples passed on Go 1.25.0 and the local Go 1.27.2.
+  The two public-tunnel examples compiled with the suite and were not executed.
+  The README's complete Go example compiled as a separate module.
+- `make check` passed tests, vet, formatting, full golangci-lint (**0 issues**)
+  and the CLI build. All 131 local Markdown links/anchors resolved, and
+  `git diff --check` passed.
+- Ignoring comments and optional semicolons, a token comparison confirmed all
+  11 existing production Go files were unchanged. `doc.go` adds only a package comment;
+  runtime behavior, public signatures and dependencies are unchanged.
+- Requested pkg.go.dev indexing for the already published v0.4.0 through its
+  fetch endpoint. Both the versioned and latest package pages then returned
+  HTTP 200 with API documentation and the Connect/Listen examples; the Go
+  Reference badge also returned HTTP 200. The README links to that page.
+  New main-branch comments will appear there with the next published version.
+
+Use [the API documentation checks](TESTING.md#check-go-api-documentation) to read
+the docs and rerun examples. No generated HTML or new documentation dependency
+was committed. Existing public-service results below remain the live evidence;
+this documentation pass did not create another tunnel or GitHub App.
+
 ## Documentation navigation — 2026-10-10
 
 Applied i-have-adhd to the README, auth setup steps and documentation navigation.

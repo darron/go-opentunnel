@@ -11,6 +11,9 @@ import (
 // Client owns provisioning operations and connections; Close cancels and joins
 // them. Applications must coordinate same-profile provisioning across clients
 // or processes, even when sharing a store.
+// Methods support concurrent calls. Construct a Client with NewClient; its zero
+// value is not usable. User-supplied Storage and HTTP hooks must also support
+// concurrent use. Do not call Close from a provisioning progress callback.
 type Client struct {
 	api           *API
 	store         Storage
@@ -28,6 +31,8 @@ type Client struct {
 // NewClient creates an owner for provisioning and running tunnels. Zero options
 // select the hosted API, persistent XDG storage, and documented transport defaults.
 // Call Close when the application no longer needs the client.
+// NewClient does not contact the service or create a tunnel. Invalid API URLs,
+// negative resource limits/timeouts and inconsistent backoff limits return ErrInvalid.
 func NewClient(options ClientOptions) (*Client, error) {
 	if options.API == "" {
 		options.API = DefaultAPI
@@ -160,7 +165,8 @@ func (g *profileGuard) pause(ctx context.Context, c *Client, p string) error {
 	return nil
 }
 
-// Profiles lists local profile names using the configured store.
+// Profiles lists sorted local profile names using the configured store, including
+// unfinished provisioning records. It does not contact the service.
 func (c *Client) Profiles(ctx context.Context) ([]string, error) {
 	ctx, end, e := c.begin(ctx)
 	if e != nil {
@@ -216,6 +222,7 @@ func (c *Client) Pending(ctx context.Context, profile string) (*PendingIdentity,
 // leaves persisted pending credentials available to Resume or Remove. After a
 // known remote creation, bounded persistence or cleanup completes even if ctx is
 // canceled. If both fail, ProvisioningError exposes credentials for manual recovery.
+// ctx bounds the issuance wait; bounded recovery work can outlast its cancellation.
 func (c *Client) Create(ctx context.Context, profile string, options ProvisionOptions) (*Identity, error) {
 	ctx, end, e := c.begin(ctx)
 	if e != nil {
@@ -517,6 +524,9 @@ func (c *Client) submitCertificate(ctx context.Context, p string, pending Pendin
 // Remove releases the remote tunnel, stops this client's same-profile bridges,
 // and removes local credentials. Remote failures retain credentials for retry.
 // Empty profile selects "default"; an absent local identity succeeds.
+// Remote HTTP 404 is treated as successful deletion. After confirmed remote
+// deletion, local cleanup uses its own finite timeout even if ctx is canceled.
+// It does not remove otgo's separate authentication configuration or GitHub App.
 func (c *Client) Remove(ctx context.Context, profile string) error {
 	ctx, end, e := c.begin(ctx)
 	if e != nil {
@@ -592,6 +602,9 @@ func (c *Client) recoveryDeadline(profile string) time.Time {
 
 // Close cancels and joins client-owned operations and connections. It is safe
 // to call repeatedly and does not remove stored identities or remote tunnels.
+// Calls already running through API use their own contexts and are not joined.
+// It does not wait for application handlers and must not be called from an
+// OnProgress callback. New client-owned operations return ErrClosed after closing.
 func (c *Client) Close() error {
 	c.mu.Lock()
 	c.closed = true

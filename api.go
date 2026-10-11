@@ -15,7 +15,11 @@ import (
 
 const maxAPIResponse = 1 << 20
 
-// API performs authenticated requests to the OpenTunnel control API.
+// API performs requests to the OpenTunnel control API, authenticating with the
+// supplied tunnel token when required. It does not persist identities or keys.
+// Methods may be called concurrently when the supplied HTTP client and its
+// transport/hooks support concurrent use. Construct it with NewAPI; the zero
+// value is not usable.
 type API struct {
 	base    *url.URL
 	client  *http.Client
@@ -38,6 +42,9 @@ func (r *cancelReadCloser) Close() error {
 // sent across a network in cleartext. Redirects must remain at the initial
 // origin. The supplied client is cloned before its redirect policy is hardened;
 // its Transport, Jar, and redirect hook remain trusted with API credentials.
+// Nil client uses the default HTTP transport. Zero timeout selects 15 seconds;
+// negative timeout is invalid. The timeout covers reading the response body.
+// Responses are limited to 1 MiB. Use DefaultAPI for the hosted service.
 func NewAPI(base string, client *http.Client, timeout time.Duration) (*API, error) {
 	if timeout < 0 {
 		return nil, fmt.Errorf("%w: negative request timeout", ErrInvalid)
@@ -178,7 +185,9 @@ func (a *API) response(resp *http.Response, expected int, out any) error {
 	return nil
 }
 
-// Create creates a new tunnel and returns its credentials.
+// Create creates a new remote tunnel and returns its public metadata and secret
+// token. It does not generate a private key, request a certificate or save the
+// result. Use Client.Create for the complete provisioning workflow.
 func (a *API) Create(ctx context.Context) (CreateTunnelResponse, error) {
 	var out CreateTunnelResponse
 	resp, err := a.request(ctx, http.MethodPost, "", "", "", []byte("{}"))
@@ -195,7 +204,8 @@ func (a *API) Create(ctx context.Context) (CreateTunnelResponse, error) {
 	return out, nil
 }
 
-// Get returns the current state of tunnel id using token.
+// Get returns the remote state of tunnel id using token. Missing tunnels return
+// an APIError with HTTP status 404, unlike Client.Get's absent local result.
 func (a *API) Get(ctx context.Context, id, token string) (TunnelInfo, error) {
 	var out TunnelInfo
 	resp, err := a.request(ctx, http.MethodGet, id, "", token, nil)
@@ -212,7 +222,8 @@ func (a *API) Get(ctx context.Context, id, token string) (TunnelInfo, error) {
 	return out, nil
 }
 
-// BindCertificate submits csr for tunnel id using token.
+// BindCertificate submits a PEM-encoded CSR for tunnel id using token and returns
+// the initial issuance state. It does not poll until readiness or save the result.
 func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (CertificateInfo, error) {
 	var out CertificateInfo
 	body, _ := json.Marshal(struct {
@@ -229,7 +240,9 @@ func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (Certi
 	return validateCertificateInfo(out)
 }
 
-// Certificate returns the certificate status for tunnel id using token.
+// Certificate returns the current certificate issuance state for tunnel id using
+// token. A missing certificate returns an APIError; a failed issuance is a valid
+// response whose State.Type is "failed" and whose State.Reason explains failure.
 func (a *API) Certificate(ctx context.Context, id, token string) (CertificateInfo, error) {
 	var out CertificateInfo
 	resp, err := a.request(ctx, http.MethodGet, id, "/certificate", token, nil)
@@ -243,7 +256,9 @@ func (a *API) Certificate(ctx context.Context, id, token string) (CertificateInf
 	return validateCertificateInfo(out)
 }
 
-// Remove permanently removes tunnel id using token.
+// Remove permanently removes remote tunnel id using token. Missing tunnels
+// return an APIError with HTTP status 404. It does not stop local connections or
+// remove stored credentials; Client.Remove performs that coordinated cleanup.
 func (a *API) Remove(ctx context.Context, id, token string) error {
 	resp, err := a.request(ctx, http.MethodDelete, id, "", token, nil)
 	if err != nil {
