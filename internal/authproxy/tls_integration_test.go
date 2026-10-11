@@ -9,10 +9,34 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type closeObserver struct {
+	net.Conn
+	closed chan<- struct{}
+	once   sync.Once
+}
+
+func (c *closeObserver) Close() error {
+	c.once.Do(func() {
+		select {
+		case c.closed <- struct{}{}:
+		default:
+		}
+	})
+	return c.Conn.Close()
+}
+
+type connWithObservedNetConn struct {
+	net.Conn
+	raw net.Conn
+}
+
+func (c *connWithObservedNetConn) NetConn() net.Conn { return c.raw }
 
 func TestTLSStreamRevocationAbortsBlockedClientAndReleasesLease(t *testing.T) {
 	var backendBytes atomic.Int64
@@ -57,9 +81,17 @@ func TestTLSStreamRevocationAbortsBlockedClientAndReleasesLease(t *testing.T) {
 
 	front := httptest.NewUnstartedServer(h)
 	var connContexts atomic.Int32
+	var sawTLSNetConn atomic.Bool
+	transportAborted := make(chan struct{}, 1)
 	front.Config.ConnContext = func(ctx context.Context, conn net.Conn) context.Context {
 		connContexts.Add(1)
-		return WithClientConnection(ctx, conn)
+		provider, ok := conn.(interface{ NetConn() net.Conn })
+		if !ok {
+			return WithClientConnection(ctx, conn)
+		}
+		sawTLSNetConn.Store(true)
+		observedRaw := &closeObserver{Conn: provider.NetConn(), closed: transportAborted}
+		return WithClientConnection(ctx, &connWithObservedNetConn{Conn: conn, raw: observedRaw})
 	}
 	front.StartTLS()
 	defer front.Close()
@@ -70,12 +102,12 @@ func TestTLSStreamRevocationAbortsBlockedClientAndReleasesLease(t *testing.T) {
 	transport := &http.Transport{
 		ForceAttemptHTTP2: false,
 		DialTLSContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			// Keep the normal OS receive window. waitForBlockedTLSWrite proves that
+			// writes stall; shrinking SO_RCVBUF instead measures platform-specific
+			// draining of bytes queued before the connection is closed.
 			raw, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, network, address)
 			if err != nil {
 				return nil, err
-			}
-			if tcp, ok := raw.(*net.TCPConn); ok {
-				_ = tcp.SetReadBuffer(1024)
 			}
 			conn := tls.Client(raw, tlsConfig.Clone())
 			if err := conn.HandshakeContext(ctx); err != nil {
@@ -115,10 +147,18 @@ func TestTLSStreamRevocationAbortsBlockedClientAndReleasesLease(t *testing.T) {
 	if connContexts.Load() == 0 {
 		t.Fatal("TLS server did not attach the client connection to request context")
 	}
-
+	if !sawTLSNetConn.Load() {
+		t.Fatal("TLS server connection did not expose its raw transport")
+	}
 	waitForBlockedTLSWrite(t, h, &backendBytes)
+	revokedAt := time.Now()
 	if err := tokens.Revoke(id); err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-transportAborted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("revocation did not close the client TLS transport")
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for activeLeaseCount(h) != 0 && time.Now().Before(deadline) {
@@ -139,6 +179,9 @@ func TestTLSStreamRevocationAbortsBlockedClientAndReleasesLease(t *testing.T) {
 	case err := <-readDone:
 		if err == nil {
 			t.Fatal("blocked TLS client saw a clean stream end instead of transport abort")
+		}
+		if ctx.Err() != nil || time.Since(revokedAt) >= 5*time.Second {
+			t.Fatalf("client observed request timeout instead of transport abort: %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("blocked TLS client did not observe transport abort")

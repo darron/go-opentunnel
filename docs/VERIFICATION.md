@@ -31,6 +31,16 @@ burst initially made the new test flaky; per-request upstream barriers removed
 that OS-dependent setup assumption. Ten current-Go repetitions and three
 minimum-Go race repetitions passed.
 
+The [first audit CI run](https://github.com/darron/go-opentunnel/actions/runs/38172500939)
+passed macOS tests, full lint and sustained fuzzing, but both Linux toolchains
+failed the new TLS fixture's client-drain deadline. Local Linux reproduction
+confirmed that the artificial 1 KiB receive window delayed buffered data after
+the transport closed; the lease and backend cancellation checks had succeeded.
+The portable fixture now observes raw transport close directly with normal TCP
+buffering. Twenty repetitions and five race repetitions passed on each of
+macOS/Linux; removing the client-connection attachment still fails in Linux.
+The production revocation code did not change.
+
 Five 45-second current-Go fuzz targets passed with 7,316,805 executions; an
 earlier complete pass also succeeded. An initial minimum-Go 120-second `FuzzDecodeControl` run
 ended with `context deadline exceeded` and no failing-input corpus. Its cause

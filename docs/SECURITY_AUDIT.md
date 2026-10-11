@@ -52,6 +52,17 @@ the backend output stalls. Revoking its token must release the handler lease,
 cancel the backend and abruptly close the client transport. Removing the
 `WithClientConnection` attachment in an isolated test copy makes it fail with a
 blocked lease. This checks behavior missing from the older in-memory fixtures.
+The first Linux CI run exposed a portability error in that new TLS fixture:
+a forced 1 KiB receive buffer delayed draining bytes queued before transport
+close beyond the two-second assertion. Lease release and backend cancellation
+had already succeeded. The fixture now uses the normal receive window and
+observes raw transport close directly, preserving production's TLS `NetConn()`
+unwrapping. It still requires an actually stalled backend, lease release,
+upstream cancellation and an abrupt client error before the request deadline.
+Twenty macOS and twenty Linux repetitions passed, as did five race repetitions
+on each. A fresh Linux mutation removing the connection attachment fails the
+transport-close assertion. No production change was needed.
+
 Slow-login tests now wait for an actual body read; rejected JSON/multipart forms
 must be denied before that read. They no longer infer this from a short sleep.
 
