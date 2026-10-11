@@ -16,9 +16,9 @@
 - Preserve backend cookie syntax while stripping gate cookies, and preserve
   visitor connection ID zero in JSON lifecycle events.
 - Add mutation-proven admission, version, token-binding and TLS regressions,
-  anonymous-gate fuzzing, current-Go
-  vulnerability checks and bounded sustained fuzzing in CI. No runtime dependency
-  or OpenTunnel wire-format change.
+  anonymous-gate fuzzing, current-Go vulnerability checks and bounded sustained
+  fuzzing in CI. Simplify the README and guides, documenting migration and
+  verification evidence. No runtime dependency or OpenTunnel wire-format change.
 
 [Compare v0.6.0 to v0.7.0](https://github.com/darron/go-opentunnel/compare/v0.6.0...v0.7.0)
 
