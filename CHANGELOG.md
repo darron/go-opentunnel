@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Simplify the README and auth setup instructions. Add a documentation index,
+  put the protected proxy quick start before validation, and archive earlier
+  reviews with updated links.
+
 ## v0.4.0 — Authenticated application proxy — 2026-10-10
 
 - Add `otgo proxy` to protect every path and method of an existing HTTP backend
@@ -48,7 +52,7 @@
   [listener guidance](docs/LISTENER.md). Record local, hosted CI, and
   [public-service validation](docs/LIVE_TESTING.md#tls-listener-retest-2026-10-10).
 - Update the advertised client version to match this release.
-- Address findings from an [Amp/Oracle security and correctness review](docs/AMP_REVIEW_V0.3.0.md).
+- Address findings from an [Amp/Oracle security and correctness review](docs/archive/AMP_REVIEW_V0.3.0.md).
 
 [Compare v0.2.0 to v0.3.0](https://github.com/darron/go-opentunnel/compare/v0.2.0...v0.3.0)
 
@@ -65,8 +69,8 @@
 - Bound fragmented inbound allocation and add optional idle timeouts. Keep
   interactive CLI tunnels running after invalid route input.
 - Add security and concurrency regressions, Linux/macOS CI, and documented live
-  retests. Address the [initial review](docs/HARDENING.md) and
-  [Amp/Oracle findings](docs/AMP_REVIEW.md).
+  retests. Address the [initial review](docs/archive/HARDENING.md) and
+  [Amp/Oracle findings](docs/archive/AMP_REVIEW.md).
 
 [Compare v0.1.0 to v0.2.0](https://github.com/darron/go-opentunnel/compare/v0.1.0...v0.2.0)
 

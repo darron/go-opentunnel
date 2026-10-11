@@ -359,6 +359,9 @@ accepts common API/storage/profile/JSON/timeout flags. `connect` supports
 interactive `status`, `routes`, and `quit`; `listen` serves an HTTP diagnostic
 handler directly over tunnel TLS. It does not daemonize or install services.
 
+For a protected backend, use `auth` to configure login and machine tokens, then
+`proxy` to start the authenticated HTTP gate. See the [auth guide](AUTH_PROXY.md).
+
 The webapp example embeds `Client.Listen` by default, consumes events, and shuts
 down through context cancellation. `--forward` uses `Client.Connect` with a
 loopback server; `--local-only` starts just that local test target.
@@ -367,8 +370,8 @@ See [TESTING.md](TESTING.md) for runnable commands,
 [LIVE_TESTING.md](LIVE_TESTING.md) for hosted interoperability results and gaps.
 The [security model](SECURITY.md) distinguishes relay encryption, metadata,
 endpoint plaintext, and active domain/certificate operator impersonation. The
-[hardening guide](HARDENING.md) collects the current review changes and remaining
-limits.
+[auth review](AUTH_SECURITY_REVIEW.md) records v0.4.0 findings and limits.
+Earlier hardening decisions are in the [review archive](archive/README.md).
 
 ## Scope
 

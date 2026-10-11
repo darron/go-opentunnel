@@ -6,18 +6,27 @@ to the CLI; the Go library keeps its existing API.
 
 ## Password setup
 
-```sh
-otgo auth init --profile inbox --upstream http://127.0.0.1:57732
-otgo proxy --profile inbox
-```
+1. Save the backend and create or reuse its tunnel:
 
-Setup provisions or reuses an OpenTunnel identity and prints a generated password
-once. Save it in your password manager. Alternatively, use `--password-stdin` to
-supply one line of 12–1024 bytes through stdin; the CLI does not echo it or
-accept it in a flag. Prefer the generated password over a memorable phrase.
-Open the printed HTTPS URL and sign in. Browser sessions last eight hours and
-end on restart. Sign out at `/__otgo/logout`. A shared password grants whole-backend
-access, without identifying individual people.
+   ```sh
+   otgo auth init --profile inbox --upstream http://127.0.0.1:57732
+   ```
+
+   Save the generated password in your password manager; it is shown once.
+   To supply your own, use `--password-stdin` with one line of 12–1024 bytes.
+   The CLI does not echo passwords or accept them in flags.
+
+2. Start the proxy:
+
+   ```sh
+   otgo proxy --profile inbox
+   ```
+
+3. Open the printed HTTPS URL and sign in.
+
+Browser sessions last eight hours and end on restart. Sign out at
+`/__otgo/logout`. A shared password grants whole-backend access without
+identifying individual people.
 
 An upstream is an origin without a path prefix, query or embedded credentials.
 HTTP requires exact loopback addresses or `localhost`; other origins require
@@ -27,10 +36,10 @@ directly; use **`proxy`** for authentication.
 
 ## Profiles and persistence
 
-A profile names one saved tunnel and auth configuration. Different profiles can
-run concurrently against different backends. An OS lock refuses two proxies for
-one profile. Setup, replacement and reset require that profile to be stopped;
-token commands work while its proxy runs.
+A profile is a name for one saved tunnel, backend and auth configuration.
+Use a different profile for each backend. They can run concurrently on one
+machine; a second proxy for the same profile is refused. Stop that profile's
+proxy before setup, replacement or reset. Token commands work while it runs.
 
 | Item | Default path |
 | --- | --- |
@@ -44,12 +53,16 @@ overrides subsequently. Config binds to the stored tunnel ID, hostname and API
 origin. Missing/mismatched state fails startup instead of silently provisioning.
 
 Retrieve a hostname while running with `otgo get --profile inbox --json`. The
-password cannot be recovered from its verifier. To replace it or the backend,
-stop the proxy and run `auth init --replace` with the new settings. Replacement
-revokes machine tokens. Every `auth init` revokes any leftover token registry,
-even when the auth configuration is missing. `auth reset` removes known local auth files, retaining
-the tunnel and GitHub App. `otgo remove` separately deletes the tunnel. Lock files
-are retained to prevent simultaneous lock owners.
+password cannot be recovered from its saved verifier.
+
+| Task | Command while the profile is stopped |
+| --- | --- |
+| Change the password or backend | `otgo auth init --profile inbox --replace --upstream http://127.0.0.1:57732` |
+| Remove local auth settings, retaining the tunnel and GitHub App | `otgo auth reset --profile inbox` |
+| Delete the tunnel | `otgo remove --profile inbox` |
+
+Every `auth init` revokes machine tokens, including leftover tokens when the auth
+configuration is missing. Lock files remain to prevent simultaneous lock owners.
 
 Auth storage is supported on macOS, Linux and BSD platforms with the required
 file/lock APIs. **Windows authentication setup/startup is refused** until private
@@ -57,22 +70,30 @@ ACL validation is implemented; the SDK and other CLI commands remain available.
 
 ## GitHub login
 
-First run `auth init` to save the backend and tunnel. Stop that profile’s proxy,
-then switch its browser login to GitHub:
+First complete password setup to save the backend and tunnel.
 
-```sh
-otgo auth github --profile inbox --allow-user darron
-otgo proxy --profile inbox
-```
+1. Stop that profile's proxy and start GitHub setup:
 
-Open the exact temporary loopback URL printed by the CLI. Its one-use capability
-binds one browser, then redirects to `/__otgo/github/setup` without the token.
-The create/callback routes stay under that prefix. Another visitor cannot replace
-your setup browser; concurrent wizards use distinct cookies. Follow its buttons
-to GitHub. GitHub asks
-you to approve App creation. otgo converts the registration code and privately
-saves client credentials. It requests no repository permissions or webhook
-deliveries. Owner approval remains a GitHub step. Repeat `--allow-user` as needed.
+   ```sh
+   otgo auth github --profile inbox --allow-user darron
+   ```
+
+   Replace `darron` with your GitHub login. Repeat `--allow-user` for other accounts.
+
+2. Open the exact temporary loopback URL printed by the CLI. Follow its buttons
+   to GitHub and approve App creation. It requests no repository permissions or
+   webhook deliveries. otgo saves the client credentials privately.
+
+3. Start the proxy:
+
+   ```sh
+   otgo proxy --profile inbox
+   ```
+
+The setup link works once and binds one browser, then redirects to
+`/__otgo/github/setup` without the token. All setup routes use that prefix.
+Another visitor cannot replace your setup browser; concurrent wizards use
+distinct cookies.
 
 Cancelling before credentials begin saving preserves the previous login mode.
 Once saving begins, the command waits for it and reports the save result, even
@@ -127,6 +148,8 @@ machine tokens, hostname, password verifier/GitHub credentials and backend setti
 
 ## HTTP behavior and trust
 
+### Browser requests
+
 Host/TLS SNI must match the public hostname. Browser writes/WebSockets require
 the public Origin. For cookie-authenticated requests, browser fetch metadata
 rejects foreign scripts, images, frames and API calls, while permitting top-level
@@ -136,11 +159,15 @@ Login/logout forms use CSRF tokens, bounded bodies and short
 read deadlines; password hashing has a global rate limit and two concurrent slots.
 Sessions use Secure, HttpOnly, SameSite=Lax host cookies.
 
+### Response caching
+
 Authenticated backend responses override public caching directives with
 `Cache-Control: private, no-store`, `Pragma: no-cache` and an expired `Expires`
 value. Common CDN override headers are removed. This prevents compliant HTTP
 caches from storing protected responses. It cannot erase content already seen
 or prevent an allowed backend from saving content in browser application storage.
+
+### Resource limits
 
 Login resource limits protect the process, but do not guarantee availability
 under attack. Password verification allows a burst of ten attempts, refills one
@@ -153,6 +180,8 @@ service before authentication. Slow login bodies are bounded and idle HTTP
 keep-alive connections close after 30 seconds. Active authenticated streams do
 not inherit a server-wide read/write timeout.
 
+### Backend compatibility
+
 Backend Host/Origin/Referer are adapted to its fixed origin, and redirects to that
 origin are translated back. `/__otgo/` and `__Host-otgo-` cookie names are reserved.
 Responses use `Referrer-Policy: same-origin` so ordinary same-origin forms keep
@@ -163,6 +192,5 @@ Apps with hard-coded absolute URLs, another required origin or reserved names ma
 need their own proxy settings. Trust the backend’s code: its same-origin scripts
 and service workers can act as the authenticated visitor and store already
 received content. The gate does not sandbox an authorized application. Allowed users can exercise all backend functionality.
-OpenTunnel's operator/certificate trust boundary still applies; see
-[SECURITY.md](SECURITY.md), [AUTH_PROXY_REVIEW.md](AUTH_PROXY_REVIEW.md) and the
-[pre-v0.4.0 security review](AUTH_SECURITY_REVIEW.md).
+Read the [security model](SECURITY.md) for OpenTunnel's operator/certificate trust
+boundary and the [v0.4.0 auth review](AUTH_SECURITY_REVIEW.md) for findings and fixes.

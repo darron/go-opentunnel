@@ -62,7 +62,7 @@ The temporary Python driver initially failed its extra post-deletion HTTP
 assertion: its raw API probe returned 403 rather than the expected 404. This was
 not a CLI/app failure. A Go consumer using this package's API transport returned
 404 for every deleted completed tunnel. The reason for the Python 403 was not
-established. See the [dated live record](LIVE_TESTING.md#post-hardening-cli-and-app-retest)
+established. See the [dated live record](../LIVE_TESTING.md#post-hardening-cli-and-app-retest)
 for the checks and their limits.
 
 ## Regression coverage added
@@ -73,11 +73,11 @@ public service.
 
 | Boundary | Regression sources |
 | --- | --- |
-| TLS route isolation, expiry, recovery, lifetime, idle channels, and backoff | [hardening_test.go](../hardening_test.go) and [tunnel_test.go](../tunnel_test.go) |
-| API transport and cross-origin bridge redirects | [api_test.go](../api_test.go) and [bridge_redirect_test.go](../bridge_redirect_test.go) |
-| Credential rendering | [redaction_test.go](../redaction_test.go) |
-| Storage permissions, safe markers, and deletion boundaries | [storage_hardening_test.go](../storage_hardening_test.go) |
-| CLI output, malformed input, quit, and output failures | [commands_test.go](../cmd/otgo/commands_test.go) |
+| TLS route isolation, expiry, recovery, lifetime, idle channels, and backoff | [hardening_test.go](../../hardening_test.go) and [tunnel_test.go](../../tunnel_test.go) |
+| API transport and cross-origin bridge redirects | [api_test.go](../../api_test.go) and [bridge_redirect_test.go](../../bridge_redirect_test.go) |
+| Credential rendering | [redaction_test.go](../../redaction_test.go) |
+| Storage permissions, safe markers, and deletion boundaries | [storage_hardening_test.go](../../storage_hardening_test.go) |
+| CLI output, malformed input, quit, and output failures | [commands_test.go](../../cmd/otgo/commands_test.go) |
 
 The stuck-issuance and repeated-failure tests reproduced an indefinite removal
 wait and ten CSR submissions within one retry interval before the fixes. Tests
@@ -86,7 +86,7 @@ and cooldown reset after installing a valid replacement. Expiry and API-outage
 tests also failed when their respective guards were temporarily removed, then
 passed after restoration. Overflow coverage checks its distinct closure error
 while a healthy channel keeps forwarding. The external-package embedding
-[example](../example_test.go) is compiled by the normal suite.
+[example](../../example_test.go) is compiled by the normal suite.
 
 ## Security findings
 
@@ -132,7 +132,7 @@ while a healthy channel keeps forwarding. The external-package embedding
 - File storage has no cross-process transaction or lock. Same-user races and
   mixed credential generations after a crash remain possible.
 - The hosted service and its deployed revision have not received an independent
-  audit. Read [SECURITY.md](SECURITY.md) for its trust boundary.
+  audit. Read [SECURITY.md](../SECURITY.md) for its trust boundary.
 
-Use [TESTING.md](TESTING.md) for repeatable local commands and
-[LIVE_TESTING.md](LIVE_TESTING.md) for dated public-service evidence.
+Use [TESTING.md](../TESTING.md) for repeatable local commands and
+[LIVE_TESTING.md](../LIVE_TESTING.md) for dated public-service evidence.

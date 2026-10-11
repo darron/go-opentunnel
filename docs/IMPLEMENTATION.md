@@ -122,6 +122,6 @@ I/O and shutdown:
 Use [TESTING.md](TESTING.md) to rerun checks. Read
 [VERIFICATION.md](VERIFICATION.md) for local evidence,
 [LIVE_TESTING.md](LIVE_TESTING.md) for hosted-service evidence, and
-[SECURITY.md](SECURITY.md) for trust boundaries. Use
-[HARDENING.md](HARDENING.md) and [AMP_REVIEW.md](AMP_REVIEW.md) for hardening
-changes, review dispositions, and unresolved limits.
+[SECURITY.md](SECURITY.md) for trust boundaries. Earlier hardening decisions are
+in the [review archive](archive/README.md); the
+[v0.4.0 auth review](AUTH_SECURITY_REVIEW.md) covers the CLI gate.

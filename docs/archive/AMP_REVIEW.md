@@ -42,7 +42,7 @@ The initial foreground cooldown case submitted **ten CSRs** during one retry
 interval. A 64 KiB one-byte-fragment payload retained about **2.3 MiB** of slice
 capacity and payload allocations. The fixed cases pass.
 
-[`amp_regression_test.go`](../amp_regression_test.go) exercises:
+[`amp_regression_test.go`](../../amp_regression_test.go) exercises:
 
 - Channel-only abort while a send waits for delivery; the shared session survives.
 - Reset cleanup behind a full data queue, canceled-message discard over a real
@@ -60,14 +60,14 @@ capacity and payload allocations. The fixed cases pass.
 - A server reflecting its received Authorization header into `_tag`; ordinary
   and structured API errors omit that reflected value.
 
-[`amp_confirmation_test.go`](../amp_confirmation_test.go) retains Amp's four
+[`amp_confirmation_test.go`](../../amp_confirmation_test.go) retains Amp's four
 additional probes: ambiguous initial/runtime bind failures, repeated resume of
 active issuance without rebinding, and bounded cleanup-queue saturation. These
 passed five race repetitions after being added to the repository.
 
-[`commands_test.go`](../cmd/otgo/commands_test.go) exercises invalid targets,
+[`commands_test.go`](../../cmd/otgo/commands_test.go) exercises invalid targets,
 invalid names, and route conflicts, followed by a successful next command.
-[`redaction_test.go`](../redaction_test.go) also verifies that recovery errors
+[`redaction_test.go`](../../redaction_test.go) also verifies that recovery errors
 keep their pending token/key out of ordinary formatting, hex formatting, and
 JSON. Existing real-TLS, half-close, route-isolation, renewal, and lifecycle tests remain
 part of the complete suite.
@@ -97,7 +97,7 @@ provisioning, cancellation/resume, all inspection commands, normal-trust HTTPS,
 incremental streaming, text/binary WSS, large/concurrent uploads, route changes,
 invalid input, shutdown, and remote/local deletion. All three dedicated identities
 were removed; the Go API confirmed HTTP 404, and all owned processes stopped.
-See the [post-Amp live record](LIVE_TESTING.md#post-amp-review-retest).
+See the [post-Amp live record](../LIVE_TESTING.md#post-amp-review-retest).
 
 A tool-server interruption lost the first run's final command result. Its test
 processes had stopped and storage was empty. The complete workflow was repeated
@@ -132,5 +132,5 @@ is used as the final live verification.
 
 No established SNI authorization bypass or cross-origin credential transfer was
 found. AI review and tests provide evidence for these cases, not proof of every
-input or long-running production behavior. See [SECURITY.md](SECURITY.md) and the
-[dated live tests](LIVE_TESTING.md).
+input or long-running production behavior. See [SECURITY.md](../SECURITY.md) and the
+[dated live tests](../LIVE_TESTING.md).

@@ -1,9 +1,11 @@
 # Security model
 
-For the CLI gate, see [AUTH_PROXY.md](AUTH_PROXY.md) and the
-[auth review](AUTH_PROXY_REVIEW.md) and [pre-v0.4.0 review](AUTH_SECURITY_REVIEW.md).
+For the CLI gate, see the [auth guide](AUTH_PROXY.md) and
+[v0.4.0 security review](AUTH_SECURITY_REVIEW.md).
 `otgo proxy` protects every backend path/method;
 ordinary `connect` and `listen` do not add login protection.
+
+## CLI authentication
 
 Auth secrets require account-owned 0700 directories, regular 0600 files, bounded
 strict JSON, no-follow opens, atomic replacement and OS file locks. Password
@@ -169,9 +171,8 @@ the same account.
 Local tests check ciphertext at the relay, SNI route isolation,
 certificate/key/SAN validation, API redirect policy, credential redaction, and
 storage deletion boundaries. Those tests establish local behavior; they are not
-an independent audit or current live revalidation of the hosted service. See the
-[hardening guide](HARDENING.md), [Amp review](AMP_REVIEW.md), and the dated
-[live record](LIVE_TESTING.md).
+an independent audit of the hosted service. See the dated [live record](LIVE_TESTING.md)
+for public-service checks and the [archive](archive/README.md) for earlier reviews.
 
 ## Direct TLS listener
 

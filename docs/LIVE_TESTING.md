@@ -380,7 +380,7 @@ Long-term renewal, malformed relay controls, overflow, fatal attachment codes,
 and forced server drain still rely on fixture evidence. A forced bridge loss
 was exercised in the earlier record, not re-induced in this final live pass.
 The hosted service's deployed revision remains unknown. See
-[HARDENING.md](HARDENING.md) for dispositions and remaining limits.
+[HARDENING.md](archive/HARDENING.md) for dispositions and remaining limits.
 
 
 ## Post-Amp review retest
@@ -419,7 +419,7 @@ Final local validation passed `make check` (golangci-lint 0 issues), the full
 race suite, Go 1.25 compatibility tests, parser fuzz smoke tests, ten repetitions
 of focused fix races, and five repetitions of the retained Amp confirmation
 probes. Linux and Windows amd64 package/CLI test compilation and example builds
-passed. The [Amp review record](AMP_REVIEW.md) describes accepted findings,
+passed. The [Amp review record](archive/AMP_REVIEW.md) describes accepted findings,
 confirmation, and remaining boundaries.
 
 Long-term renewal, malformed controls, overflow, cleanup saturation, forced
@@ -461,7 +461,7 @@ and [LISTENER.md](LISTENER.md) for evidence and contracts.
 
 ## v0.3.0 post-review retest, 2026-10-10
 
-After fixing the [Amp/Oracle removal finding](AMP_REVIEW_V0.3.0.md), the rebuilt
+After fixing the [Amp/Oracle removal finding](archive/AMP_REVIEW_V0.3.0.md), the rebuilt
 CLI and webapp repeated the complete TLS-listener workflow above. The driver
 recorded **exit 0**. It used private temporary storage and normal public TLS
 verification. No credentials or raw workflow artifacts were added to the repo.

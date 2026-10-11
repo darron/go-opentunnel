@@ -59,8 +59,8 @@ that critique without another Oracle call.
 
 The rebuilt CLI and embedded app subsequently repeated the full public-service
 workflow with **exit 0** and verified deletion of all three temporary identities.
-See [the live record](LIVE_TESTING.md#v030-post-review-retest-2026-10-10) and
-[verification details](VERIFICATION.md#v030-review-follow-up-2026-10-10).
+See [the live record](../LIVE_TESTING.md#v030-post-review-retest-2026-10-10) and
+[verification details](../VERIFICATION.md#v030-review-follow-up-2026-10-10).
 
 ## Scope and confidence
 
@@ -71,4 +71,4 @@ deadline workers, and peer trust. These checks provide evidence for the reviewed
 paths; they do not establish every input or long-running production behavior.
 The hosted operator remains inside the documented certificate/DNS trust
 boundary, and relay peer metadata remains relay-trusted. See
-[SECURITY.md](SECURITY.md) and [listener contracts](LISTENER.md).
+[SECURITY.md](../SECURITY.md) and [listener contracts](../LISTENER.md).

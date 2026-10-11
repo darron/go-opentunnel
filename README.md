@@ -1,59 +1,102 @@
 # go-opentunnel
 
-Embed an [OpenTunnel](https://opentunnel.xyz) client in your Go application. Serve
-your HTTP handler directly over public HTTPS, or forward to an existing TCP server.
-Visitor TLS terminates in your process.
+Expose a local application over public HTTPS with [OpenTunnel](https://opentunnel.xyz).
+Use `otgo` to require password or GitHub login, or embed the client in your Go app.
+Visitor TLS terminates in your process. Read the [security model](docs/SECURITY.md)
+for the relay and domain operator's trust boundaries.
+
+## Install
+
+For the CLI:
+
+```sh
+brew install darron/tap/otgo
+```
+
+For the Go library:
 
 ```sh
 go get github.com/darron/go-opentunnel
 ```
 
-Requires Go 1.25 or newer. The sole dependency outside the standard library is
+Go 1.25 or newer is required to build from source. The sole external Go module is
 `github.com/coder/websocket`. Licensed under [MIT](LICENSE).
+See the [changelog](CHANGELOG.md) for release highlights and the
+[Homebrew guide](docs/HOMEBREW.md) for updates and HEAD installs.
 
-See [CHANGELOG.md](CHANGELOG.md) for release highlights.
+## Protect a local application with otgo
 
-Install the CLI with `brew install darron/tap/otgo`. See
-[Homebrew installation and automation](docs/HOMEBREW.md) for HEAD installs and
-release maintenance. `make build` builds only `bin/otgo`.
+1. Save a backend under a named profile:
+
+   ```sh
+   otgo auth init --profile inbox --upstream http://127.0.0.1:57732
+   ```
+
+   Setup creates or reuses a tunnel and shows a generated password once. Save it
+   in your password manager. Use `--password-stdin` to supply your own password.
+
+2. Start the protected proxy:
+
+   ```sh
+   otgo proxy --profile inbox
+   ```
+
+3. Open the printed HTTPS URL and sign in.
+
+Every backend path requires authentication, including assets, HTTP MCP, SSE and
+WebSockets. **Use `proxy` for protection:** the diagnostic `connect` and `listen`
+commands expose services directly without a login gate.
+
+A profile saves the hostname, backend and auth settings in XDG directories.
+Restarting reuses those settings and requires a fresh browser login. Use different
+profiles for different backends; they can run concurrently on one machine.
+While a proxy runs, `otgo get --profile inbox` shows its hostname.
+
+### GitHub login
+
+Stop the profile's proxy, then switch its login mode:
+
+```sh
+otgo auth github --profile inbox --allow-user darron
+otgo proxy --profile inbox
+```
+
+Follow the printed setup link to create a GitHub App. It requests no repository
+permissions. Repeat `--allow-user` to approve more accounts. GitHub login replaces
+password login. Existing OAuth/GitHub Apps are also supported.
+
+### Machine clients and MCP
+
+Create a short-lived token while the proxy runs:
+
+```sh
+otgo auth token create --profile inbox --ttl 1h
+```
+
+Send it as `Authorization: Bearer TOKEN`, or use `X-Otgo-Token` when the backend
+needs its own Authorization header. Tokens grant access to the whole backend.
+Clients that cannot supply a session cookie or token are denied. otgo does not
+implement an MCP OAuth authorization server or automatic client registration.
+
+The [auth guide](docs/AUTH_PROXY.md) covers token revocation, password replacement,
+GitHub setup, saved file paths and HTTP compatibility.
 
 ## Embed the client
 
-Use `Client.Listen` to give `http.Server` the actual visitor TLS connection:
-
-```go
-listener, err := client.Listen(ctx, opentunnel.ListenOptions{
-    Profile: "demo",
-    Routes: []string{"@"},
-    Lifetime: ctx,
-})
-if err != nil {
-    return err
-}
-defer listener.Close()
-server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
-return server.Serve(listener)
-```
-
-`Request.TLS` contains the real handshake. `RemoteAddr` comes from relay metadata;
-HTTP forwarding headers do not override it. Closing aborts accepted sockets and
-joins package workers. Read the [listener contracts](docs/LISTENER.md) for peer
-trust, admission limits, terminal errors, and HTTP shutdown behavior.
-
-Use `Client.Connect` for an existing TCP server. This function connects
-`127.0.0.1:8080`. Pass your
-application's shutdown context. The `demo` profile persists across restarts.
+Use `Client.Listen` to serve an HTTP handler over the visitor's TLS connection:
 
 ```go
 package example
 
 import (
     "context"
+    "net/http"
+    "time"
 
     opentunnel "github.com/darron/go-opentunnel"
 )
 
-func serveTunnel(ctx context.Context) error {
+func serveTunnel(ctx context.Context, handler http.Handler) error {
     store, err := opentunnel.NewXDGStorage()
     if err != nil {
         return err
@@ -64,92 +107,43 @@ func serveTunnel(ctx context.Context) error {
     }
     defer client.Close()
 
-    connection, err := client.Connect(ctx, opentunnel.ConnectOptions{
+    listener, err := client.Listen(ctx, opentunnel.ListenOptions{
         Profile:  "demo",
-        Routes:   opentunnel.Routes{"@": "127.0.0.1:8080"},
+        Routes:   []string{"@"},
         Lifetime: ctx,
     })
     if err != nil {
         return err
     }
-    defer connection.Close()
-    <-connection.Done()
-    return connection.Err()
+    defer listener.Close()
+
+    server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+    return server.Serve(listener)
 }
 ```
 
-The [webapp example](examples/webapp/main.go) includes an HTTP server, event
-handling, signal cancellation, streaming responses, and a WebSocket echo endpoint.
-Run it with `go run ./examples/webapp`; it serves directly through `Listen`.
-Use `--forward` for the loopback forwarding path or `--local-only` for local HTTP.
+`Request.TLS` contains the real handshake. `RemoteAddr` comes from relay metadata;
+HTTP forwarding headers do not override it. The library exposes your handler
+directly; add application authentication when it is needed.
 
-Use these contracts when embedding:
+For an existing TCP server, use `Client.Connect` with a route such as
+`opentunnel.Routes{"@": "127.0.0.1:8080"}`. Both APIs use the caller's context for
+startup. Set `Lifetime` to stop the running tunnel on application shutdown, or
+close it explicitly. `Client.Close` stops its owned connections and joins workers.
 
-- **Lifetime:** the `Connect` and `Listen` contexts bound startup only. Set
-  `ConnectOptions.Lifetime` or `ListenOptions.Lifetime` when application shutdown should stop the running
-  tunnel. Otherwise call `Connection.Close`; `Client.Close` stops every
-  connection owned by that client.
-- **Routes:** one client may run disjoint route names for the same profile.
-  Overlapping names return `ErrRouteInUse`, including conflicting `SetRoutes`
-  updates.
-- **Storage:** `NewFileStorage(root)` uses your directory; `NewXDGStorage()` uses
-  the upstream-compatible data directory. Memory storage lasts only for the
-  process. Coordinate same-profile provisioning across clients or processes.
-- **Provisioning:** cancellation after a known creation preserves pending
-  credentials. If persistence and compensating deletion both fail, handle
-  `*opentunnel.ProvisioningError` and securely recover or delete its `Pending`
-  identity. Concurrent removal interrupts issuance with `ErrProfileChanged`.
-- **Events:** delivery is bounded and lossy. Use `Status()` for current state
-  and `Status().DroppedEvents` to detect missed events.
-- **Traffic:** buffers are bounded. The relay protocol has no per-channel flow
-  control, so sustained outbound backpressure can delay other channels. Optional
-  `TransportOptions.IdleTimeout` is disabled by default.
-- **Credentials:** JSON, `fmt`, and `slog` representations of `Identity` and
-  `PendingIdentity` redact tokens and private keys. Their exported fields still
-  contain live secrets. Other API response types may also carry credentials;
-  keep them private and read the [security model](docs/SECURITY.md).
-- **API transport:** use HTTPS except for exact `localhost` or literal loopback
-  addresses. Redirects must keep the same scheme, hostname, and effective port.
+The [webapp example](examples/webapp/main.go) demonstrates HTTP, streaming,
+WebSockets and shutdown. Run `go run ./examples/webapp`; use `--forward` for TCP
+forwarding or `--local-only` for a loopback test server.
 
-See the [API mapping](docs/DESIGN.md#public-package-and-api) for lifecycle,
-connection, storage, and remote-inspection operations.
+Read the [listener guide](docs/LISTENER.md) for shutdown and peer trust, and the
+[API reference](docs/DESIGN.md#public-package-and-api) for routes, storage,
+provisioning recovery and resource limits. `Identity` and `PendingIdentity` redact
+credentials in standard formatting and JSON; their exported fields still contain
+live secrets.
 
-## Exercise the package with otgo
+## Build and validate
 
-`otgo` is a diagnostic CLI built from the public package.
-
-1. Build it and start a loopback test server in one terminal:
-
-   ```sh
-   make build build-example
-   ./bin/webapp --local-only --addr 127.0.0.1:8080
-   ```
-
-2. In another terminal, create a dedicated profile and connect it:
-
-   ```sh
-   ./bin/otgo create --profile demo
-   ./bin/otgo connect --profile demo --route @=127.0.0.1:8080 --interactive
-   ```
-
-3. Visit the printed HTTPS URL. Enter `status` or `quit` in the CLI. After
-   disconnecting, delete the test tunnel:
-
-   ```sh
-   ./bin/otgo inspect --profile demo --json
-   ./bin/otgo remove --profile demo
-   ```
-
-Put flags **after the command**. Repeat `--route name=host:port` for each route.
-Common flags are `--api`, `--data-dir`, `--profile`, `--json`, and
-`--request-timeout`. The CLI omits tokens and private keys from output.
-
-Provisioning defaults to a two-minute timeout. `connect --timeout 0` runs until
-Ctrl-C; a positive timeout limits its entire lifetime. See
-[testing instructions](docs/TESTING.md) for all timeout rules, interactive route
-changes, and a live test using isolated storage.
-
-## Validation
+`make build` builds only `bin/otgo`. `make build-example` builds the example.
 
 ```sh
 make check
@@ -157,68 +151,9 @@ make race
 make fuzz
 ```
 
-Local tests cover the API, storage, protocol, TLS listening/forwarding, concurrency,
-and CLI. The **2026-10-10** listener retest also verified real HTTP TLS/peer
-metadata, HTTPS/WSS normal close, and shutdown against the public service.
-The **2026-10-09** public-service records cover provisioning, HTTPS/WSS,
-streaming, large and concurrent transfers, route changes, embedding, shutdown,
-and deletion. The final CLI and embedded-app retest ran after the hardening
-changes; the earlier run also exercised a forced bridge reconnect.
+`make check` runs tests, vet, formatting, full golangci-lint and the CLI build.
+See [testing instructions](docs/TESTING.md) for local and public-service checks.
 
-Read the [local results](docs/VERIFICATION.md) and
-[live results and limits](docs/LIVE_TESTING.md) for the evidence. See the
-[hardening guide](docs/HARDENING.md), [v0.2.0 Amp review](docs/AMP_REVIEW.md), and
-[v0.3.0 listener review](docs/AMP_REVIEW_V0.3.0.md) and
-[v0.4.0 auth review](docs/AUTH_SECURITY_REVIEW.md) for behavior, review
-dispositions and remaining limits.
-
-## Protect a local application with otgo
-
-The [auth guide](docs/AUTH_PROXY.md) covers persistence, multiple backends,
-password/GitHub setup, active token management and MCP compatibility. Configure a
-named profile once, then start its authenticated proxy:
-
-```sh
-otgo auth init --profile inbox --upstream http://127.0.0.1:57732
-otgo proxy --profile inbox
-```
-
-Setup shows a generated password once and saves its verifier. Use
-`--password-stdin` to supply your own password through protected input. Restarting
-`proxy` reuses its hostname and backend; browser sessions require a fresh login.
-All backend routes require authentication, including HTTP MCP and WebSockets.
-
-Use separate profiles for separate backends; multiple proxies can run on the
-same machine. A second proxy using the same profile is refused. While a proxy
-runs, another terminal can inspect its hostname with `otgo get --profile inbox`
-and issue a short-lived machine credential:
-
-```sh
-otgo auth token create --profile inbox --ttl 1h
-otgo auth token list --profile inbox
-otgo auth token revoke --profile inbox --id TOKEN_ID
-```
-
-Clients can send the generated credential as `Authorization: Bearer otgo_...`
-or `X-Otgo-Token`. The latter preserves a backend's own Authorization header.
-Tokens grant access to the entire backend. Clients that cannot supply a cookie
-or token are denied; this is not a complete MCP OAuth authorization server.
-
-`otgo auth paths --profile inbox` reports the XDG files without displaying
-credentials. `auth reset` removes the known local auth files while retaining the
-tunnel. Run `auth init --replace` while stopped to change a password/backend and
-revoke existing machine tokens. Existing diagnostic `listen` and `connect`
-commands still expose services directly without this authentication gate.
-
-To switch a stopped profile to GitHub login, use the guided GitHub App setup:
-
-```sh
-otgo auth github --profile inbox --allow-user darron
-```
-
-Open the printed loopback link and approve the app on GitHub. Setup registers the
-exact tunnel callback and stores the client credentials privately. Add repeatable
-`--allow-user` flags for other approved accounts. For an existing OAuth/GitHub App,
-use `--client-id ID --client-secret-stdin` instead; its callback must be
-`https://TUNNEL_HOSTNAME/__otgo/github/callback`. GitHub login replaces password
-login without an automatic fallback. Reset does not delete the GitHub App.
+Browse the [documentation index](docs/README.md) for guides, security reviews and
+dated validation records. The [v0.4.0 auth review](docs/AUTH_SECURITY_REVIEW.md)
+records findings, fixes and remaining limits.

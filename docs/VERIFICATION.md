@@ -1,5 +1,20 @@
 # Local verification record
 
+## Documentation navigation — 2026-10-10
+
+Applied i-have-adhd to the README, auth setup steps and documentation navigation.
+The protected proxy quick start now precedes library embedding and validation.
+Older reviews moved to `archive/`; their findings remain available through the
+[documentation index](README.md).
+
+- All local Markdown links and heading anchors in the README, changelog and docs
+  resolved after the move.
+- The complete README Go example compiled as a separate module using this checkout.
+- The original Claude review remained byte-for-byte identical. Other archived
+  review records changed only their relative links.
+- `git diff --check` passed. Changes are limited to documentation; package code,
+  tests, workflows and the released v0.4.0 tag were not changed.
+
 ## v0.4.0 publication and stable Homebrew — 2026-10-10
 
 Published [v0.4.0](https://github.com/darron/go-opentunnel/releases/tag/v0.4.0)
@@ -130,7 +145,7 @@ renewal reset behavior. Production renewal code did not change. The
 [implementation CI run](https://github.com/darron/go-opentunnel/actions/runs/38096875112)
 passed all jobs after this fixture correction.
 
-The fresh-context [auth review](AUTH_PROXY_REVIEW.md) reproduced defects and fixes;
+The fresh-context [auth review](archive/AUTH_PROXY_REVIEW.md) reproduced defects and fixes;
 final source review found no remaining Critical/Important issue. It independently
 ran full/focused tests, race tests, vet, formatting, lint and workflow checks.
 
@@ -258,7 +273,7 @@ results above remain the records of those checks.
 
 ## Amp hardening verification, 2026-10-09
 
-The subsequent [Amp/Oracle review](AMP_REVIEW.md) reproduced additional defects
+The subsequent [Amp/Oracle review](archive/AMP_REVIEW.md) reproduced additional defects
 in the prior baseline. All seven were fixed; Amp's focused confirmation passed.
 New tests are in `amp_regression_test.go`, `amp_confirmation_test.go`, and the CLI
 command tests. The full test/race suites, Go 1.25 tests, formatting, vet, builds,
@@ -323,7 +338,7 @@ on Linux and macOS, the Linux race suite, and all-package formatting/lint.
 
 ## v0.3.0 review follow-up, 2026-10-10
 
-The [Amp/Oracle listener review](AMP_REVIEW_V0.3.0.md) reproduced a terminal-error
+The [Amp/Oracle listener review](archive/AMP_REVIEW_V0.3.0.md) reproduced a terminal-error
 race during profile removal and found stale design documentation. Both were
 fixed before release. The new 64-paused-listener regression failed on every
 listener before the fix, then passed ten race repetitions. After the fixes,
