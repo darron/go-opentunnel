@@ -121,7 +121,7 @@ connection, storage, and remote-inspection operations.
 1. Build it and start a loopback test server in one terminal:
 
    ```sh
-   make build
+   make build build-example
    ./bin/webapp --local-only --addr 127.0.0.1:8080
    ```
 

@@ -1,5 +1,33 @@
 # Local verification record
 
+## v0.4.0 publication and stable Homebrew — 2026-10-10
+
+Published [v0.4.0](https://github.com/darron/go-opentunnel/releases/tag/v0.4.0)
+from `6e1ab1401daeb7a967925cf3027865647e8a5dfc`. The CHANGELOG entry is committed;
+release notes are attached to GitHub, with no release-note document in the repo.
+
+- [Release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38104904964)
+  and [tag-triggered CI](https://github.com/darron/go-opentunnel/actions/runs/38105031656)
+  passed Linux/macOS tests, vet, CLI/example builds and updater tests, plus Linux
+  race and full golangci-lint.
+- The actual `release: published` event ran the
+  [source hook](https://github.com/darron/go-opentunnel/actions/runs/38105042751),
+  which passed and automatically dispatched the
+  [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38105048371).
+  Its macOS source build/style/strict audit/install/test and isolated publishing
+  jobs both passed. No manual dispatch was used for this release.
+- Tap commit `3b9db550b502d97a27c70647040f84689da04c8d` changed only
+  `Formula/otgo.rb` to v0.4.0. The source archive SHA-256 is
+  `2c0fd0d1946c5157ace2237bd3caa95111a9c760e227562ba978f1dcf54b6852`.
+- Locally fetched and verified that archive, replaced the HEAD installation with
+  stable v0.4.0, built only the CLI, and passed `brew test darron/tap/otgo` plus
+  `auth github --help` and `proxy --help`. `brew list --versions otgo` reports
+  `otgo 0.4.0`; the executable resolves to `Cellar/otgo/0.4.0/bin/otgo`.
+  Saved XDG profiles were outside the installation directory and were untouched.
+- The final test-only GitHub App was owner-approved for deletion, disappeared
+  from the Apps list, and subsequently returned HTTP 404 from GitHub's public App
+  endpoint. Temporary tunnel API 404 cleanup is recorded below.
+
 ## Pre-v0.4.0 security follow-up — 2026-10-10
 
 The final source/tests passed `make check`: all package tests, vet, formatting,
@@ -29,7 +57,7 @@ race and full lint. Homebrew upgraded to `HEAD-c59eeae`; source build, `brew tes
 and auth/proxy help passed. The v0.4.0 version update passed another `make check` with zero lint issues;
 the rebuilt CLI repeated the complete hosted password smoke (revocation:
 0.222 seconds), confirming service compatibility and API 404 cleanup.
-Release-candidate CI must pass before publication.
+Release-candidate CI passed before publication, as recorded above.
 
 See [AUTH_SECURITY_REVIEW.md](AUTH_SECURITY_REVIEW.md) and the
 [final live repeat](LIVE_TESTING.md#post-amp-auth-lifecycle-repeat--2026-10-10).

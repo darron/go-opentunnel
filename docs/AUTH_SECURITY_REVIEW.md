@@ -15,8 +15,8 @@ security/correctness finding or commit blocker.
 The final local tests, race suite, zero-issue golangci-lint and public password/
 CLI/app repeats passed, including API 404 cleanup. The [hardening-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38104516058)
 also passed Linux/macOS tests, vet, builds, updater tests, Linux race and full lint.
-The Homebrew HEAD source build and `brew test` passed at `c59eeae`. Release-candidate
-CI must also pass before publishing v0.4.0. The reviewers’ pending-public-test
+The Homebrew HEAD source build and `brew test` passed at `c59eeae`. The [release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38104904964)
+also passed before v0.4.0 publication. The reviewers’ pending-public-test
 caveats describe the status when their prompts were sent; both final drivers
 subsequently completed successfully.
 
