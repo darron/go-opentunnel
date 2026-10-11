@@ -14,7 +14,10 @@
 // completed TLS, and http.Request.TLS contains the actual handshake. Use
 // [Client.Connect] to forward traffic to existing host:port targets instead.
 // In both APIs, route "@" selects the root hostname; a lowercase DNS label
-// selects that subdomain. The method examples show both paths.
+// selects that subdomain. The method examples show both paths. Set
+// [ConnectOptions].RouteOptions to emit [ProxyProtocolV1] or [ProxyProtocolV2]
+// headers to a backend that supports them. [Connection.SetRoutesWithOptions]
+// replaces targets and options together; SetRoutes clears forwarding options.
 //
 // # Lifetime and shutdown
 //
@@ -56,7 +59,9 @@
 // identity that Resume can finish or Remove can delete. If both persistence and
 // remote cleanup fail, use errors.As to inspect [ProvisioningError] and securely
 // recover or delete its Pending identity. Use errors.Is for package sentinel
-// errors and errors.As for [APIError] and [AttachError].
+// errors and errors.As for [APIError], [AttachError] and [CertificateIssuanceError].
+// Certificate failures have safe classifications and HTTP status. Their bounded
+// raw Reason is untrusted and omitted from fmt, JSON and slog output.
 //
 // # Authentication and trust
 //

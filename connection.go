@@ -27,6 +27,7 @@ type Connection struct {
 	identity        Identity
 	cert            *tls.Certificate
 	routes          Routes
+	routeOptions    map[string]RouteOptions
 	status          Status
 	session         *session
 	events          chan Event
@@ -51,6 +52,9 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 		return nil, fmt.Errorf("%w: at least one initial route is required", ErrInvalid)
 	}
 	if e := ValidateRoutes(o.Routes); e != nil {
+		return nil, e
+	}
+	if e := validateRouteOptions(o.Routes, o.RouteOptions); e != nil {
 		return nil, e
 	}
 	return c.connect(ctx, o, nil)
@@ -102,7 +106,7 @@ func (c *Client) connect(ctx context.Context, o ConnectOptions, listener *Listen
 		parent = c.ctx
 	}
 	life, cancel := context.WithCancel(parent)
-	x := &Connection{listener: listener, client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
+	x := &Connection{listener: listener, client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), routeOptions: copyRouteOptions(o.RouteOptions), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	x.status = Status{State: "connecting", Hostname: id.Hostname, Routes: copyRoutes(o.Routes)}
 	x.stopParent = context.AfterFunc(c.ctx, cancel)
 	c.mu.Lock()
@@ -170,12 +174,13 @@ func (x *Connection) Done() <-chan struct{} { return x.done }
 // explicit Lifetime cancellation returns its context error.
 func (x *Connection) Err() error { x.mu.Lock(); defer x.mu.Unlock(); return x.err }
 
-// Status returns a snapshot with a copied route map. LastError is diagnostic text.
+// Status returns a snapshot with copied route and option maps. LastError is diagnostic text.
 func (x *Connection) Status() Status {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	s := x.status
 	s.Routes = copyRoutes(x.routes)
+	s.RouteOptions = copyRouteOptions(x.routeOptions)
 	return s
 }
 
@@ -184,19 +189,35 @@ func (x *Connection) Status() Status {
 // terminal error remains available. Stored credentials and the remote tunnel remain.
 func (x *Connection) Close() error { x.closeRequested.Store(true); x.cancel(); <-x.done; return nil }
 
-// SetRoutes updates targets for new channels. Name changes reattach asynchronously
-// and close existing channels when the session changes.
+// SetRoutes clears forwarding options and updates targets for new channels.
+// Name changes reattach asynchronously and close existing channels when the
+// session changes.
 // An empty map pauses attachment. Invalid routes return ErrInvalid; overlapping
 // names on this client's same-profile connections return ErrRouteInUse. The input
 // map is copied; do not mutate it concurrently with this call.
 func (x *Connection) SetRoutes(routes Routes) error {
+	return x.SetRoutesWithOptions(routes, nil)
+}
+
+// SetRoutesWithOptions atomically replaces targets and forwarding options for new
+// channels. Existing channels retain their options. Name changes reattach as in
+// SetRoutes. Invalid options return ErrInvalid without changing configuration.
+// Both maps are copied; do not mutate them concurrently with this call.
+func (x *Connection) SetRoutesWithOptions(routes Routes, options map[string]RouteOptions) error {
 	if e := ValidateRoutes(routes); e != nil {
 		return e
 	}
-	return x.setRoutes(routes)
+	if e := validateRouteOptions(routes, options); e != nil {
+		return e
+	}
+	return x.setRoutesWithOptions(routes, options)
 }
 
 func (x *Connection) setRoutes(routes Routes) error {
+	return x.setRoutesWithOptions(routes, nil)
+}
+
+func (x *Connection) setRoutesWithOptions(routes Routes, options map[string]RouteOptions) error {
 	x.client.mu.Lock()
 	defer x.client.mu.Unlock()
 	if e := x.client.checkRouteClaims(x.profile, routes, x); e != nil {
@@ -219,6 +240,7 @@ func (x *Connection) setRoutes(routes Routes) error {
 		}
 	}
 	x.routes = copyRoutes(routes)
+	x.routeOptions = copyRouteOptions(options)
 	if changed && x.session != nil {
 		x.session.routesChanged.Store(true)
 		x.session.cancel()
@@ -471,7 +493,11 @@ func (x *Connection) refreshOnce() error {
 	}
 	if remote.State.Type == "failed" {
 		x.recoveryPending.Store(false)
-		return x.startCertificateRecovery(id)
+		err := x.startCertificateRecovery(id)
+		if errors.Is(err, ErrCertificateIssuance) {
+			return certificateIssuanceError(remote.State.Reason)
+		}
+		return err
 	}
 	if remote.State.Type == "challenge" || remote.State.Type == "issuing" {
 		x.recoveryPending.Store(true)

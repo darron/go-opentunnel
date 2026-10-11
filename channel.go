@@ -16,15 +16,17 @@ import (
 )
 
 type channel struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	id          uint32
-	route       string
-	target      string
-	session     *session
-	cert        *tls.Certificate
-	raw         *bridgeConn
-	remoteReset atomic.Bool
+	ctx           context.Context
+	cancel        context.CancelFunc
+	id            uint32
+	route         string
+	target        string
+	proxyProtocol ProxyProtocol
+	sni           string
+	session       *session
+	cert          *tls.Certificate
+	raw           *bridgeConn
+	remoteReset   atomic.Bool
 }
 
 func (ch *channel) forward() {
@@ -80,6 +82,13 @@ func (ch *channel) forward() {
 	defer func() { _ = upstream.Close() }()
 	stop := context.AfterFunc(ch.ctx, func() { _ = upstream.Close(); ch.raw.abort(net.ErrClosed) })
 	defer stop()
+	if header := proxyHeader(ch.proxyProtocol, ch.raw.RemoteAddr().String(), ch.sni); len(header) > 0 {
+		if err := writeProxyHeader(upstream, header, s.owner.client.options.WriteTimeout); err != nil {
+			final = errors.New("PROXY protocol header write failed")
+			ch.reset("upstream_io_error")
+			return
+		}
+	}
 	var stream net.Conn = secure
 	if idle := s.owner.client.options.IdleTimeout; idle > 0 {
 		active := &activityConn{Conn: secure}
@@ -437,3 +446,22 @@ func (b *bridgeConn) SetWriteDeadline(t time.Time) error {
 }
 
 var _ net.Conn = (*bridgeConn)(nil)
+
+// Write the entire preamble before either payload copy starts. Cancellation closes
+// upstream in forward; the deadline also bounds a backend that does not read.
+func writeProxyHeader(upstream net.Conn, header []byte, timeout time.Duration) error {
+	if err := upstream.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+		return err
+	}
+	for len(header) > 0 {
+		n, err := upstream.Write(header)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		header = header[n:]
+	}
+	return upstream.SetWriteDeadline(time.Time{})
+}

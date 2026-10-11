@@ -83,6 +83,11 @@ implement an MCP OAuth authorization server or automatic client registration.
 The [auth guide](docs/AUTH_PROXY.md) covers token revocation, password replacement,
 GitHub setup, saved file paths and HTTP compatibility.
 
+On `main` (unreleased), `connect` supports per-route PROXY headers for a TCP
+backend that understands them. See the
+[PROXY v1/v2 options](docs/FORWARDING.md). [Certificate diagnostics](docs/CERTIFICATES.md)
+explain typed failures and safe CLI summaries.
+
 ## Embed the client
 
 Use `Client.Listen` to serve an HTTP handler over the visitor's TLS connection:

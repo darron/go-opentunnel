@@ -288,6 +288,7 @@ func (s *session) open(m controlMessage) {
 	x.mu.Lock()
 	route, ok := RouteForSNI(m.SNI, x.identity.Hostname)
 	target, claimed := x.routes[route]
+	option := x.routeOptions[route]
 	cert := x.cert
 	x.mu.Unlock()
 	if !ok || !claimed {
@@ -306,7 +307,7 @@ func (s *session) open(m controlMessage) {
 		return
 	}
 	channelCtx, channelCancel := context.WithCancel(s.ctx)
-	ch := &channel{ctx: channelCtx, cancel: channelCancel, id: m.Conn, route: route, target: target, session: s, cert: cert}
+	ch := &channel{ctx: channelCtx, cancel: channelCancel, id: m.Conn, route: route, target: target, proxyProtocol: option.ProxyProtocol, sni: m.SNI, session: s, cert: cert}
 	ch.raw = newBridgeConn(s, m.Conn, m.Peer, x.client.options.MaxInboundBytes)
 	s.channels[m.Conn] = ch
 	s.wg.Add(1)

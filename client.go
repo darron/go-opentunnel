@@ -342,6 +342,9 @@ func (c *Client) complete(ctx context.Context, p string, pending PendingIdentity
 			}
 			progress(o, StageRequestingCertificate)
 			if err := c.submitCertificate(ctx, p, pending); err != nil {
+				if errors.Is(err, ErrCertificateIssuance) {
+					return nil, certificateIssuanceError("")
+				}
 				return nil, err
 			}
 			submitted = true
@@ -364,10 +367,13 @@ func (c *Client) complete(ctx context.Context, p string, pending PendingIdentity
 			return &id, nil
 		case "failed":
 			if submitted {
-				return nil, ErrCertificateIssuance
+				return nil, certificateIssuanceError(cert.State.Reason)
 			}
 			progress(o, StageRequestingCertificate)
 			if err := c.submitCertificate(ctx, p, pending); err != nil {
+				if errors.Is(err, ErrCertificateIssuance) {
+					return nil, certificateIssuanceError(cert.State.Reason)
+				}
 				return nil, err
 			}
 			submitted = true
@@ -451,6 +457,9 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard 
 	if cert.State.Type == "failed" {
 		pending, err := c.startCertificateRecovery(ctx, p, *id)
 		if err != nil {
+			if errors.Is(err, ErrCertificateIssuance) {
+				return nil, certificateIssuanceError(cert.State.Reason)
+			}
 			return nil, err
 		}
 		return c.complete(ctx, p, *pending, ProvisionOptions{}, guard, true)
@@ -486,7 +495,7 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard 
 // All replacement submissions require the profile lock and share one cooldown.
 func (c *Client) startCertificateRecovery(ctx context.Context, p string, id Identity) (*PendingIdentity, error) {
 	if time.Now().Before(c.recoveryDeadline(p)) {
-		return nil, ErrCertificateIssuance
+		return nil, certificateIssuanceError("")
 	}
 	csr, err := requestForExistingKey(id.Hostname, id.PrivateKey)
 	if err != nil {
@@ -507,7 +516,7 @@ func (c *Client) submitCertificate(ctx context.Context, p string, pending Pendin
 		return err
 	}
 	if time.Now().Before(c.recoveryDeadline(p)) {
-		return ErrCertificateIssuance
+		return certificateIssuanceError("")
 	}
 	// A failed request can conceal an accepted CSR. Record before sending it.
 	c.recoveryAfter.Store(p, time.Now().Add(c.options.CertificateRetryInterval))

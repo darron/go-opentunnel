@@ -160,7 +160,7 @@ type TransportOptions struct {
 	HandshakeTimeout time.Duration
 	// DialTimeout defaults to 10 seconds for each backend dial.
 	DialTimeout time.Duration
-	// WriteTimeout defaults to 10 seconds for each bridge write.
+	// WriteTimeout defaults to 10 seconds for each bridge write and PROXY header write.
 	WriteTimeout time.Duration
 	// CertificatePollInterval defaults to 2 seconds while issuance is pending.
 	CertificatePollInterval time.Duration
@@ -216,6 +216,9 @@ type ConnectOptions struct {
 	Profile string
 	// Routes must include at least one valid route-to-backend mapping.
 	Routes Routes
+	// RouteOptions enables local forwarding options for configured route names.
+	// Missing entries forward bytes unchanged. Both maps are copied on entry.
+	RouteOptions map[string]RouteOptions
 	// Lifetime controls the running connection after startup. Nil leaves lifetime
 	// ownership to Connection.Close and Client.Close. Connect's context bounds startup.
 	Lifetime context.Context
@@ -262,6 +265,8 @@ type Status struct {
 	Hostname string `json:"hostname"`
 	// Routes is a copy of the locally configured routes. Listener targets are empty.
 	Routes Routes `json:"routes"`
+	// RouteOptions is a copy of the local forwarding options. Listeners have none.
+	RouteOptions map[string]RouteOptions `json:"routeOptions,omitempty"`
 	// Session is the current relay session identifier, empty when unattached.
 	Session string `json:"session,omitempty"`
 	// Connections counts visitor channels, including handshaking and queued sockets.

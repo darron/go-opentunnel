@@ -54,7 +54,9 @@ type relaySession struct {
 
 func newRelay(t *testing.T) *relayFixture {
 	f := &relayFixture{api: newTestAPI(t), sessions: make(chan *relaySession, 32), heartbeat: 15000, idle: 45000}
+	f.api.mu.Lock()
 	f.api.bridge = f.accept
+	f.api.mu.Unlock()
 	t.Cleanup(func() {
 		f.mu.Lock()
 		all := append([]*relaySession(nil), f.all...)

@@ -25,5 +25,6 @@ fuzz:
 	go test -run '^$$' -fuzz '^FuzzDecodeFrame$$' -fuzztime=5s .
 	go test -run '^$$' -fuzz '^FuzzDecodeControl$$' -fuzztime=5s .
 	go test -run '^$$' -fuzz '^FuzzRouteForSNI$$' -fuzztime=5s .
+	go test -run '^$$' -fuzz '^FuzzProxyPeer$$' -fuzztime=5s .
 
 check: test vet lint build

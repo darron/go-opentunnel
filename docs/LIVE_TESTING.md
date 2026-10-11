@@ -485,3 +485,19 @@ verification. No credentials or raw workflow artifacts were added to the repo.
 
 The 64-paused-listener removal race was tested against local relay fixtures;
 this live run did not induce that concurrency scenario at the hosted service.
+
+## Unreleased PROXY and certificate diagnostic check — 2026-10-10
+
+Ran `GOTOOLCHAIN=go1.25.0 go run ./scripts/proxy-smoke` against the public service.
+The script used a fresh memory-backed identity and made one provisioning attempt.
+It returned `CertificateIssuanceError` classified as `unknown`, without a
+recognized HTTP status. Ordinary output omitted the raw remote reason.
+
+Issuance failed before bridge attachment, so this run **did not validate public
+plain/v1/v2 forwarding**. Local CLI/relay/TLS fixtures validate header behavior.
+The result does not establish whether the service or certificate provider is
+rate limiting requests, and does not identify the deployed server revision.
+
+Cleanup completed: the temporary identity was removed and its authenticated
+remote API lookup returned 404. No persistent user profile was changed. No
+additional fresh issuance attempts were made for this check.

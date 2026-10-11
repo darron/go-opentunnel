@@ -273,3 +273,34 @@ These cover cancellation before/during conversion and after persistence, callbac
 joining beyond graceful HTTP shutdown, and request completion during a paused
 revocation close. The provider is an HTTP fixture; real GitHub evidence is in
 [LIVE_TESTING.md](LIVE_TESTING.md).
+
+## PROXY headers and certificate diagnostics
+
+Run the new local regressions without creating a public tunnel:
+
+```sh
+go test -race -count=5 -run 'TestProxy|TestTunnelProxy|TestRouteOptions|TestCLIProxyProtocol|TestCertificate.*(Failure|Cooldown|Retains)' .
+go test -count=1 -run 'TestConnectProxyProtocolFlags|TestInteractiveProxyProtocol' ./cmd/otgo
+go test -run '^$' -fuzz '^FuzzProxyPeer$' -fuzztime=5s .
+```
+
+`TestCLIProxyProtocolForwarding` builds and runs the CLI as an external process
+against a local API/relay fixture. Real visitor TLS and a TCP backend verify
+header-before-payload order, copied options in JSON status, live option clearing,
+existing-stream continuity and clean quit. Other fixtures check every upstream
+PROXY vector, malformed peers, mixed plain/proxy routes, route mismatch before
+backend dial, partial writes and header deadlines. Certificate fixtures cover
+Create, Ensure, Resume, Connect and background recovery, including errors.As,
+retry cooldowns and secret-safe formatting, JSON and slog.
+
+For a separate public-service check, run explicitly:
+
+```sh
+go run ./scripts/proxy-smoke
+```
+
+This creates **one temporary public tunnel**, tests plain/v1/v2 forwarding to a
+loopback backend, deletes the tunnel and requires authenticated API 404 afterward.
+It uses memory storage and prints only safe diagnostics. A provisioning failure
+stops forwarding checks; cleanup still runs. It does not change saved profiles.
+Read the dated [live results](LIVE_TESTING.md) before repeating it.

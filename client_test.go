@@ -93,9 +93,14 @@ func newTestAPI(t *testing.T) *testAPI {
 	return a
 }
 func (a *testAPI) serve(w http.ResponseWriter, r *http.Request) {
-	if strings.HasSuffix(r.URL.Path, "/connect") && a.bridge != nil {
-		a.bridge(w, r)
-		return
+	if strings.HasSuffix(r.URL.Path, "/connect") {
+		a.mu.Lock()
+		bridge := a.bridge
+		a.mu.Unlock()
+		if bridge != nil {
+			bridge(w, r)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if r.URL.Path == "/api/tunnel" && r.Method == "POST" {

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add opt-in PROXY protocol v1/v2 forwarding per route, compatible with upstream
+  OpenTunnel v0.5.0. v2 includes the authority TLV. Existing routes stay unchanged.
+- Add `ConnectOptions.RouteOptions`, copied status options and atomic
+  `Connection.SetRoutesWithOptions` updates. The CLI gains repeatable
+  `connect --proxy-protocol route=v1|v2` flags and an interactive option command.
+- Return typed certificate issuance failures with safe provider classifications
+  and HTTP status, while retaining bounded raw reasons for deliberate inspection.
+  Existing sentinel checks and recovery cooldowns remain supported.
+- Add upstream byte vectors, real CLI/relay/TLS forwarding tests, route-isolation,
+  bounded-write and diagnostic-redaction regressions. No dependency was added.
+
 ## v0.5.0 — Go API documentation and simpler guides — 2026-10-10
 
 - Expand Go API documentation with a package overview, public field and method

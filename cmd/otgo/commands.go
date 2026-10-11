@@ -99,6 +99,7 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	common.bind(fs)
 	var timeout time.Duration
 	var routes routeFlags
+	var proxyProtocols proxyProtocolFlags
 	var listenNames nameFlags
 	var interactive bool
 	if name == "create" || name == "resume" || name == "ensure" {
@@ -110,7 +111,8 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	}
 	if name == "connect" {
 		fs.Var(&routes, "route", "route in name=host:port form (repeatable)")
-		fs.BoolVar(&interactive, "interactive", false, "read status, routes, and quit commands from stdin")
+		fs.Var(&proxyProtocols, "proxy-protocol", "PROXY preamble in route=v1 or route=v2 form (repeatable; backend must support it)")
+		fs.BoolVar(&interactive, "interactive", false, "read status, routes, proxy-protocol, and quit commands from stdin")
 		fs.DurationVar(&timeout, "timeout", 0, "overall connection timeout (0 keeps the connection running until cancelled)")
 	}
 	if err := fs.Parse(args); err != nil {
@@ -208,7 +210,7 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	if name == "listen" {
 		return listen(commandCtx, client, common.profile, listenNames, common.json, write)
 	}
-	return connect(commandCtx, client, common.profile, routes, interactive, common.json, in, write, writeErr)
+	return connect(commandCtx, client, common.profile, routes, proxyProtocols, interactive, common.json, in, write, writeErr)
 }
 
 func provisionProgressReporter(errout io.Writer) (func(opentunnel.ProvisionStage), func() error) {
@@ -316,7 +318,7 @@ func parseRoute(value string) (string, string, error) {
 	return name, target, nil
 }
 
-func connect(ctx context.Context, client *opentunnel.Client, profile string, values routeFlags, interactive, asJSON bool, in io.Reader, out, errout io.Writer) error {
+func connect(ctx context.Context, client *opentunnel.Client, profile string, values routeFlags, proxyProtocols proxyProtocolFlags, interactive, asJSON bool, in io.Reader, out, errout io.Writer) error {
 	routes, err := values.routes()
 	if err != nil {
 		return err
@@ -324,7 +326,11 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 	if len(routes) == 0 {
 		return errors.New("connect requires at least one --route name=host:port")
 	}
-	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: profile, Routes: routes, Lifetime: ctx})
+	options, err := proxyProtocols.options(routes)
+	if err != nil {
+		return err
+	}
+	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: profile, Routes: routes, RouteOptions: options, Lifetime: ctx})
 	if err != nil {
 		return err
 	}
@@ -332,10 +338,11 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 	identity := connection.Identity()
 	if asJSON {
 		if err := json.NewEncoder(out).Encode(struct {
-			Type     string              `json:"type"`
-			Identity opentunnel.Identity `json:"identity"`
-			Routes   opentunnel.Routes   `json:"routes"`
-		}{Type: "connected", Identity: identity, Routes: routes}); err != nil {
+			Type         string                             `json:"type"`
+			Identity     opentunnel.Identity                `json:"identity"`
+			Routes       opentunnel.Routes                  `json:"routes"`
+			RouteOptions map[string]opentunnel.RouteOptions `json:"routeOptions,omitempty"`
+		}{Type: "connected", Identity: identity, Routes: routes, RouteOptions: options}); err != nil {
 			return err
 		}
 	} else {
@@ -481,6 +488,24 @@ func interactiveCommand(connection interactiveConnection, line string, asJSON bo
 		return printStatus(out, connection.Status())
 	case "quit":
 		return errQuit
+	case "proxy-protocol":
+		options, err := proxyProtocolFlags(fields[1:]).options(connection.Status().Routes)
+		if err != nil {
+			return interactiveInputError{err: err}
+		}
+		configurable, ok := connection.(interface {
+			SetRoutesWithOptions(opentunnel.Routes, map[string]opentunnel.RouteOptions) error
+		})
+		if !ok {
+			return interactiveInputError{err: errors.New("connection does not support forwarding options")}
+		}
+		if err := configurable.SetRoutesWithOptions(connection.Status().Routes, options); err != nil {
+			if errors.Is(err, opentunnel.ErrInvalid) || errors.Is(err, opentunnel.ErrRouteInUse) {
+				return interactiveInputError{err: err}
+			}
+			return err
+		}
+		return nil
 	case "routes":
 		routes := make(opentunnel.Routes, len(fields)-1)
 		for _, value := range fields[1:] {
@@ -501,7 +526,7 @@ func interactiveCommand(connection interactiveConnection, line string, asJSON bo
 		}
 		return nil
 	default:
-		return interactiveInputError{err: fmt.Errorf("unknown interactive command %q (use status, routes, or quit)", fields[0])}
+		return interactiveInputError{err: fmt.Errorf("unknown interactive command %q (use status, routes, proxy-protocol, or quit)", fields[0])}
 	}
 }
 func formatEvent(event opentunnel.Event) string {
@@ -547,7 +572,20 @@ func printEvent(out io.Writer, asJSON bool, event opentunnel.Event) error {
 
 func printStatus(out io.Writer, status opentunnel.Status) error {
 	_, err := fmt.Fprintf(out, "state: %s\nhostname: %s\nconnections: %d\ndropped events: %d\n", terminalText(status.State), terminalText(status.Hostname), status.Connections, status.DroppedEvents)
-	return err
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(status.RouteOptions))
+	for name := range status.RouteOptions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, err := fmt.Fprintf(out, "proxy-protocol %s=%s\n", terminalText(name), terminalText(string(status.RouteOptions[name].ProxyProtocol))); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func terminalText(value string) string {
@@ -557,4 +595,39 @@ func terminalText(value string) string {
 		}
 		return r
 	}, value)
+}
+
+type proxyProtocolFlags []string
+
+func (p *proxyProtocolFlags) String() string { return strings.Join(*p, ",") }
+func (p *proxyProtocolFlags) Set(value string) error {
+	if _, _, err := parseProxyProtocol(value); err != nil {
+		return err
+	}
+	*p = append(*p, value)
+	return nil
+}
+func parseProxyProtocol(value string) (string, opentunnel.ProxyProtocol, error) {
+	name, version, found := strings.Cut(value, "=")
+	if !found || name == "" || (version != "v1" && version != "v2") {
+		return "", "", errors.New("proxy-protocol must be route=v1 or route=v2")
+	}
+	return name, opentunnel.ProxyProtocol(version), nil
+}
+func (p proxyProtocolFlags) options(routes opentunnel.Routes) (map[string]opentunnel.RouteOptions, error) {
+	options := make(map[string]opentunnel.RouteOptions, len(p))
+	for _, value := range p {
+		name, version, err := parseProxyProtocol(value)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := routes[name]; !exists {
+			return nil, errors.New("proxy-protocol requires a configured route")
+		}
+		if _, exists := options[name]; exists {
+			return nil, errors.New("duplicate proxy-protocol route")
+		}
+		options[name] = opentunnel.RouteOptions{ProxyProtocol: version}
+	}
+	return options, nil
 }

@@ -444,3 +444,48 @@ direct listeners, streaming, normal WebSocket close, route changes, shutdown,
 and cleanup. All three owned identities were deleted with authenticated API
 404 confirmations; local state was empty and all owned processes stopped.
 See [the post-review live record](LIVE_TESTING.md#v030-post-review-retest-2026-10-10).
+
+## Unreleased PROXY forwarding and certificate diagnostics — 2026-10-10
+
+Added per-route PROXY v1/v2 preambles and typed certificate failures without an
+external dependency. Ordinary route forwarding, listener serving and the auth
+gate retain their defaults. Runtime version remains 0.5.0 until another release.
+
+Verified using Go 1.25.0 on macOS arm64 and golangci-lint 2.14.0:
+
+| Check | Result |
+| --- | --- |
+| `GOTOOLCHAIN=go1.25.0 make check build-example` | Full tests, vet, formatting, lint and CLI/app builds passed; lint **0 issues** |
+| `GOTOOLCHAIN=go1.25.0 go test -race ./... -count=1` | Full race suite passed, including password/GitHub auth regressions |
+| Focused CLI, header and certificate recovery race tests | Five repetitions passed |
+| `FuzzProxyPeer`, five-second smoke | **1,116,142** executions, no failures |
+| Linux/Windows amd64 `go build ./...` | Passed; Windows runtime remains untested |
+| Rebuilt `otgo connect --help` | New per-route flag and interactive command documented |
+| Rebuilt webapp, local-only | Root response, request metadata, streamed chunks and clean SIGINT exit passed |
+| Go documentation/examples | New exported contracts rendered; executable examples passed |
+| Repository documentation | 143 relative Markdown links and anchors resolved |
+
+`TestCLIProxyProtocolForwarding` runs the real CLI process through a local relay
+and real TLS to prove both preambles arrive before payload, status carries copied
+options, option clearing preserves existing streams, and quit exits cleanly.
+Byte-for-byte checks cover all 19 peer and 12 header vectors from upstream v0.5.0.
+Additional regressions cover malformed/oversized peers, bounded authority data,
+plain routes, rejected updates before remote creation, TLS route mismatch before
+backend dial, partial preamble writes and deadline clearing. See
+[the testing commands](TESTING.md#proxy-headers-and-certificate-diagnostics).
+
+A fresh security/correctness review found a foreground recovery-cooldown path
+that still returned the generic certificate sentinel. That was fixed before
+final checks. New tests cover typed failures from Create, Ensure, Resume, Connect
+and background refresh, raw-reason bounds, known provider classifications,
+format/JSON/slog redaction and unchanged recovery submission limits. The review
+found no remaining critical or important defect. Cancellation still closes the
+backend before header delivery, and WriteTimeout bounds a stalled write; the
+local deadline test does not simulate cancelling an entire channel during that
+small preamble write.
+
+The [single public-service attempt](LIVE_TESTING.md#unreleased-proxy-and-certificate-diagnostic-check--2026-10-10)
+failed during issuance with a typed `unknown` failure, without a recognized HTTP
+status. No live PROXY forwarding success is claimed. Remote cleanup was confirmed
+by authenticated API 404; saved user profiles were untouched. No rate-limit
+cause or hosted deployment version was established.

@@ -17,6 +17,8 @@ installation commands and quick starts.
 
 | Task | Guide |
 | --- | --- |
+| Forward to a TCP backend with PROXY v1/v2 headers | [Forwarding](FORWARDING.md) |
+| Diagnose certificate issuance failures | [Certificates](CERTIFICATES.md) |
 | Serve HTTP directly through the tunnel | [TLS listener](LISTENER.md) |
 | Browse exported types, methods and Go examples | [Go API documentation](https://pkg.go.dev/github.com/darron/go-opentunnel) |
 | Find API, protocol and storage contracts | [Package reference](DESIGN.md) |

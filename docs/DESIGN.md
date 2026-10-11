@@ -11,12 +11,13 @@ WebSocket dependency. Applications need no Node, Bun, Rust, or background proces
 
 ## Compatibility baseline
 
-Inspected upstream commit: `22156aa6ab209515186c3ca4f111901b7cedc284`.
+Inspected upstream v0.5.0 commit: `bb81367416c78834e09bca569267cbbae50781fb`.
+Core vectors retain their original source pin; see [provenance](../testdata/vectors/PROVENANCE.md).
 
-- [Protocol specification](https://github.com/anomalyco/opentunnel/blob/22156aa6ab209515186c3ca4f111901b7cedc284/docs/protocol.md)
-- [TypeScript SDK API](https://github.com/anomalyco/opentunnel/blob/22156aa6ab209515186c3ca4f111901b7cedc284/packages/client/src/promise/client.ts)
-- [SDK types](https://github.com/anomalyco/opentunnel/blob/22156aa6ab209515186c3ca4f111901b7cedc284/packages/client/src/effect/types.ts)
-- [Shared vectors](https://github.com/anomalyco/opentunnel/tree/22156aa6ab209515186c3ca4f111901b7cedc284/spec/vectors)
+- [Protocol specification](https://github.com/anomalyco/opentunnel/blob/bb81367416c78834e09bca569267cbbae50781fb/docs/protocol.md)
+- [TypeScript SDK API](https://github.com/anomalyco/opentunnel/blob/bb81367416c78834e09bca569267cbbae50781fb/packages/client/src/promise/client.ts)
+- [SDK types](https://github.com/anomalyco/opentunnel/blob/bb81367416c78834e09bca569267cbbae50781fb/packages/client/src/effect/types.ts)
+- [Shared vectors](https://github.com/anomalyco/opentunnel/tree/bb81367416c78834e09bca569267cbbae50781fb/spec/vectors)
 
 The JavaScript distribution is compiled from the TypeScript SDK. Rust is the
 other native implementation. This package implements the client; it does not
@@ -51,7 +52,7 @@ Go methods map directly to the upstream SDK operations.
 | TypeScript operation | Go operation |
 | --- | --- |
 | `tunnel.connect(options)` | `Client.Connect(ctx, connectOptions)` |
-| `connection.setRoutes(routes)` | `Connection.SetRoutes(routes)` |
+| `connection.setRoutes(routes)` | `Connection.SetRoutes` or `SetRoutesWithOptions` |
 | `connection.close()` | `Connection.Close()` |
 
 ### Connection state
@@ -73,7 +74,9 @@ Go methods map directly to the upstream SDK operations.
   and bounded transport settings. Defaults use `https://opentunnel.xyz` and XDG
   storage. Request, handshake, local dial, and write timeouts are finite.
   `TransportOptions.IdleTimeout` is optional and defaults to disabled.
-- `Routes` maps names to `host:port`. Caller maps are copied; identities, routes,
+- `Routes` maps names to `host:port`. `ConnectOptions.RouteOptions` enables local
+  PROXY v1/v2 headers for selected routes; see [forwarding](FORWARDING.md).
+  Caller maps are copied; identities, routes,
   and status return snapshots. Events and typed errors support structured handling,
   including `errors.Is`/`errors.As`, API status/tag, and attach code.
 - The package needs no logger, CLI output, signals, or process exit. HTTP-client
@@ -100,7 +103,8 @@ state becomes `waiting-routes` until routes are added.
 A client supports multiple profiles and sessions. It may run multiple
 connections for one profile when their route-name sets are disjoint. An overlap
 at `Connect` or `SetRoutes` returns `ErrRouteInUse`; a rejected update leaves the
-old route snapshot active. Same-profile provisioning and deletion are serialized
+old route and option snapshots active. `SetRoutes` clears forwarding options;
+`SetRoutesWithOptions` replaces targets and options together. Same-profile provisioning and deletion are serialized
 within that client. `Client.Close` cancels and joins its owned operations and
 connections. `Connection.Close` is idempotent, returns with `Err() == nil` for a
 normal requested close, and joins transport, refresh, and forwarding workers.
@@ -126,7 +130,9 @@ hostile error field from reflecting credentials into logs. It closes response
 bodies and keeps request deadlines active through consumption. Package-generated
 API errors discard raw error response bodies; CLI identity output omits tokens
 and private keys. `Client.API().Get` enables remote
-inspection using a stored identity's ID and token.
+inspection using a stored identity's ID and token. Terminal certificate issuance
+failures return [typed diagnostics](CERTIFICATES.md); their normal rendering
+omits the raw remote reason.
 
 Use HTTPS for remote API bases. Plain HTTP is accepted only for exact
 `localhost` or a literal loopback IP such as `127.0.0.1` or `::1`; loopback-like
