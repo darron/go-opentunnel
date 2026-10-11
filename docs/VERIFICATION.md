@@ -38,6 +38,30 @@ the server received the correct route; successful authentication and denial are
 covered by the full handler/OAuth/TLS regressions, not inferred from that click.
 A fresh hosted GitHub grant was not created for these presentation changes.
 
+### v0.8.0 publication and Homebrew
+
+Published [v0.8.0](https://github.com/darron/go-opentunnel/releases/tag/v0.8.0)
+from `abec630db748d80bf88fe9cf166ade786db0ed3d`. The remote annotated tag and
+Go's public module proxy resolve to that commit. Release notes are attached to
+the GitHub release; the dated CHANGELOG entry and client version are committed.
+
+- `make check` passed after the version update, with full golangci-lint at 0 issues.
+  [Main CI](https://github.com/darron/go-opentunnel/actions/runs/38180252676) and
+  [tag CI](https://github.com/darron/go-opentunnel/actions/runs/38180252736)
+  passed every job, including Linux race detection, current-Go vulnerability
+  checks and all five sustained fuzz targets.
+- The [release hook](https://github.com/darron/go-opentunnel/actions/runs/38180262015)
+  automatically dispatched the [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38180268507).
+  Style, strict audit, source build, install, formula test and publication passed.
+  Tap commit `edbb46a889a592208f9869f3649a210f796da71b` changed only `Formula/otgo.rb`;
+  the source archive SHA-256 is
+  `6f9e7b87ce4eef9430ff8315fa8db1a1f1340dea1191852fefb936507fd9d87b`.
+- Local Homebrew upgraded from 0.7.0 to 0.8.0. `brew test darron/tap/otgo`,
+  `profiles --help` and `proxy --help` passed. Both version aliases report the
+  release SHA and `clean`; the binary uses Go 1.27.2. Read-only inventory found
+  the existing profile and launch command. No proxy was restarted or auth state
+  changed during publication.
+
 ## v0.7.0 security and test audit — 2026-10-11
 
 The [audit record](SECURITY_AUDIT.md) separates reproduced defects, test gaps,
