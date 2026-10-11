@@ -501,3 +501,36 @@ rate limiting requests, and does not identify the deployed server revision.
 Cleanup completed: the temporary identity was removed and its authenticated
 remote API lookup returned 404. No persistent user profile was changed. No
 additional fresh issuance attempts were made for this check.
+
+## PROXY public-service retry — 2026-10-11
+
+Retried with the unchanged runtime at `365d09501b02389db3668982ce18f6c6c04dbfa3`.
+Used a temporary copy of `scripts/proxy-smoke/main.go`, instrumented only to retain
+an issuance error's raw reason in a private temporary file for inspection.
+One fresh memory-backed tunnel was created; saved profiles were untouched.
+
+Provisioning failed again. The typed error's safe classification was `unknown`
+and no HTTP status was available. Private inspection found the provider reason:
+
+```text
+ACME server returned no nonce
+```
+
+This exact message occurs in upstream's
+[`Session::fresh_nonce`](https://github.com/anomalyco/opentunnel/blob/bb81367416c78834e09bca569267cbbae50781fb/crates/opentunnel-server/src/acme.rs):
+the hosted ACME client sends HEAD to the provider's `newNonce` URL, then fails if
+it cannot read a usable `Replay-Nonce` header. That path does not preserve HTTP
+status or response details. The upstream master commit was still
+`bb81367416c78834e09bca569267cbbae50781fb` when checked.
+
+The observed failure is in hosted certificate issuance, before local TLS or
+PROXY forwarding. Its underlying cause remains unknown: the available reason
+cannot establish whether the provider returned a rate-limit/error response or
+why the header was absent. The source match does not independently prove which
+revision is deployed at the service.
+
+The script exited with status 1. Cleanup succeeded, with authenticated remote API
+404 confirming deletion. A local safety hook refused deletion of the temporary
+probe and diagnostic file; they remain in a private temporary directory. The
+only captured diagnostic is the 29-byte reason above, with no tunnel credentials.
+Public plain/v1/v2 forwarding remains unverified. No runtime code was changed.
