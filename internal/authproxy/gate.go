@@ -3,8 +3,6 @@ package authproxy
 import (
 	"crypto/subtle"
 	"errors"
-	"html/template"
-	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -128,8 +126,6 @@ func csrfMatches(r *http.Request) bool {
 	return count == 1 && len(val) == 43 && len(given) == 43 && subtle.ConstantTimeCompare([]byte(val), []byte(given)) == 1
 }
 
-var loginPage = template.Must(template.New("login").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Protected by otgo</title><style>body{font:17px system-ui;margin:12vh auto;padding:24px;max-width:380px;background:#f6f5f1;color:#20242a}input,button{font:inherit;box-sizing:border-box;padding:12px;width:100%;margin-top:12px}label{display:block}button{background:#243c37;color:white;border:0;border-radius:5px}small{color:#555}</style><main><h1>Sign in</h1><p>This site is protected by otgo.</p>{{if .GitHub}}<a href="/__otgo/github">Sign in with GitHub</a>{{else}}<form method="post" action="/__otgo/login"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Password<input type="password" name="password" maxlength="1024" autocomplete="current-password" required autofocus></label><button>Sign in</button></form>{{end}}<p><small>{{.Message}}</small></p></main></html>`))
-
 func renderLogin(w http.ResponseWriter, r *http.Request, github bool, message string) {
 	ownedFormHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -137,7 +133,7 @@ func renderLogin(w http.ResponseWriter, r *http.Request, github bool, message st
 	http.SetCookie(w, authCookie(CSRFCookie, csrf, 600))
 	w.WriteHeader(http.StatusUnauthorized)
 	if r.Method != "HEAD" {
-		_ = loginPage.Execute(w, struct {
+		_ = pages.ExecuteTemplate(w, "login", struct {
 			CSRF    string
 			GitHub  bool
 			Message string
@@ -237,7 +233,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		csrf := randomSecret()
 		http.SetCookie(w, authCookie(CSRFCookie, csrf, 600))
-		_, _ = io.WriteString(w, `<!doctype html><title>Sign out</title><form method="post" action="/__otgo/logout"><input type="hidden" name="csrf" value="`+csrf+`"><button>Sign out</button></form>`)
+		_ = pages.ExecuteTemplate(w, "logout", csrf)
 		return
 	}
 	if !h.validOrigin(r, c) {

@@ -1,0 +1,115 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{{.}}</title>
+<style>{{template "style"}}</style>
+</head>
+<body>{{end}}
+
+
+{{define "brand"}}<div class="brand">
+<span aria-hidden="true">{{template "mark"}}</span>
+<span class="wordmark">otgo</span>
+<span class="brand-label">A private way in</span>
+</div>{{end}}
+
+
+{{define "lock"}}<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+<rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="1.5"/>
+<path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.5"/>
+</svg>{{end}}
+
+
+
+{{define "footer"}}<p class="footer">{{template "lock"}} Protected by otgo</p>{{end}}
+
+
+{{define "login"}}{{template "head" "Protected by otgo"}}<main>{{template "brand"}}<section class="panel" aria-labelledby="title">
+<p class="eyebrow">Protected access</p>
+<h1 id="title">Sign in</h1>
+<p>Sign in to continue to this site.</p>{{if .GitHub}}<a class="button github-button" href="/__otgo/github">{{template "github"}}Sign in with GitHub</a>
+<p class="note">Access is limited to approved GitHub accounts.</p>
+{{else}}
+<form method="post" action="/__otgo/login">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<label for="password">Password</label>
+<input id="password" type="password" name="password" maxlength="1024" autocomplete="current-password" required autofocus>
+<button type="submit">Sign in</button>
+</form>{{end}}
+{{if .Message}}<p class="message" role="alert">{{.Message}}</p>{{end}}
+</section>{{template "footer"}}</main>
+</body>
+</html>{{end}}
+
+
+{{define "setup"}}{{template "head" "Set up otgo GitHub login"}}<main>{{template "brand"}}<section class="panel">
+<p class="eyebrow">GitHub setup · 1 of 2</p>
+<h1>Set up GitHub login</h1>
+<p>Create a GitHub App for this tunnel. GitHub will ask you to approve its creation.</p>
+<form method="post" action="/__otgo/github/setup/create">
+<input type="hidden" name="csrf" value="{{.}}">
+<button type="submit" class="github-button">{{template "github"}}Continue to GitHub</button>
+</form>
+<p class="note">No repository permissions or webhook deliveries are requested.</p>
+</section>{{template "footer"}}</main>
+</body>
+</html>{{end}}
+
+
+{{define "manifest"}}{{template "head" "Create your GitHub App"}}<main>{{template "brand"}}<section class="panel">
+<p class="eyebrow">GitHub setup · 2 of 2</p>
+<h1>Create your GitHub App</h1>
+<p>Approve App creation on GitHub. You’ll return here when your login is ready.</p>
+<form method="post" action="https://github.com/settings/apps/new?state={{.State}}">
+<input type="hidden" name="manifest" value="{{.Manifest}}">
+<button type="submit" class="github-button">{{template "github"}}Create GitHub App</button>
+</form>
+<p class="note">Only approved accounts will be able to sign in.</p>
+</section>{{template "footer"}}</main>
+</body>
+</html>{{end}}
+
+
+{{define "complete"}}{{template "head" "GitHub login is ready · otgo"}}<main class="wide">{{template "brand"}}<section class="panel">
+<div class="success" aria-hidden="true">
+<svg viewBox="0 0 24 24" fill="none">
+<path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+</div>
+<p class="eyebrow">Setup complete</p>
+<h1>Your GitHub login is ready.</h1>
+<p>Start the proxy in your terminal, then open your site.</p>
+<dl class="detail">{{if .Profile}}<dt>Profile</dt>
+<dd>{{.Profile}}</dd>{{end}}
+<dt>Site</dt>
+<dd>
+<a href="{{.URL}}" rel="noreferrer">{{.URL}}</a>
+</dd>
+</dl>{{if .Command}}<p class="command-label">Run this command</p>
+<pre class="command" id="launch-command" tabindex="0" aria-label="Proxy launch command">{{.Command}}</pre>
+<button type="button" id="copy-command">Copy command</button>
+<span class="copy-status" id="copy-status" role="status" aria-live="polite">
+</span>
+{{else}}
+<p class="note">Run <code>otgo profiles</code> to find your proxy launch command.</p>{{end}}
+<p class="note">Your settings are saved. You can close this tab.</p>
+</section>{{template "footer"}}</main>
+<script>{{template "copy-script"}}</script>
+</body>
+</html>{{end}}
+
+
+{{define "logout"}}{{template "head" "Sign out · otgo"}}<main>{{template "brand"}}<section class="panel">
+<p class="eyebrow">Your session</p>
+<h1>Ready to sign out?</h1>
+<p>You’ll need to sign in again to access this site.</p>
+<form method="post" action="/__otgo/logout">
+<input type="hidden" name="csrf" value="{{.}}">
+<button type="submit">Sign out</button>
+</form>
+</section>{{template "footer"}}</main>
+</body>
+</html>{{end}}

@@ -25,7 +25,7 @@ Commands:
   version                  Show version, Git SHA and build state (also --version)
   auth                     Configure browser login and machine tokens
   proxy                    Run the saved authenticated HTTP proxy
-  profiles                 List profiles
+  profiles                 List saved profiles, URLs and proxy launch commands
   list                     List stored tunnels
   get                      Show a stored tunnel
   pending                  Show a pending tunnel request
@@ -91,6 +91,9 @@ func runCommand(ctx context.Context, args []string, in io.Reader, out, errout io
 	if args[0] == "auth" {
 		return runAuth(ctx, args[1:], in, out, errout)
 	}
+	if args[0] == "profiles" {
+		return runProfiles(ctx, args[1:], out, errout)
+	}
 	if args[0] == "proxy" {
 		return runProxy(ctx, args[1:], out, errout)
 	}
@@ -153,10 +156,6 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 
 	write := &lockedWriter{w: out}
 	writeErr := &lockedWriter{w: errout}
-	if name == "profiles" {
-		profiles, err := client.Profiles(commandCtx)
-		return printValue(write, common.json, profiles, err)
-	}
 	if name == "list" {
 		tunnels, err := client.List(commandCtx)
 		return printValue(write, common.json, tunnels, err)

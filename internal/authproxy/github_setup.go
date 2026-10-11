@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"net"
 	"net/http"
@@ -34,9 +33,14 @@ type githubManifest struct {
 	DefaultEvents      []string          `json:"default_events"`
 	Public             bool              `json:"public"`
 }
+
+// SetupLaunch carries the CLI-selected profile and credential-free startup command.
+type SetupLaunch struct{ Profile, Command string }
+
 type githubSetup struct{ *githubSetupState }
 
 type githubSetupState struct {
+	launch                 SetupLaunch
 	cfg                    Config
 	paths                  Paths
 	binding                Binding
@@ -58,7 +62,7 @@ type githubSetupState struct {
 	out                    io.Writer
 }
 
-func newGitHubSetup(cfg Config, paths Paths, binding Binding, accounts []GitHubAccount, provider *githubProvider, origin string, out io.Writer) (*githubSetup, error) {
+func newGitHubSetup(cfg Config, paths Paths, binding Binding, accounts []GitHubAccount, provider *githubProvider, origin string, out io.Writer, launch ...SetupLaunch) (*githubSetup, error) {
 	if e := ValidateBinding(cfg, binding); e != nil {
 		return nil, e
 	}
@@ -80,11 +84,12 @@ func newGitHubSetup(cfg Config, paths Paths, binding Binding, accounts []GitHubA
 	if e != nil {
 		return nil, errors.New("cannot encode GitHub manifest")
 	}
-	return &githubSetup{&githubSetupState{cfg: cfg, paths: paths, binding: binding, accounts: accounts, provider: provider, origin: origin, state: randomSecret(), startToken: randomSecret(), cookieName: setupCookie + "-" + hex.EncodeToString(randomBytes(8)), manifest: string(b), expires: time.Now().Add(10 * time.Minute), now: time.Now, completed: make(chan error, 1), out: out, ctx: context.Background()}}, nil
+	var presentation SetupLaunch
+	if len(launch) > 0 {
+		presentation = launch[0]
+	}
+	return &githubSetup{&githubSetupState{launch: presentation, cfg: cfg, paths: paths, binding: binding, accounts: accounts, provider: provider, origin: origin, state: randomSecret(), startToken: randomSecret(), cookieName: setupCookie + "-" + hex.EncodeToString(randomBytes(8)), manifest: string(b), expires: time.Now().Add(10 * time.Minute), now: time.Now, completed: make(chan error, 1), out: out, ctx: context.Background()}}, nil
 }
-
-var setupPage = template.Must(template.New("setup").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><title>Set up otgo GitHub login</title><h1>Set up GitHub login</h1><p>This creates a GitHub App for your tunnel. GitHub will ask you to approve creation. No repository write permissions or webhook deliveries are requested.</p><form method="post" action="/__otgo/github/setup/create"><input type="hidden" name="csrf" value="{{.}}"><button>Continue to GitHub</button></form></html>`))
-var manifestPage = template.Must(template.New("manifest").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><title>Create GitHub App</title><h1>Create your GitHub App</h1><form method="post" action="https://github.com/settings/apps/new?state={{.State}}"><input type="hidden" name="manifest" value="{{.Manifest}}"><button>Create GitHub App on GitHub</button></form></html>`))
 
 func (s *githubSetup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ownedHeaders(w)
@@ -124,9 +129,9 @@ func (s *githubSetup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid setup request", http.StatusForbidden)
 			return
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action https://github.com; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action https://github.com; base-uri 'none'; frame-ancestors 'none'")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = manifestPage.Execute(w, struct{ State, Manifest string }{s.state, s.manifest})
+		_ = pages.ExecuteTemplate(w, "manifest", struct{ State, Manifest string }{s.state, s.manifest})
 	case r.Method == "GET" && r.URL.Path == setupPath+"/callback":
 		s.callback(w, r)
 	default:
@@ -155,7 +160,7 @@ func (s *githubSetup) start(w http.ResponseWriter, r *http.Request) {
 		}
 		ownedFormHeaders(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = setupPage.Execute(w, s.browserCookie(r))
+		_ = pages.ExecuteTemplate(w, "setup", s.browserCookie(r))
 		return
 	}
 	if len(q["token"]) != 1 || len(q.Get("token")) != 43 || subtle.ConstantTimeCompare([]byte(q.Get("token")), []byte(s.startToken)) != 1 {
@@ -260,14 +265,14 @@ func (s *githubSetup) callback(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.commitErr = e
 	s.mu.Unlock()
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = io.WriteString(w, "GitHub login is configured. You can close this tab and start otgo proxy.\n")
+	completionHeaders(w)
+	_ = pages.ExecuteTemplate(w, "complete", struct{ Profile, Command, URL string }{s.launch.Profile, s.launch.Command, "https://" + s.binding.Hostname})
 	s.completed <- e
 }
-func RunGitHubSetup(ctx context.Context, paths Paths, binding Binding, approvedUsers []string, out io.Writer) error {
-	return runGitHubSetup(ctx, paths, binding, approvedUsers, out, newGitHubProvider(nil, officialGitHub))
+func RunGitHubSetup(ctx context.Context, paths Paths, binding Binding, approvedUsers []string, out io.Writer, launch ...SetupLaunch) error {
+	return runGitHubSetup(ctx, paths, binding, approvedUsers, out, newGitHubProvider(nil, officialGitHub), launch...)
 }
-func runGitHubSetup(ctx context.Context, paths Paths, binding Binding, approvedUsers []string, out io.Writer, provider *githubProvider) (result error) {
+func runGitHubSetup(ctx context.Context, paths Paths, binding Binding, approvedUsers []string, out io.Writer, provider *githubProvider, launch ...SetupLaunch) (result error) {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -290,7 +295,7 @@ func runGitHubSetup(ctx context.Context, paths Paths, binding Binding, approvedU
 	}
 	defer func() { _ = listener.Close() }()
 	origin := "http://" + listener.Addr().String()
-	setup, e := newGitHubSetup(cfg, paths, binding, accounts, provider, origin, out)
+	setup, e := newGitHubSetup(cfg, paths, binding, accounts, provider, origin, out, launch...)
 	if e != nil {
 		return e
 	}

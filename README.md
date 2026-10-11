@@ -1,5 +1,7 @@
 # go-opentunnel
 
+<img src="internal/authproxy/ui/mark.svg" alt="otgo: an animal peeking out of a tunnel" width="80" height="80">
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/darron/go-opentunnel.svg)](https://pkg.go.dev/github.com/darron/go-opentunnel)
 
 Expose a local application over public HTTPS with [OpenTunnel](https://opentunnel.xyz).
@@ -58,7 +60,15 @@ commands expose services directly without a login gate.
 A profile saves the hostname, backend and auth settings in XDG directories.
 Restarting reuses those settings and requires a fresh browser login. Use different
 profiles for different backends; they can run concurrently on one machine.
-While a proxy runs, `otgo get --profile inbox` shows its hostname.
+List saved profiles, clickable HTTPS URLs, backends and launch commands:
+
+```sh
+otgo profiles
+```
+
+This is a local inventory, so it works while proxies are running or stopped.
+`otgo profiles --json` produces structured output; `--names` prints only names.
+Profiles without a matching auth setup have no proxy launch command.
 
 ### GitHub login
 
@@ -69,7 +79,8 @@ otgo auth github --profile inbox --allow-user darron
 otgo proxy --profile inbox
 ```
 
-Follow the printed setup link to create a GitHub App. It requests no repository
+Follow the printed setup link to create a GitHub App. The completion page shows
+your profile and a copyable proxy command. It requests no repository
 permissions. Repeat `--allow-user` to approve more accounts. GitHub login replaces
 password login. Existing OAuth/GitHub Apps are also supported.
 

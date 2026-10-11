@@ -1,0 +1,256 @@
+:root {
+  color-scheme:dark;
+  --bg:#101413;
+  --panel:#191f1d;
+  --border:#303a36;
+  --ink:#f0f3eb;
+  --muted:#a5b2aa;
+  --mint:#91e7ca
+}
+* {
+  box-sizing:border-box
+}
+html {
+  min-height:100%;
+  background:var(--bg)
+}
+body {
+  margin:0;
+  min-height:100svh;
+  color:var(--ink);
+  font:16px/1.6 "Avenir Next",Avenir,"Segoe UI",sans-serif;
+  display:grid;
+  place-items:center;
+  padding:48px 24px;
+  background:radial-gradient(ellipse at 50% 5%,#1d2b25 0,transparent 65%)
+}
+main {
+  width:min(100%,440px)
+}
+.wide {
+  width:min(100%,620px)
+}
+.brand {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:42px
+}
+.brand svg {
+  width:46px;
+  height:46px;
+  flex:none
+}
+.wordmark {
+  font-size:28px;
+  font-weight:750;
+  letter-spacing:-1.4px
+}
+.brand-label {
+  margin-left:auto;
+  color:var(--muted);
+  font:11px/1.4 ui-monospace,monospace;
+  text-transform:uppercase;
+  letter-spacing:.14em
+}
+.panel {
+  padding:34px;
+  border:1px solid var(--border);
+  border-radius:18px;
+  background:var(--panel);
+  box-shadow:0 20px 64px #0003
+}
+.eyebrow {
+  color:var(--mint);
+  font:11px/1.4 ui-monospace,monospace;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  margin:0 0 14px
+}
+h1 {
+  font-size:30px;
+  line-height:1.2;
+  letter-spacing:-.9px;
+  font-weight:650;
+  margin:0 0 14px
+}
+p {
+  margin:0 0 26px;
+  color:var(--muted)
+}
+.button,button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  min-height:50px;
+  width:100%;
+  padding:12px 18px;
+  font:inherit;
+  font-size:15px;
+  font-weight:600;
+  line-height:1.4;
+  border:1px solid transparent;
+  border-radius:10px;
+  background:var(--mint);
+  color:#10221a;
+  cursor:pointer;
+  text-decoration:none;
+  transition:background .15s,border-color .15s
+}
+button:hover,.button:hover {
+  background:#acf3db
+}
+.github-button {
+  background:#f0f3eb;
+  color:#171c19
+}
+.github-button:hover {
+  background:#fff
+}
+.github-button svg {
+  width:22px;
+  height:22px;
+  flex:none
+}
+a:focus-visible,button:focus-visible,input:focus-visible,pre:focus-visible {
+  outline:3px solid var(--mint);
+  outline-offset:4px
+}
+label {
+  display:block;
+  font-size:14px;
+  font-weight:600
+}
+input[type=password] {
+  display:block;
+  min-height:50px;
+  width:100%;
+  margin:8px 0 18px;
+  padding:12px 14px;
+  color:var(--ink);
+  background:#101613;
+  border:1px solid #506057;
+  border-radius:10px;
+  font:inherit;
+  font-size:16px
+}
+input[type=password]:focus {
+  border-color:var(--mint)
+}
+.note {
+  font-size:13px;
+  margin:20px 0 0
+}
+.message {
+  color:#ffc7b5;
+  font-size:14px;
+  margin:18px 0 0
+}
+.footer {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  margin:26px 0 0;
+  color:var(--muted);
+  font-size:12px
+}
+.footer svg {
+  width:14px;
+  height:14px
+}
+.endpoint {
+  font:12px/1.6 ui-monospace,monospace;
+  overflow-wrap:anywhere;
+  margin:22px 0 0;
+  text-align:center;
+  color:var(--muted)
+}
+.success {
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border:1px solid #537768;
+  border-radius:50%;
+  color:var(--mint);
+  margin-bottom:24px
+}
+.success svg {
+  width:22px;
+  height:22px
+}
+.detail {
+  display:grid;
+  grid-template-columns:80px minmax(0,1fr);
+  gap:8px 18px;
+  font-size:14px;
+  margin:24px 0
+}
+.detail dt {
+  color:var(--muted)
+}
+.detail dd {
+  margin:0;
+  overflow-wrap:anywhere
+}
+.detail a {
+  color:var(--mint)
+}
+.command {
+  background:#101613;
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:16px;
+  margin:12px 0 16px;
+  color:var(--mint);
+  font:13px/1.7 ui-monospace,"SFMono-Regular",Consolas,monospace;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  user-select:all
+}
+.command-label {
+  font-size:14px;
+  margin:28px 0 0;
+  color:var(--ink)
+}
+.copy-status {
+  display:block;
+  min-height:22px;
+  margin:10px 0 0;
+  color:var(--muted);
+  font-size:12px
+}
+.small-link {
+  color:var(--mint);
+  text-decoration:none
+}
+.small-link:hover {
+  text-decoration:underline
+}
+@media(max-width:480px) {
+  body {
+    padding:32px 18px
+  }
+  .panel {
+    padding:26px 22px
+  }
+  .brand {
+    margin-bottom:30px
+  }
+  h1 {
+    font-size:27px
+  }
+  .brand-label {
+    font-size:10px
+  }
+  .detail {
+    grid-template-columns:65px minmax(0,1fr)
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  * {
+    transition:none!important
+  }
+}

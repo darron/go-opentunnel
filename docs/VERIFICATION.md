@@ -1,5 +1,43 @@
 # Local verification record
 
+## Visual pages and profile inventory — 2026-10-11
+
+The v0.8.0 changes use self-contained dark templates for password/GitHub login,
+GitHub registration, completion and logout. The original otgo SVG mark and the
+attributed GitHub icon are embedded. There is no new Go dependency or service
+protocol change. The expanded inventory reads local state without a remote API
+request; `ready` describes matching configuration, not live availability.
+
+| Check | Result |
+| --- | --- |
+| Go 1.27.2 `go test ./... -count=1` | All packages passed |
+| `go test -race ./... -count=1` | All packages passed |
+| Go 1.25.0 focused inventory, command and page tests | Passed on the minimum supported toolchain |
+| `make vet lint build build-example` | Vet, formatting, full golangci-lint (0 issues), CLI and example builds passed |
+| Real-file inventory fixtures | Completed, pending, auth-only, unsafe config, empty inventory, custom config/API selection (including base paths), combined pending/auth state and old names output passed; secret canaries absent; no API calls |
+| Command quoting | A real POSIX shell parsed custom paths with spaces, quotes, HTML and command substitutions without executing their contents; explicit storage paths became absolute and resulting flags round-tripped through the CLI parser |
+| Setup completion | Real callback fixture saved credentials, rendered the selected command with escaped HTML and no provider/setup secrets, rejected replay, and authorized exactly the clipboard script’s rendered SHA-256 |
+| Browser layout | Chrome desktop and 375px layouts inspected; password/GitHub pages and long commands had no horizontal overflow; GitHub button retained its existing auth route |
+| Clipboard | Chrome copy/paste produced the expected profile command; copying still worked after the preview server stopped; a Node harness checked success, permission denial and missing API branches |
+| Installed-state inventory | Rebuilt CLI found the existing inbox profile and its launch command through read-only listing; its proxy/config were unchanged |
+
+An independent review found two diagnostic defects: auth settings overwrote
+pending state, and deriving a custom API base URL from its origin dropped a
+possible path. Combined-state regressions and explicit custom-API selection now
+cover both. Isolated mutations confirmed that the new tests reject removal of
+identity matching, shell argument quoting and command HTML escaping.
+The reviewer repeated inventory/command tests ten times and setup/page/GitHub
+tests five times after the fixes, with no remaining actionable findings.
+
+The synthetic preview uses the actual templates and response headers; reproduce it
+with [the preview instructions](TESTING.md#preview-the-auth-pages). It creates no
+remote resources. The clipboard script is hash-authorized only on completion;
+login pages remain script-free. The screenshot/copy fixtures contain no real
+credentials. Chrome’s extension blocked the fixture sign-in navigation even though
+the server received the correct route; successful authentication and denial are
+covered by the full handler/OAuth/TLS regressions, not inferred from that click.
+A fresh hosted GitHub grant was not created for these presentation changes.
+
 ## v0.7.0 security and test audit — 2026-10-11
 
 The [audit record](SECURITY_AUDIT.md) separates reproduced defects, test gaps,

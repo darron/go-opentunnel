@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Redesign password, GitHub, setup and logout pages with a dark theme, an original
+  otgo SVG mark and a clear GitHub sign-in button. Artwork, styles and the
+  completion page’s clipboard script are embedded; no remote assets are loaded.
+- Show the saved profile, HTTPS URL and a copyable startup command after GitHub
+  setup. Preserve custom storage/API flags and quote command arguments safely.
+- Expand `otgo profiles` into a local inventory of profiles, public URLs, saved
+  backends, login modes and proxy launch commands. Include pending and incomplete
+  state without suggesting unsafe launches. `--json` now returns objects; use
+  `--names --json` for an array of names.
+
 ## v0.7.0 — Security hardening and stronger verification — 2026-10-11
 
 - Bind machine tokens to their saved tunnel/API/backend boundary. Unbound legacy

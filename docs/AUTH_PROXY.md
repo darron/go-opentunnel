@@ -53,8 +53,31 @@ Override them with `--data-dir`, `--auth-config` and `--token-file`; use the sam
 overrides subsequently. Config binds to the stored tunnel ID, hostname and API
 origin. Missing/mismatched state fails startup instead of silently provisioning.
 
-Retrieve a hostname while running with `otgo get --profile inbox --json`. The
-password cannot be recovered from its saved verifier.
+Find saved profiles and their endpoints with:
+
+```sh
+otgo profiles
+```
+
+Each entry shows its HTTPS URL, saved backend, login mode and launch command when
+its identity matches the auth configuration. This reads local state; `ready`
+means the saved configuration matches, not that the tunnel is currently online.
+Pending, incomplete, unprotected and mismatched profiles are shown without a
+proxy command. `otgo profiles --json` returns objects; use `--names --json` for
+the earlier array of names.
+
+Discovery covers the current XDG directories and the selected `--data-dir`.
+Arbitrary custom files cannot be discovered: pass `--profile` and `--auth-config`
+for that profile, plus its `--token-file` override if used. Overrides apply only
+to the named profile. Other entries use their default auth/token paths. For a custom
+API, supply the original `--api` base URL. The saved binding contains only its
+origin, so the inventory reports `api-required` until that value is supplied.
+Launch commands make explicit storage paths absolute, so they work from another
+directory. Default locations still assume the same XDG environment.
+
+Retrieve one hostname while running with `otgo get --profile inbox --json`.
+Passwords, private keys, provider secrets and machine tokens are never printed
+by the inventory. The password cannot be recovered from its saved verifier.
 
 | Task | Command while the profile is stopped |
 | --- | --- |
@@ -85,11 +108,16 @@ First complete password setup to save the backend and tunnel.
    to GitHub and approve App creation. It requests no repository permissions or
    webhook deliveries. otgo saves the client credentials privately.
 
-3. Start the proxy:
+3. Copy the startup command from the completion page and run it in your terminal.
+   It includes the profile and any storage/API flags supplied during setup:
 
    ```sh
    otgo proxy --profile inbox
    ```
+
+The completion page and copy button keep working after setup’s temporary server
+stops. If clipboard access is unavailable, the button selects the command for
+manual copying. The profile and URL are shown without credentials.
 
 The setup link works once and binds one browser, then redirects to
 `/__otgo/github/setup` without the token. All setup routes use that prefix.

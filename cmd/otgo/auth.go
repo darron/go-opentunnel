@@ -182,7 +182,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				if clientID == "" {
-					return authproxy.RunGitHubSetup(ctx, paths, binding, users, out)
+					return authproxy.RunGitHubSetup(ctx, paths, binding, users, out, authproxy.SetupLaunch{Profile: a.profile, Command: a.launchCommand()})
 				}
 				accounts, e := authproxy.ResolveGitHubUsers(ctx, users)
 				if e != nil {

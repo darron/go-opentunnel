@@ -322,3 +322,24 @@ loopback backend, deletes the tunnel and requires authenticated API 404 afterwar
 It uses memory storage and prints only safe diagnostics. A provisioning failure
 stops forwarding checks; cleanup still runs. It does not change saved profiles.
 Read the dated [live results](LIVE_TESTING.md) before repeating it.
+
+## Preview the auth pages
+
+Render synthetic pages without a tunnel, real credentials or a GitHub App:
+
+```sh
+preview_dir=$(mktemp -d)
+OTGO_UI_PREVIEW_DIR="$preview_dir" go test ./internal/authproxy -run '^TestVisualPreview$' -count=1
+python3 scripts/ui-preview/serve.py "$preview_dir"
+```
+
+Open `http://127.0.0.1:58941/github-login`. Other fixture paths are
+`/password-login`, `/setup`, `/manifest`, `/complete`, `/complete-long` and
+`/logout`. The server binds loopback and applies the rendered pages’ CSP headers;
+fixture cookies are discarded. This is a visual/copy-button preview, not a
+working login or setup server. Do not submit its GitHub App creation form.
+
+Check phone widths, keyboard focus, long commands and copy/paste. The completion
+page must remain usable after stopping the preview server with Ctrl-C: its logo,
+styles and clipboard script are embedded in the HTML. A denied or unavailable
+clipboard selects the command for manual copying.
