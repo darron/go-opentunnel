@@ -9,7 +9,7 @@ separate. The advertised client version is 0.6.0 and dependencies are unchanged.
 
 - Go 1.25.0 `go test -race -count=1 ./...` passed every package, including auth.
   Vet, full golangci-lint (**0 issues**), formatting and `git diff --check` passed.
-  All five Homebrew updater tests passed and the CLI-only `make build` succeeded.
+  All seven Homebrew updater tests passed and the CLI-only `make build` succeeded.
 - The new CLI deadline regression failed against the old two-minute defaults
   for create/resume/ensure/password setup, then passed after the change. It
   observes actual outgoing request contexts with a longer request budget and
@@ -19,6 +19,11 @@ separate. The advertised client version is 0.6.0 and dependencies are unchanged.
 - Version command regressions cover both `version` and `--version`, unexpected
   arguments and output errors. Metadata tests cover clean/dirty builds, archive
   fallback, missing or invalid metadata, and recorded VCS precedence.
+- Real Go 1.25.0 binaries from an isolated clean checkout and a modified checkout
+  reported the same commit as `clean` and `dirty`, respectively. Supplied linker
+  values could not hide the dirty checkout. An archive built with
+  `make build BUILD_REVISION=<commit> BUILD_STATE=clean` reported that commit as
+  clean; the same archive without supplied metadata reported `sha=unknown unknown`.
 - The [fresh-state live comparison](LIVE_TESTING.md#fresh-state-version-comparison-and-v060-live-checks--2026-10-11)
   passed v0.3.0/v0.5.0/current embedded examples and actual CLI forwarding, plus
   final direct listening and public plain/v1/v2 preambles. Fresh CLI provisioning
@@ -30,6 +35,39 @@ separate. The advertised client version is 0.6.0 and dependencies are unchanged.
 Earlier terminal hosted nonce failures remain unexplained. Longer pending waits
 do not prove that the service's earlier failure was a timeout. These tests did
 not establish the deployed server revision or induce provider rate limits.
+
+### Publication and installed Homebrew
+
+Published [v0.6.0](https://github.com/darron/go-opentunnel/releases/tag/v0.6.0)
+from `50fcd131a7c4b5a67ed8471c3b1c174e0a0b5402`, with the CHANGELOG committed
+and release notes attached to GitHub. No release-note document was added.
+
+- [Release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38165425557)
+  and [tag CI](https://github.com/darron/go-opentunnel/actions/runs/38165656413)
+  passed Linux/macOS tests, vet, CLI/example builds and updater tests, plus Linux
+  race detection and full lint.
+- The actual release event ran the
+  [source hook](https://github.com/darron/go-opentunnel/actions/runs/38165661840),
+  which dispatched the
+  [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38165668841).
+  Its macOS style/strict audit/source build/install/test and isolated publishing
+  jobs passed. No manual dispatch was used. Tap commit
+  `d12cbec37b26a88f0dd34ea4bea5bfcf85e09356` changed only `Formula/otgo.rb`.
+  The archive SHA-256 is
+  `3b37f7dd9dec8523464932f016cdf746a14420f974c6bc8066172f8bc1626796`.
+- Locally upgraded stable Homebrew from 0.5.0 to 0.6.0 and passed
+  `brew test darron/tap/otgo`, `proxy --help` and `create --help`. Both version
+  aliases reported `otgo 0.6.0 sha=50fcd131a7c4b5a67ed8471c3b1c174e0a0b5402 clean`.
+  Create help reports the five-minute default. Older kegs were retained;
+  saved profiles and the running inbox proxy were untouched.
+- `go mod download -json github.com/darron/go-opentunnel@v0.6.0` succeeded and
+  returned the release commit as its origin. The temporary local audit tap was
+  removed after its checks.
+
+The tap's initial generic CI run failed because its existing trust-bypass
+environment variable is deprecated by Homebrew. Removed that variable and
+added explicit formula trust to the release validation workflow; the release's
+own validation and publishing then passed.
 
 ## v0.5.0 publication and stable Homebrew — 2026-10-10
 
