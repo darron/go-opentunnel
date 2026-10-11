@@ -10,6 +10,7 @@ produces only the CLI; the example has a separate target.
 | --- | --- |
 | `make check` | Full tests, vet, formatting, lint, CLI build passed; **0 lint issues** |
 | `make race` | All packages passed |
+| GitHub Actions (Go 1.25.x) | Linux/macOS tests, vet, builds and updater tests passed; Linux race and full lint passed |
 | `GOTOOLCHAIN=go1.25.0 go test ./...` | Minimum Go version passed |
 | `make fuzz` | Frame 66,434; control 1,026,590; SNI routing 572,652 executions, no failure |
 | Linux/Windows amd64 CLI cross-build | Passed; not runtime-tested |
@@ -28,7 +29,9 @@ The first Linux CI run exposed a test fixture race: manual renewal competed with
 a newly started background worker. Four manual renewal tests now use a worker-free
 connection fixture; background recovery integration coverage is retained. Twenty
 race-enabled repetitions of these checks passed, including shared cooldown and
-renewal reset behavior. Production renewal code did not change.
+renewal reset behavior. Production renewal code did not change. The
+[implementation CI run](https://github.com/darron/go-opentunnel/actions/runs/38096875112)
+passed all jobs after this fixture correction.
 
 The fresh-context [auth review](AUTH_PROXY_REVIEW.md) reproduced defects and fixes;
 final source review found no remaining Critical/Important issue. It independently
