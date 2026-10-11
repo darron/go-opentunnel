@@ -10,7 +10,7 @@ and builds only `./cmd/otgo`. It installs no library source, examples or fixture
 Go is a build dependency; the CLI includes the packages it needs. `make build`
 also builds only the CLI; `make build-example` separately builds the example.
 
-The v0.4.0 stable release includes the auth proxy. Use HEAD for newer changes:
+Stable releases include the auth proxy. Use HEAD for unreleased changes:
 
 ```sh
 brew install --HEAD darron/tap/otgo
@@ -71,13 +71,13 @@ hook visibly; the release remains published and can be retried.
 After adding the secret, test the complete hook without creating a release:
 
 ```sh
-gh workflow run update-homebrew.yml --repo darron/go-opentunnel -f tag=v0.4.0
+gh workflow run update-homebrew.yml --repo darron/go-opentunnel -f tag=v0.5.0
 ```
 
 To run the tap directly using your local GitHub login:
 
 ```sh
-gh workflow run update-otgo.yml --repo darron/homebrew-tap -f tag=v0.4.0
+gh workflow run update-otgo.yml --repo darron/homebrew-tap -f tag=v0.5.0
 ```
 
 Leave the tap workflow's tag empty to select the latest stable release. Drafts and prereleases

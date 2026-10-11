@@ -2,12 +2,17 @@
 
 ## Unreleased
 
+## v0.5.0 — Go API documentation and simpler guides — 2026-10-10
+
 - Expand Go API documentation with a package overview, public field and method
   contracts, runnable local examples, and a pkg.go.dev link in the README.
-
 - Simplify the README and auth setup instructions. Add a documentation index,
   put the protected proxy quick start before validation, and archive earlier
   reviews with updated links.
+- Update the advertised client version. Public APIs, runtime behavior and
+  dependencies otherwise remain unchanged from v0.4.0.
+
+[Compare v0.4.0 to v0.5.0](https://github.com/darron/go-opentunnel/compare/v0.4.0...v0.5.0)
 
 ## v0.4.0 — Authenticated application proxy — 2026-10-10
 
