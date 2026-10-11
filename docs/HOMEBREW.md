@@ -26,6 +26,12 @@ uses a narrowly scoped secret to dispatch the tap's `update-otgo.yml` workflow
 on main. There is no cron schedule. Drafts and prereleases do not trigger updates.
 A tag push by itself is insufficient: publish the GitHub release.
 
+If release creation is later automated using `GITHUB_TOKEN`, that publishing job
+must explicitly dispatch this workflow with the release tag. GitHub suppresses
+new workflow runs from most events created with that token, including release
+publication; `workflow_dispatch` is an exception. See
+[GitHub's workflow trigger rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+
 The tap downloads the HTTPS source archive and calculates SHA-256. Only
 `Formula/otgo.rb` changes; HEAD/build/test logic is preserved. Older versions are
 refused and identical updates are no-ops. A macOS runner installs/tests the

@@ -33,3 +33,9 @@ Host/SNI/Origin validation, fixed upstream rewrite, credential stripping, OAuth
 state/PKCE/numeric allowlist or bound-identity startup. Follow-up fixes were reviewed
 and tested. [VERIFICATION.md](VERIFICATION.md) and [LIVE_TESTING.md](LIVE_TESTING.md)
 record actual local/hosted evidence and limits.
+
+The final release-dispatch review found no further issues. It checked stable
+release validation, environment/JSON handling of tags, manual main-only guards,
+the tap-only Actions-write credential, immutable tap checkouts and separation of
+validation from publishing. Both workflows passed `actionlint`; all five tap
+updater tests passed. Live results are recorded in [VERIFICATION.md](VERIFICATION.md).

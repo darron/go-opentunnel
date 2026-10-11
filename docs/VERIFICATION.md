@@ -3,6 +3,8 @@
 Browser form policy correction: regression tests, `make check` (zero lint issues),
 `make race`, and native Chrome password login/root redirect/logout passed. See
 [LIVE_TESTING.md](LIVE_TESTING.md#browser-login-regression--2026-10-10).
+The [browser-fix CI run](https://github.com/darron/go-opentunnel/actions/runs/38100391440)
+passed all jobs. The owner also confirmed the protected Inbox loads at `/`.
 
 ## Auth proxy and Homebrew — 2026-10-10
 
@@ -24,12 +26,19 @@ produces only the CLI; the example has a separate target.
 | Stable Homebrew formula | Syntax/style/strict audit, source install and `brew test` passed |
 | Official `darron/tap/otgo` HEAD install | Source build, `brew test`, CLI help and auth paths passed |
 | Tap-owned Actions workflow | Manual v0.3.0 run passed macOS validation and isolated publishing jobs |
+| Source-to-tap release hook | Secret-backed dispatch, macOS source build/audit/test and publisher passed using existing v0.3.0 |
 
 The [live tap run](https://github.com/darron/homebrew-tap/actions/runs/38096719658)
 validated the existing stable release without changing it. The hourly schedule was
-subsequently removed in favor of a published-release hook. `HOMEBREW_TAP_TOKEN` is
-configured; the new cross-repository dispatch is pending live validation.
-No new tag/release was published.
+subsequently removed in favor of a published-release hook. With `HOMEBREW_TAP_TOKEN`
+configured, the [source dispatch](https://github.com/darron/go-opentunnel/actions/runs/38100661207)
+successfully started the [tap run](https://github.com/darron/homebrew-tap/actions/runs/38100668461).
+Both tap jobs passed: macOS source build, style/strict audit, installation and
+`brew test`, followed by isolated publishing. The formula was already current,
+so publishing was a no-op. This used manual dispatch with existing v0.3.0 to
+exercise the complete job chain; the `release: published` event itself was not
+exercised. No new tag/release was published. Local HEAD upgrade and `brew test`
+also passed with the browser fix installed as `HEAD-d6d5a28`.
 
 The first Linux CI run exposed a test fixture race: manual renewal competed with
 a newly started background worker. Four manual renewal tests now use a worker-free
