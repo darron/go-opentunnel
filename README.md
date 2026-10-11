@@ -13,7 +13,11 @@ For the CLI:
 
 ```sh
 brew install darron/tap/otgo
+otgo version
 ```
+
+`otgo version` (or `otgo --version`) shows the version, full Git SHA and whether
+the source was clean or dirty when built. Missing build metadata is `unknown`.
 
 For the Go library:
 

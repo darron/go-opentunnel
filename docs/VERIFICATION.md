@@ -16,6 +16,9 @@ separate. The advertised client version is 0.6.0 and dependencies are unchanged.
   tests explicit overrides, disabled overall deadlines, parent deadlines and
   cancellation before network access. It does not wait for real timers to expire.
 - Rebuilt CLI help reports `5m0s` for all four provisioning/setup paths.
+- Version command regressions cover both `version` and `--version`, unexpected
+  arguments and output errors. Metadata tests cover clean/dirty builds, archive
+  fallback, missing or invalid metadata, and recorded VCS precedence.
 - The [fresh-state live comparison](LIVE_TESTING.md#fresh-state-version-comparison-and-v060-live-checks--2026-10-11)
   passed v0.3.0/v0.5.0/current embedded examples and actual CLI forwarding, plus
   final direct listening and public plain/v1/v2 preambles. Fresh CLI provisioning

@@ -62,6 +62,27 @@ class FormulaUpdateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             update(self.tap, "v0.4.0", "b" * 64)
 
+    def test_embeds_verified_revision_and_rejects_bad_revision(self):
+        text = self.original.replace('"build", "./cmd/otgo"', f'"build", "-ldflags", "-X main.buildRevision={"c" * 40}", "./cmd/otgo"')
+        self.path.write_text(text)
+        self.assertTrue(update(self.tap, "v0.4.0", "b" * 64, "d" * 40))
+        self.assertIn("-X main.buildRevision=" + "d" * 40, self.path.read_text())
+        self.assertFalse(update(self.tap, "v0.4.0", "b" * 64, "d" * 40))
+        with self.assertRaises(ValueError):
+            update(self.tap, "v0.4.0", "b" * 64)
+        original = self.path.read_text()
+        for revision in ["d" * 39, "D" * 40, "z" * 40, "sha -X main.other=value"]:
+            with self.subTest(revision=revision), self.assertRaises(ValueError):
+                update(self.tap, "v0.4.0", "b" * 64, revision)
+            self.assertEqual(self.path.read_text(), original)
+
+    def test_revision_slot_must_be_unique(self):
+        for text in [self.original, self.original.replace('"build", "./cmd/otgo"', f'"build", "-ldflags", "-X main.buildRevision={"c" * 40} -X main.buildRevision={"d" * 40}", "./cmd/otgo"')]:
+            self.path.write_text(text)
+            with self.assertRaises(ValueError):
+                update(self.tap, "v0.4.0", "b" * 64, "d" * 40)
+            self.assertEqual(self.path.read_text(), text)
+
 
 if __name__ == "__main__":
     unittest.main()

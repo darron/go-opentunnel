@@ -3,12 +3,27 @@
 ```sh
 brew install darron/tap/otgo
 brew test darron/tap/otgo
+otgo version
 ```
 
 The [personal tap](https://github.com/darron/homebrew-tap) downloads release source
 and builds only `./cmd/otgo`. It installs no library source, examples or fixtures.
 Go is a build dependency; the CLI includes the packages it needs. `make build`
 also builds only the CLI; `make build-example` separately builds the example.
+
+From v0.6.0, `otgo version` (or `otgo --version`) reports the binary version,
+full Git SHA and source state at build time (`clean`, `dirty` or `unknown`).
+Checkout builds read Go's recorded VCS metadata. Stable Homebrew builds use the
+release tag's verified commit SHA because source archives contain no `.git`.
+
+For other archive builds, supply that metadata explicitly:
+
+```sh
+make build BUILD_REVISION=<full-git-sha> BUILD_STATE=clean
+```
+
+An archive build without supplied metadata reports `sha=unknown unknown`.
+Recorded VCS metadata takes precedence over supplied values.
 
 Stable releases include the auth proxy. Use HEAD for unreleased changes:
 

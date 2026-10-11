@@ -14,6 +14,8 @@
   Existing sentinel checks and recovery cooldowns remain supported.
 - Allow five minutes by default for CLI provisioning and password setup, including
   DNS validation and certificate issuance. Explicit timeout overrides still apply.
+- Add `otgo version` and `otgo --version` to show the binary version, full Git SHA
+  and build state (`clean`, `dirty` or `unknown`) using Go's standard library.
 - Add upstream byte vectors, real CLI/relay/TLS forwarding tests, route-isolation,
   bounded-write and diagnostic-redaction regressions. No dependency was added.
 

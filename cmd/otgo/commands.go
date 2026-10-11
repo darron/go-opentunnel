@@ -22,6 +22,7 @@ const defaultProvisionTimeout = 5 * time.Minute
 const usage = `Usage: otgo <command> [flags]
 
 Commands:
+  version                  Show version, Git SHA and build state (also --version)
   auth                     Configure browser login and machine tokens
   proxy                    Run the saved authenticated HTTP proxy
   profiles                 List profiles
@@ -80,6 +81,12 @@ func runCommand(ctx context.Context, args []string, in io.Reader, out, errout io
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		_, err := io.WriteString(out, usage)
 		return err
+	}
+	if args[0] == "version" || args[0] == "--version" {
+		if len(args) != 1 {
+			return fmt.Errorf("unexpected version argument %q", args[1])
+		}
+		return printVersion(out)
 	}
 	if args[0] == "auth" {
 		return runAuth(ctx, args[1:], in, out, errout)

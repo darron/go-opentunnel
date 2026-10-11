@@ -579,3 +579,8 @@ that extra waiting alone would have completed the earlier request.
 The earlier `ACME server returned no nonce` was a terminal remote failure,
 not a local deadline. These successful later runs do not explain that failure
 or establish rate limiting. No deployed-server revision was verified.
+
+The version-display command was added after these hosted checks. Its dispatch,
+output and error handling passed local tests and rebuilt-binary checks. The
+longer default was verified at the HTTP request boundary; the hosted CLI create
+above used an explicit five-minute limit.

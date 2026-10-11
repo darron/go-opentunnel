@@ -10,6 +10,7 @@ RELEASE_URL = re.compile(
     r'  url "https://github\.com/darron/go-opentunnel/archive/refs/tags/(v[^"/]+)\.tar\.gz"\n'
 )
 CHECKSUM = re.compile(r'  sha256 "[a-f0-9]{64}"\n')
+BUILD_REVISION = re.compile(r'(?<=-X main.buildRevision=)[a-f0-9]{40}(?=[\s"\'])')
 
 
 def version(tag):
@@ -19,10 +20,12 @@ def version(tag):
     return tuple(int(part) for part in match.groups())
 
 
-def update(tap, tag, checksum):
+def update(tap, tag, checksum, revision=None):
     requested = version(tag)
     if not re.fullmatch(r"[a-f0-9]{64}", checksum):
         raise ValueError("checksum must be 64 lowercase SHA-256 hex digits")
+    if revision is not None and not re.fullmatch(r"[a-f0-9]{40}", revision):
+        raise ValueError("revision must be 40 lowercase Git SHA hex digits")
     path = Path(tap) / "Formula" / "otgo.rb"
     if path.is_symlink() or not path.is_file():
         raise ValueError("otgo formula must be an existing regular file")
@@ -32,11 +35,17 @@ def update(tap, tag, checksum):
         raise ValueError("formula must contain exactly one otgo release URL and checksum")
     if requested < version(urls[0].group(1)):
         raise ValueError("refusing to downgrade the stable formula")
+    if revision is not None and len(BUILD_REVISION.findall(text)) != 1:
+        raise ValueError("formula must contain exactly one build revision")
+    if revision is None and "main.buildRevision=" in text:
+        raise ValueError("a formula with build metadata requires a verified revision")
     changed = RELEASE_URL.sub(
         f'  url "https://github.com/darron/go-opentunnel/archive/refs/tags/{tag}.tar.gz"\n',
         text,
     )
     changed = CHECKSUM.sub(f'  sha256 "{checksum}"\n', changed)
+    if revision is not None:
+        changed = BUILD_REVISION.sub(revision, changed)
     if changed == text:
         return False
     path.write_text(changed, encoding="utf-8")
@@ -48,9 +57,10 @@ def main():
     parser.add_argument("--tap-dir", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--sha256", required=True)
+    parser.add_argument("--revision", help="verified release tag's Git commit SHA")
     args = parser.parse_args()
     try:
-        changed = update(args.tap_dir, args.tag, args.sha256)
+        changed = update(args.tap_dir, args.tag, args.sha256, args.revision)
     except (ValueError, OSError) as exc:
         parser.exit(1, f"Homebrew update refused: {exc}\n")
     print("Updated otgo formula." if changed else "otgo formula is already current.")
