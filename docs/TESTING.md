@@ -63,9 +63,23 @@ Recorded local results are in [VERIFICATION.md](VERIFICATION.md). Read the
 for trust boundaries and tested limits. Earlier review decisions are in the
 [archive](archive/README.md).
 
-CI repeats the full suite on Go 1.25 for Linux and macOS. A separate current-Go
+CI repeats the full suite on Go 1.26 for Linux and macOS. A separate current-Go
 job runs the suite and `govulncheck`; a bounded eight-minute fuzz job saves any
 new crash input for 14 days. These jobs do not create public tunnels.
+
+## Check observability and half-close cleanup
+
+```sh
+go test -race -count=3 -run 'Test(APIStatistics|Statistics|HalfClose|CertificateFailure)' .
+go test -race ./metrics
+```
+
+Statistics fixtures compare actual relay payload with counters, retain totals
+after shutdown, and scrape through the official Prometheus handler. The
+half-close fixtures exercise both forwarding directions, capacity reuse,
+continued traffic, cancellation and the listener's TLS observation boundary.
+These checks supplement the full suite; they do not test the hosted relay's
+internal metrics or ACME retry policy. See [metric meanings](OBSERVABILITY.md).
 
 ## Check Go API documentation
 
@@ -222,6 +236,7 @@ Put flags after the command. Negative durations are rejected.
 | Provisioning and password setup `--timeout` | `5m` | Bounds the full provisioning operation; `0` disables this CLI deadline |
 | `connect --timeout` | `0` | Runs until Ctrl-C; a positive value bounds the full lifetime, including reconnects |
 | `--request-timeout` | `0` | Selects the API's finite default of `15s`; a positive value overrides it |
+| `connect`, `listen`, `proxy --half-close-timeout` | `0` | Selects the library's `60s` inactivity limit after a half-close; a positive value overrides it |
 
 At the package API, `Client.Connect(ctx, ...)` uses `ctx` only for startup. Set
 `ConnectOptions.Lifetime` to make application cancellation stop the running
@@ -233,6 +248,11 @@ value resets a channel after no application bytes move in either direction for
 that duration. Choose a value longer than valid quiet periods and test streaming
 or slow endpoints. `MaxInboundBytes` is separate: a large upload to a slow target
 can overflow the per-channel buffer and reset even while bytes are arriving.
+
+`HalfCloseTimeout` applies only after an observed half-close. Further activity
+renews its inactivity period. Test both stalled half-closes and responses that
+continue across several periods; fully open idle channels must remain unaffected.
+See [observability](OBSERVABILITY.md) for the separate local metrics listener.
 
 ## Check security boundaries locally
 

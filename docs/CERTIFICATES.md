@@ -37,8 +37,9 @@ complete visitor TLS or satisfy startup; the client waits for a valid replacemen
 ```go
 var failure *opentunnel.CertificateIssuanceError
 if errors.As(err, &failure) {
-    // Safe for routine logs; both fields contain normalized values.
-    log.Printf("certificate failure: code=%s status=%d", failure.Code, failure.StatusCode)
+    // Service-derived errors contain safe classifications.
+    log.Printf("certificate failure: code=%s class=%s status=%d",
+        failure.Code, failure.Class, failure.StatusCode)
     // failure.Reason holds up to 4096 bytes of raw remote text.
     // Inspect it privately and redact it before sharing.
 }
@@ -50,6 +51,25 @@ Deliberate access to `Reason` bypasses this protection. Low-level
 `Client.API().Certificate` also returns the raw remote certificate state.
 
 ## Classifications
+
+`Class` groups failures for monitoring while `Code` retains the more specific
+diagnostic. Classes are derived from the terminal provider reason; they do not
+prove whether the server will retry or when. A DNS/provider indication takes
+precedence over a generic HTTP failure.
+
+| Class | Indication |
+| --- | --- |
+| `network`, `timeout` | Connection or timeout failure |
+| `http_5xx`, `http_429` | Server HTTP error or rate limit |
+| `bad_body` | Malformed provider response |
+| `nonce`, `bad_nonce` | Missing nonce or ACME nonce rejection |
+| `authz_pending` | Authorization remained pending |
+| `dns` | DNS validation or provider failure |
+| `rejected` | Rejected authorization, identifier, CSR or other recognized request problem |
+| `other` | Reason did not match a known class |
+
+Certificate metrics count failed responses this client observes. They cannot
+count the hosted service's internal retry attempts.
 
 | Code | Recognized provider indication |
 | --- | --- |

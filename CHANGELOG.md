@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+Planned for v0.9.0:
+
+- Raise the minimum Go version to 1.26 and update compatibility checks in CI.
+- Add concurrent client, connection and control API statistics, independent of
+  dropped lifecycle events, with an optional official Prometheus collector.
+  Align shared metric names and labels with upstream under `opentunnel_client_`.
+- Add `--metrics-listen` to `proxy`, `connect` and `listen`. Scrape a separate
+  loopback listener with fixed labels that omit identities and credentials.
+  Save `metrics_listen` in a proxy's config to reuse its address on startup;
+  explicit flags override it, including an empty value to disable metrics.
+- Count authentication outcomes, backend responses and observed certificate
+  failures. Add safe certificate failure classes alongside existing error codes.
+- Release inactive half-closed channels after 60 seconds by default. Ongoing
+  traffic renews the timeout; `--half-close-timeout` and the library option
+  allow longer quiet periods.
+- Explain how to resume stored pending provisioning after a CLI deadline.
+  Keep the hosted service protocol and existing Go APIs compatible.
+
 ## v0.8.0 — Dark auth pages and profile inventory — 2026-10-11
 
 - Redesign password, GitHub, setup and logout pages with a dark theme, an original

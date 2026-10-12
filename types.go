@@ -184,12 +184,12 @@ type TransportOptions struct {
 	// bytes; Listen counts TLS records read/written by the application. Zero disables it.
 	IdleTimeout time.Duration
 	// HalfCloseTimeout defaults to 60 seconds of inactivity after an observed
-	// half-close. Application bytes and successful transport chunks extend it,
-	// including progress within a pending TLS Write. Fully open idle streams are
-	// unaffected. Connect observes either copy reaching EOF. Listen observes
-	// explicit relay end or raw CloseWrite; it cannot observe encrypted TLS
-	// close_notify itself. Applications must close accepted connections. Listen
-	// counts transport record activity.
+	// half-close. Negative values are invalid. Application bytes and successful
+	// transport chunks extend it, including progress within a pending TLS Write.
+	// Fully open idle streams are unaffected. Connect observes either copy reaching
+	// EOF. Listen observes explicit relay end or raw CloseWrite; it cannot observe
+	// encrypted TLS close_notify itself. Applications must close accepted
+	// connections. Listen counts transport record activity.
 	HalfCloseTimeout time.Duration
 }
 

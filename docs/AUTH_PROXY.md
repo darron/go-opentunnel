@@ -53,6 +53,12 @@ Override them with `--data-dir`, `--auth-config` and `--token-file`; use the sam
 overrides subsequently. Config binds to the stored tunnel ID, hostname and API
 origin. Missing/mismatched state fails startup instead of silently provisioning.
 
+Save `"metrics_listen": "127.0.0.1:9091"` as a top-level field in that profile's
+existing `auth.json` to enable a local metrics listener on each startup. Omit it
+to keep metrics off. Give each concurrent profile a different port. The command
+flag overrides the saved value; `--metrics-listen=""` disables it for one run.
+See [observability](OBSERVABILITY.md) for the scrape format and access boundary.
+
 Find saved profiles and their endpoints with:
 
 ```sh
@@ -224,6 +230,11 @@ ones. Tunnel connections also have a finite capacity; connection floods can deny
 service before authentication. Slow login bodies are bounded and idle HTTP
 keep-alive connections close after 30 seconds. Active authenticated streams do
 not inherit a server-wide read/write timeout.
+
+To monitor request gating and browser login outcomes, start a separate local
+listener with `--metrics-listen 127.0.0.1:9091`. Metrics are disabled by default
+and expose no credentials or usernames. See [observability](OBSERVABILITY.md)
+for access boundaries, per-instance ports and metric meanings.
 
 ### Backend compatibility
 

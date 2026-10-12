@@ -12,6 +12,7 @@ commands and the shortest working examples.
 | Set up saved profiles or run multiple backends | [Profiles and persistence](AUTH_PROXY.md#profiles-and-persistence) |
 | Give a machine client or MCP endpoint access | [Machine clients and MCP](AUTH_PROXY.md#machine-clients-and-mcp) |
 | Install or update the CLI; maintain release automation | [Homebrew](HOMEBREW.md) |
+| Scrape local metrics or read client statistics | [Observability](OBSERVABILITY.md) |
 | Understand who can see traffic and where authentication ends | [Security model](SECURITY.md) |
 
 ## Embed or develop the Go client

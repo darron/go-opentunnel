@@ -1,5 +1,71 @@
 # Local verification record
 
+## Observability and half-close cleanup — 2026-10-12
+
+These are unreleased v0.9.0 changes on `main`, based on `2d9fc0b`; the final
+runtime changes are through `fc52f06`. The optional adapter and CLI use the
+official Prometheus client. The root client does not import it. The minimum Go
+version is now 1.26; the service API and relay framing are unchanged.
+
+| Local check | Result |
+| --- | --- |
+| Go 1.27.2 `make check build-example` | Full suite, vet, formatting, full golangci-lint (0 issues), CLI and example builds passed |
+| `go test -race ./... -count=1` | Fresh full suite passed after the auth counter isolation correction |
+| `GOTOOLCHAIN=go1.26.9 go test ./... -count=1` | All packages passed on the patched minimum Go series |
+| Go 1.26.9 runnable root and metrics examples | Passed; `go doc Stats` exposes scope, byte accounting and copied failure maps |
+| Current-Go `govulncheck` v1.9.0 | No known reachable vulnerabilities found |
+| Parser/routing fuzz smoke tests | All four `make fuzz` targets passed, five seconds each |
+| Anonymous auth-boundary fuzzing | Five seconds with two workers passed; no unauthenticated backend request |
+| Built CLI with isolated XDG directories | Long-command help, invalid-address/negative-timeout rejection, clean JSON stdout and zero state writes passed |
+| Workflow and Homebrew updater checks | `actionlint` and all seven Python updater tests passed |
+| Root compiled dependency graph | No Prometheus imports; the optional adapter uses the official library |
+| Relative documentation links and working-directory secret scan | All links resolved; redacted Gitleaks scan reported no findings |
+
+The statistics tests compare real WebSocket/TLS relay payload with counters,
+cover API body/validation errors and durations, retain totals after closure,
+exercise partial successful sends, admission/buffer limits, dropped events and
+concurrent collection, and gather/scrape through the official registry and
+handler. Certificate tests cover all eleven classes, copied snapshots, validated
+failure responses and rejection of arbitrary metric labels. Repeated polling
+counts observations, not additional remote issuance attempts.
+
+Half-close tests first reproduced retained admission capacity, then verified
+cleanup and reuse in both forwarding directions. Continued traffic, a fresh
+half-close epoch, intermediate transport progress during a pending large write,
+fully open quiet streams, cancellation joins and Listen's observation boundary
+have regressions. The focused transport/certificate/collector race checks also
+passed five repetitions on Go 1.26.9.
+
+CLI fixtures exercise separate private scrapes, multiple listeners, port reuse,
+cancellation and unexpected serving failures, bounded scrapes, Host/Origin
+checks, and rejection before remote work. Saved `metrics_listen` config loads
+without changing old configurations; actual startup fixtures check inheritance,
+override, explicit disable, invalid/occupied ports and unchanged config bytes.
+Pending-timeout messages require actual stored state and preserve quoted custom
+API/storage arguments without leaking credentials into stdout.
+
+Password and fake-GitHub flows count terminal login outcomes at session creation.
+Wrong-scope machine tokens and anonymous requests never reach the backend.
+Backend headers, transport errors and WebSocket `101` responses are counted
+separately; existing SSE/WebSocket revocation tests remain green.
+
+Independent task reviews reproduced and corrected two defects: half-close EOF
+renewed the optional application idle timer, and a reused authenticator redirected
+login counts to another handler. Their independent reproductions changed from
+RED to GREEN. Separate timer epochs preserve idle semantics; a private request
+context owns login accounting without mutating authenticators. New regressions
+cover both auth modes and concurrent handler construction/login under race
+checking. All task reviews approved the corrected source.
+
+These checks used isolated local fixtures. No personal profiles or running
+proxies were changed, no real GitHub grant was created, and fresh hosted issuance
+or deployed relay interoperability was not exercised for this update. Earlier
+[hosted tests](LIVE_TESTING.md) cover only their recorded revisions. Failure
+classes remain best-effort terminal-text diagnostics; the client cannot observe
+server ACME attempts. Listen still returns exact `*tls.Conn` values and cannot
+infer unread encrypted `close_notify`; applications must close their sockets.
+See [observability](OBSERVABILITY.md) for metric meanings and access boundaries.
+
 ## Visual pages and profile inventory — 2026-10-11
 
 The v0.8.0 changes use self-contained dark templates for password/GitHub login,

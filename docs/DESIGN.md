@@ -7,12 +7,17 @@ wire, and persistence contracts.
 
 The client uses Go's HTTP, P-256, X.509, TLS, and TCP implementations plus one
 WebSocket dependency. Applications need no Node, Bun, Rust, or background process.
-`otgo` is a consumer of the package.
+`otgo` is a consumer of the package. Its optional local metrics listener uses
+the official Prometheus client; the root library does not import Prometheus.
 
 ## Compatibility baseline
 
 Inspected upstream v0.5.0 commit: `bb81367416c78834e09bca569267cbbae50781fb`.
 Core vectors retain their original source pin; see [provenance](../testdata/vectors/PROVENANCE.md).
+The later server changes through `4b066b2ed40a4e0c325e60c68061599f2151d897`
+add retry diagnostics, observability and transport cleanup without changing the
+client wire protocol. [Observability](OBSERVABILITY.md) explains the client
+measurements and where their scope differs from the server.
 
 - [Protocol specification](https://github.com/anomalyco/opentunnel/blob/bb81367416c78834e09bca569267cbbae50781fb/docs/protocol.md)
 - [TypeScript SDK API](https://github.com/anomalyco/opentunnel/blob/bb81367416c78834e09bca569267cbbae50781fb/packages/client/src/promise/client.ts)
@@ -74,6 +79,7 @@ Go methods map directly to the upstream SDK operations.
   and bounded transport settings. Defaults use `https://opentunnel.xyz` and XDG
   storage. Request, handshake, local dial, and write timeouts are finite.
   `TransportOptions.IdleTimeout` is optional and defaults to disabled.
+  `HalfCloseTimeout` defaults to 60 seconds of inactivity after a half-close.
 - `Routes` maps names to `host:port`. `ConnectOptions.RouteOptions` enables local
   PROXY v1/v2 headers for selected routes; see [forwarding](FORWARDING.md).
   Caller maps are copied; identities, routes,
@@ -343,6 +349,8 @@ for aggregate memory costs and configurable limits.
 
 Inbound `end` yields EOF while preserving the other direction. Forwarding
 completion closes that direction without prematurely aborting its response.
+Half-closed channels are released after `HalfCloseTimeout` with no further
+activity. Traffic renews that period; fully open quiet streams are unaffected.
 `reset` aborts both directions. Session shutdown cancels channels and joins their
 workers, including blocked upstream sockets.
 

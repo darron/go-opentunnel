@@ -60,6 +60,8 @@ Separate clients/processes must coordinate their claims themselves.
 addresses. `Addr()` reports the root hostname with network `opentunnel`.
 `Identity`, `Events`, `Status`, `Done`, and `Err` are available on the listener.
 Events remain bounded and lossy.
+Use `Client.Stats()` for aggregate operation counters independent of event
+delivery; see [observability](OBSERVABILITY.md).
 
 `TransportOptions.MaxConnections` includes handshaking, queued, and accepted
 sockets. The accept queue has the same fixed capacity; stale entries are discarded
@@ -70,8 +72,10 @@ buffer resets that channel; there is no protocol-level per-channel flow control.
 Optional `IdleTimeout` counts TLS records consumed or written by the application
 for listeners; forwarding connections count application bytes. Set HTTP server
 header/body deadlines as appropriate. Every accepted socket must be closed by its
-owner to release its admission slot. Ordinary application close uses protocol
-`end` so the relay can drain already-written bytes before half-closing its visitor
+owner to release its admission slot.
+`HalfCloseTimeout` releases an observed half-closed channel after 60 seconds of
+inactivity by default; activity renews that period. Ordinary application close uses
+protocol `end` so the relay can drain already-written bytes before half-closing its visitor
 socket. Local admission is released immediately; completion of the relay's other
 half remains relay-owned. Failures/forced shutdown abort channels or the session.
 

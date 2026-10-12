@@ -7,7 +7,7 @@ ordinary `connect` and `listen` do not add login protection.
 
 ## Build toolchain
 
-Use a patched, supported Go release for production builds. The module's Go 1.25
+Use a patched, supported Go release for production builds. The module's Go 1.26
 minimum is a source-compatibility contract; it does not mean that old toolchains
 have current HTTP/TLS security fixes. Go supports a major release until two newer
 major releases exist; see its [release policy](https://go.dev/doc/devel/release#policy).
@@ -135,6 +135,15 @@ the visitor's TLS ClientHello. SNI must select the same route name. Missing
 SNI, a mismatched route, or an unrelated hostname is rejected before plaintext
 reaches a target. Expired and not-yet-valid certificates are also rejected at
 the visitor handshake.
+
+## Local metrics
+
+`--metrics-listen` starts a separate, opt-in loopback listener. It has no login:
+other local processes can scrape it. It does not add a public authentication
+exception. Labels contain fixed categories, never tunnel identities, usernames,
+request paths, credentials or raw provider reasons. Activity and timing remain
+visible. Keep the port local, or provide access controls if you forward it.
+See [observability](OBSERVABILITY.md).
 
 ## API transport
 

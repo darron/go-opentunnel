@@ -27,10 +27,10 @@ For the Go library:
 go get github.com/darron/go-opentunnel
 ```
 
-Source compatibility starts at Go 1.25. Build production binaries with the latest
+Source compatibility starts at Go 1.26. Build production binaries with the latest
 patched release of a [supported Go version](https://go.dev/doc/devel/release#policy).
-The sole external Go module is
-`github.com/coder/websocket`. Licensed under [MIT](LICENSE).
+The core client uses `github.com/coder/websocket`. The optional metrics adapter
+and otgo use the official Prometheus Go client. Licensed under [MIT](LICENSE).
 See the [changelog](CHANGELOG.md) for release highlights and the
 [Homebrew guide](docs/HOMEBREW.md) for updates and HEAD installs.
 
@@ -169,6 +169,23 @@ explains routes, storage, provisioning recovery and resource limits.
 `Identity` and `PendingIdentity` redact
 credentials in standard formatting and JSON; their exported fields still contain
 live secrets.
+
+## Monitor a running proxy
+
+These features are on `main` for v0.9.0; released v0.8.0 does not include them.
+
+Start a separate local metrics listener:
+
+```sh
+otgo proxy --profile inbox --metrics-listen 127.0.0.1:9091
+```
+
+Scrape `http://127.0.0.1:9091/metrics`. Choose a different port for each instance.
+Metrics are disabled by default and omit tunnel identities and credentials.
+Save `metrics_listen` in the proxy's auth config to reuse its port on startup;
+an explicit flag overrides it, including an empty value to disable metrics.
+Embedded applications can read `Client.Stats()` or register the optional
+[Prometheus adapter](docs/OBSERVABILITY.md) with their own registry.
 
 ## Build and validate
 

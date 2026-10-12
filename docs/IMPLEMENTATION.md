@@ -3,8 +3,10 @@
 Start with `client.go` for lifecycle operations and `connection.go` for a running
 tunnel, or `listener.go` for direct HTTP embedding. `cmd/otgo` and `examples/webapp` both consume the public package.
 
-The module is `github.com/darron/go-opentunnel`, requires Go 1.25 or newer, and
-is MIT licensed. Its sole external module is `github.com/coder/websocket v1.8.15`.
+The module is `github.com/darron/go-opentunnel`, requires Go 1.26 or newer, and
+is MIT licensed. The core client uses `github.com/coder/websocket v1.8.15`.
+The optional `metrics` adapter and CLI use the official Prometheus Go client;
+the root package has no Prometheus imports.
 
 ## Lifecycle and persistence
 
@@ -14,6 +16,7 @@ is MIT licensed. Its sole external module is `github.com/coder/websocket v1.8.15
 | `certificate.go` | Local P-256 keys/CSRs; certificate checks for key, validity, exact hostname, and wildcard SAN; material-only parsing for expired renewal attachment |
 | `storage.go` | Concurrent memory storage and compatible file layout; private temporary files, marker-scoped removal, metadata last, permissions, and symlink rejection |
 | `client.go` | Per-profile lifecycle lock, pending state before issuance, same-key recovery, owned cancellation, and bounded local cleanup after confirmed remote deletion |
+| `statistics.go`, `metrics/` | Concurrent operation statistics and an optional Prometheus collector |
 
 File replacement is atomic per file. A crash can leave a mixed generation across
 credential files. The store does not provide a cross-process transaction or
@@ -61,6 +64,7 @@ explicitly: `json.Marshal` on an `Identity` intentionally omits them.
 | Teardown-control queue | 32 messages reserved; saturation closes the session |
 | Outbound payload per message | 32 KiB |
 | Per-channel idle timeout | Disabled unless `TransportOptions.IdleTimeout` is positive |
+| Half-close inactivity timeout | 60 seconds; override with `TransportOptions.HalfCloseTimeout` |
 
 The aggregate inbound payload budget is **64 MiB per relay session**. Coalesced 32 KiB
 blocks add at most 64 KiB capacity per channel plus bounded slice metadata; TLS,
@@ -95,6 +99,7 @@ channels because the wire protocol has no per-channel flow control.
 | --- | --- |
 | `cmd/otgo/auth.go` | Password/GitHub setup, profile locks and machine-token commands |
 | `cmd/otgo/proxy.go` | Saved identity validation, listener startup and proxy lifetime |
+| `cmd/otgo/metrics.go` | Optional local admin listener, private Prometheus registry and scrape access checks |
 | `internal/authproxy/` | Login gate, sessions, OAuth wizard, bound token registries, private storage and backend forwarding |
 
 The gate is internal to the CLI. The public SDK exposes transport APIs without

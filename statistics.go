@@ -29,10 +29,11 @@ type Stats struct {
 	// admissions count separately. ActiveConnections includes TLS handshakes and
 	// handshaken listener visitors waiting for Accept.
 	ConnectionsOpened, ConnectionsClosed, ConnectionsRejected uint64
-	// BytesReceived/Sent count TLS record payload bytes read from/successfully
-	// written to the relay transport, including handshakes, excluding relay frame
-	// headers and WebSocket framing/control traffic. Successfully sent chunks
+	// BytesReceived/Sent count relay data-frame payload bytes received/successfully
+	// sent, including TLS headers and handshakes, excluding relay frame headers
+	// and WebSocket framing/control traffic. Successfully sent chunks
 	// count even when a later chunk of the same write fails.
+	// Incoming totals include data later rejected for an unknown/full channel.
 	BytesReceived, BytesSent uint64
 	// DroppedEvents counts omissions from bounded Events channels.
 	DroppedEvents uint64

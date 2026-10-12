@@ -46,6 +46,14 @@
 // Wait for Done before reading the final Err. Resource bounds and timeout
 // defaults are documented in [TransportOptions].
 //
+// # Statistics
+//
+// [Client.Stats], [Connection.Stats] and [API.Stats] expose concurrent operation
+// snapshots without consuming events or starting a server. Client totals retain
+// stopped connections. The optional metrics subpackage adapts these snapshots
+// to the official Prometheus Go client; register its collector with an
+// application-owned registry and protect the administrative HTTP endpoint.
+//
 // # Credentials and provisioning errors
 //
 // [Identity] and [PendingIdentity] contain live tokens and private keys. Their

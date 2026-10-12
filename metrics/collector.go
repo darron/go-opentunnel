@@ -61,7 +61,7 @@ func NewCollector(source interface{ Stats() opentunnel.Stats }) prometheus.Colle
 			{"accepted", func(s opentunnel.Stats) float64 { return float64(s.ConnectionsOpened) }},
 			{"rejected", func(s opentunnel.Stats) float64 { return float64(s.ConnectionsRejected) }},
 		}},
-		{prometheus.NewDesc("opentunnel_client_visitor_bytes_total", "TLS record payload bytes read from or successfully written to the relay transport, excluding relay headers and WebSocket framing/control traffic.", []string{"direction"}, nil), []labeledValue{
+		{prometheus.NewDesc("opentunnel_client_visitor_bytes_total", "Relay data-frame payload bytes received or successfully sent, including TLS headers and handshakes, excluding relay headers and WebSocket framing/control traffic.", []string{"direction"}, nil), []labeledValue{
 			{"in", func(s opentunnel.Stats) float64 { return float64(s.BytesReceived) }},
 			{"out", func(s opentunnel.Stats) float64 { return float64(s.BytesSent) }},
 		}},
