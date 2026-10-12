@@ -15,6 +15,7 @@ import (
 // value is not usable. User-supplied Storage and HTTP hooks must also support
 // concurrent use. Do not call Close from a provisioning progress callback.
 type Client struct {
+	stats         statistics
 	api           *API
 	store         Storage
 	options       TransportOptions

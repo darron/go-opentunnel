@@ -74,6 +74,7 @@ func (s *session) reserveInbound(n int) bool {
 	// A zero limit keeps package-internal standalone bridge connections usable.
 	if limit <= 0 {
 		s.inboundBytes.Add(int64(n))
+		s.record(Stats{InboundBufferedBytes: int64(n)})
 		return true
 	}
 	amount := int64(n)
@@ -83,6 +84,7 @@ func (s *session) reserveInbound(n int) bool {
 			return false
 		}
 		if s.inboundBytes.CompareAndSwap(current, current+amount) {
+			s.record(Stats{InboundBufferedBytes: amount})
 			return true
 		}
 	}
@@ -93,6 +95,7 @@ func (s *session) releaseInbound(n int) {
 		return
 	}
 	s.inboundBytes.Add(-int64(n))
+	s.record(Stats{InboundBufferedBytes: -int64(n)})
 }
 
 const (
@@ -128,7 +131,25 @@ func safeRelayRoutes(routes []string, token string) []string {
 	return safe
 }
 
+func (s *session) record(d Stats) {
+	if s != nil && s.owner != nil {
+		s.owner.record(d)
+	}
+}
+
 func (s *session) run() error {
+	d := Stats{BridgeAttempts: 1}
+	if s.owner.Stats().BridgeAttempts > 0 {
+		d.Reconnects = 1
+	}
+	s.record(d)
+	defer func() {
+		if s.attached.Load() {
+			s.record(Stats{ActiveBridges: -1})
+		} else {
+			s.record(Stats{BridgeFailures: 1})
+		}
+	}()
 	defer s.cancel()
 	id := s.owner.Identity()
 	u := *s.owner.client.api.endpointURL(id.ID, "/connect")
@@ -200,6 +221,7 @@ func (s *session) run() error {
 	cancel()
 	s.attachedAt = time.Now()
 	s.attached.Store(true)
+	s.record(Stats{BridgeAttachments: 1, ActiveBridges: 1})
 	s.lastReceived.Store(time.Now().UnixNano())
 	safeSession := safeRelayMetadata(reply.Session, id.Token)
 	safeRoutes := safeRelayRoutes(reply.Routes, id.Token)
@@ -228,6 +250,7 @@ func (s *session) run() error {
 			if !ok {
 				continue
 			}
+			s.record(Stats{BytesReceived: uint64(len(payload))})
 			s.mu.Lock()
 			ch := s.channels[id]
 			s.mu.Unlock()
@@ -292,6 +315,11 @@ func (s *session) writer() {
 		// coder/websocket closes the shared socket on write cancellation.
 		ctx, cancel := context.WithTimeout(s.ctx, s.owner.client.options.WriteTimeout)
 		e := s.ws.Write(ctx, msg.kind, msg.data)
+		if e == nil && msg.kind == websocket.MessageBinary {
+			if _, payload, ok := decodeFrame(msg.data); ok {
+				s.record(Stats{BytesSent: uint64(len(payload))})
+			}
+		}
 		cancel()
 		if msg.heartbeat {
 			s.heartbeatPending.Store(false)
@@ -438,17 +466,20 @@ func (s *session) open(m controlMessage) {
 	token := x.identity.Token
 	x.mu.Unlock()
 	if !ok || !claimed {
+		s.record(Stats{ConnectionsRejected: 1})
 		s.enqueueReaderControl(controlMessage{Type: "reset", Conn: m.Conn, Code: "unknown_route"})
 		return
 	}
 	s.mu.Lock()
 	if old := s.channels[m.Conn]; old != nil {
 		s.mu.Unlock()
+		s.record(Stats{ConnectionsRejected: 1})
 		old.abort(errors.New("duplicate connection ID"))
 		return
 	}
 	if len(s.channels) >= x.client.options.MaxConnections {
 		s.mu.Unlock()
+		s.record(Stats{ConnectionsRejected: 1})
 		s.enqueueReaderControl(controlMessage{Type: "reset", Conn: m.Conn, Code: "too_many_connections"})
 		return
 	}
@@ -457,6 +488,7 @@ func (s *session) open(m controlMessage) {
 	ch := &channel{ctx: channelCtx, cancel: channelCancel, id: m.Conn, route: route, target: target, proxyProtocol: option.ProxyProtocol, sni: m.SNI, session: s, cert: cert}
 	ch.raw = newBridgeConn(s, m.Conn, peer, x.client.options.MaxInboundBytes)
 	s.channels[m.Conn] = ch
+	s.record(Stats{ConnectionsOpened: 1, ActiveConnections: 1})
 	s.wg.Add(1)
 	x.mu.Lock()
 	x.status.Connections = len(s.channels)
@@ -472,6 +504,7 @@ func (s *session) finished(ch *channel, err error) {
 		return
 	}
 	delete(s.channels, ch.id)
+	s.record(Stats{ConnectionsClosed: 1, ActiveConnections: -1})
 	s.owner.mu.Lock()
 	s.owner.status.Connections = len(s.channels)
 	s.owner.mu.Unlock()

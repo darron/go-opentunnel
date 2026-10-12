@@ -17,6 +17,7 @@ import (
 // Methods support concurrent calls. Obtain a Connection through Client.Connect;
 // its zero value is not usable. Close does not delete the remote tunnel.
 type Connection struct {
+	stats           statistics
 	listener        *Listener
 	client          *Client
 	profile         string
@@ -259,6 +260,7 @@ func (x *Connection) emit(e Event) {
 	case x.events <- e:
 	default:
 		x.status.DroppedEvents++
+		x.record(Stats{DroppedEvents: 1})
 	}
 }
 func (x *Connection) setState(state string, err error) {
