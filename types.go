@@ -33,6 +33,8 @@ var (
 	ErrCertificateIssuance = errors.New("opentunnel: certificate issuance failed")
 	// ErrInboundLimit reports a channel whose inbound buffer reached its limit.
 	ErrInboundLimit = errors.New("opentunnel: inbound channel buffer limit exceeded")
+	// ErrHalfCloseTimeout reports an observed half-close closed for subsequent inactivity.
+	ErrHalfCloseTimeout = errors.New("opentunnel: half-closed channel inactivity timeout")
 	// ErrIdleTimeout reports an established channel closed for inactivity.
 	ErrIdleTimeout = errors.New("opentunnel: channel idle timeout")
 )
@@ -181,6 +183,14 @@ type TransportOptions struct {
 	// IdleTimeout closes inactive established channels. Connect counts application
 	// bytes; Listen counts TLS records read/written by the application. Zero disables it.
 	IdleTimeout time.Duration
+	// HalfCloseTimeout defaults to 60 seconds of inactivity after an observed
+	// half-close. Application bytes and successful transport chunks extend it,
+	// including progress within a pending TLS Write. Fully open idle streams are
+	// unaffected. Connect observes either copy reaching EOF. Listen observes
+	// explicit relay end or raw CloseWrite; it cannot observe encrypted TLS
+	// close_notify itself. Applications must close accepted connections. Listen
+	// counts transport record activity.
+	HalfCloseTimeout time.Duration
 }
 
 // ProvisionStage identifies synchronous provisioning progress callbacks.

@@ -245,6 +245,7 @@ func (a *API) Get(ctx context.Context, id, token string) (out TunnelInfo, err er
 
 // BindCertificate submits a PEM-encoded CSR for tunnel id using token and returns
 // the initial issuance state. It does not poll until readiness or save the result.
+// Stats counts each validated terminal failed response, not remote jobs/attempts.
 func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (out CertificateInfo, err error) {
 	body, _ := json.Marshal(struct {
 		CSR string `json:"csr"`
@@ -257,12 +258,14 @@ func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (out C
 	if err := a.response(resp, http.StatusAccepted, &out); err != nil {
 		return out, err
 	}
-	return validateCertificateInfo(out)
+	return a.validateCertificateResponse(out)
 }
 
 // Certificate returns the current certificate issuance state for tunnel id using
 // token. A missing certificate returns an APIError; a failed issuance is a valid
 // response whose State.Type is "failed" and whose State.Reason explains failure.
+// Stats counts each validated failed response; repeated polls can count the same
+// failed state again. It does not count remote issuance attempts or jobs.
 func (a *API) Certificate(ctx context.Context, id, token string) (out CertificateInfo, err error) {
 	resp, err := a.request(ctx, http.MethodGet, id, "/certificate", token, nil)
 	if err != nil {
@@ -272,7 +275,7 @@ func (a *API) Certificate(ctx context.Context, id, token string) (out Certificat
 	if err := a.response(resp, http.StatusOK, &out); err != nil {
 		return out, err
 	}
-	return validateCertificateInfo(out)
+	return a.validateCertificateResponse(out)
 }
 
 // Remove permanently removes remote tunnel id using token. Missing tunnels
@@ -286,6 +289,17 @@ func (a *API) Remove(ctx context.Context, id, token string) (err error) {
 	defer a.completeResponse(resp, &err)
 	return a.response(resp, http.StatusNoContent, nil)
 }
+
+// validateCertificateResponse counts only validated terminal responses. The
+// request itself remains successful; this is distinct from APIErrors.
+func (a *API) validateCertificateResponse(info CertificateInfo) (CertificateInfo, error) {
+	info, err := validateCertificateInfo(info)
+	if err == nil && info.State.Type == "failed" {
+		a.stats.add(Stats{CertificateFailures: map[CertificateFailureClass]uint64{classifyCertificateFailure(info.State.Reason): 1}})
+	}
+	return info, err
+}
+
 func validateCertificateInfo(info CertificateInfo) (CertificateInfo, error) {
 	if info.ID == "" {
 		return info, fmt.Errorf("%w: malformed certificate response", ErrInvalid)

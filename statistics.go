@@ -1,6 +1,7 @@
 package opentunnel
 
 import (
+	"maps"
 	"sync"
 	"time"
 )
@@ -15,6 +16,11 @@ type Stats struct {
 	// Inputs rejected before an HTTP request is attempted do not count.
 	APIRequests, APIErrors uint64
 	APIDuration            time.Duration
+	// CertificateFailures counts validated terminal failed Certificate and
+	// BindCertificate responses, by diagnostic class. Polling the same failed
+	// state again counts another response, not another remote job or attempt.
+	// This map is copied independently in each snapshot.
+	CertificateFailures map[CertificateFailureClass]uint64
 	// BridgeAttempts counts attach attempts; Reconnects counts attempts after the
 	// first on each Connection. BridgeFailures counts unsuccessful attachment,
 	// including cancellation, rather than teardown of an established bridge.
@@ -39,10 +45,22 @@ type statistics struct {
 	value Stats
 }
 
-func (s *statistics) snapshot() Stats { s.mu.Lock(); defer s.mu.Unlock(); return s.value }
+func (s *statistics) snapshot() Stats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot := s.value
+	snapshot.CertificateFailures = maps.Clone(s.value.CertificateFailures)
+	return snapshot
+}
 func (s *statistics) add(d Stats) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for class, n := range d.CertificateFailures {
+		if s.value.CertificateFailures == nil {
+			s.value.CertificateFailures = make(map[CertificateFailureClass]uint64)
+		}
+		s.value.CertificateFailures[diagnosticCertificateFailureClass(class)] += n
+	}
 	s.value.APIRequests += d.APIRequests
 	s.value.APIErrors += d.APIErrors
 	s.value.APIDuration += d.APIDuration
@@ -61,7 +79,7 @@ func (s *statistics) add(d Stats) {
 	s.value.InboundBufferedBytes += d.InboundBufferedBytes
 }
 
-// Stats returns API-only completed-request counters. Transport fields are zero.
+// Stats returns API-only completed-request and terminal certificate counters. Transport fields are zero.
 // It includes direct low-level calls when the API belongs to a Client.
 func (a *API) Stats() Stats { return a.stats.snapshot() }
 
@@ -76,6 +94,7 @@ func (c *Client) Stats() Stats {
 		s.APIRequests = a.APIRequests
 		s.APIErrors = a.APIErrors
 		s.APIDuration = a.APIDuration
+		s.CertificateFailures = a.CertificateFailures
 	}
 	return s
 }

@@ -13,37 +13,58 @@ type sample struct {
 	kind  prometheus.ValueType
 	value func(opentunnel.Stats) float64
 }
+type labeledValue struct {
+	label string
+	value func(opentunnel.Stats) float64
+}
+type labeledFamily struct {
+	desc   *prometheus.Desc
+	values []labeledValue
+}
 type collector struct {
-	source   interface{ Stats() opentunnel.Stats }
-	samples  []sample
-	duration *prometheus.Desc
+	source              interface{ Stats() opentunnel.Stats }
+	samples             []sample
+	duration            *prometheus.Desc
+	certificateFailures *prometheus.Desc
+	families            []labeledFamily
 }
 
 // NewCollector returns a collector for a Client, Connection or API. Each scrape
 // uses one copied Stats snapshot. Metric names always start with
-// opentunnel_client_, regardless of source scope, and have no labels. Register
+// opentunnel_client_, regardless of source scope. Labeled counters use only
+// fixed direction, result, outcome or class labels matching the upstream
+// vocabulary; class is selected from eleven diagnostic causes. Register
 // collectors with different scopes in separate registries or wrap them with
 // application-controlled constant labels to avoid duplicate metric names.
 // API request duration is a summary with count and sum only, without quantiles.
 // source must be non-nil and support concurrent Stats calls.
 func NewCollector(source interface{ Stats() opentunnel.Stats }) prometheus.Collector {
 	c := &collector{source: source, duration: desc("api_request_duration_seconds", "Total duration of completed API requests including body read and validation, in seconds.")}
+	c.certificateFailures = prometheus.NewDesc("opentunnel_client_certificate_failures_total", "Validated terminal failed certificate API responses by diagnostic cause; repeated polling can count the same failed state again, not remote jobs or attempts.", []string{"class"}, nil)
 	c.samples = []sample{
 		{desc("api_requests_total", "Completed HTTP API requests, including failures."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.APIRequests) }},
 		{desc("api_errors_total", "Completed API requests ending in transport, body, decoding, validation or HTTP status errors."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.APIErrors) }},
 		{desc("bridge_attempts_total", "Relay bridge attachment attempts, including unsuccessful attempts."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.BridgeAttempts) }},
-		{desc("bridge_attachments_total", "Successfully attached relay bridges."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.BridgeAttachments) }},
-		{desc("bridge_failures_total", "Unsuccessful relay bridge attachment attempts; established bridge teardown is excluded."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.BridgeFailures) }},
 		{desc("reconnects_total", "Relay bridge attachment attempts after the first attempt on each connection."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.Reconnects) }},
-		{desc("connections_opened_total", "Admitted relay visitor connections, including TLS handshakes and pending listener visitors."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.ConnectionsOpened) }},
-		{desc("connections_closed_total", "Admitted relay visitor connections that have finished teardown."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.ConnectionsClosed) }},
-		{desc("connections_rejected_total", "Relay visitor admissions rejected for route, duplicate identifier or capacity limits."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.ConnectionsRejected) }},
-		{desc("bytes_received_total", "TLS record payload bytes read from the relay transport, excluding relay headers and WebSocket framing/control traffic."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.BytesReceived) }},
-		{desc("bytes_sent_total", "TLS record payload bytes successfully written to the relay transport, including successful chunks before failure, excluding relay headers and WebSocket framing/control traffic."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.BytesSent) }},
+		{desc("visitor_connections_closed_total", "Admitted relay visitor connections that have finished teardown."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.ConnectionsClosed) }},
 		{desc("dropped_events_total", "Lifecycle events omitted from bounded event channels, retained after connection removal."), prometheus.CounterValue, func(s opentunnel.Stats) float64 { return float64(s.DroppedEvents) }},
-		{desc("active_bridges", "Currently attached relay bridges."), prometheus.GaugeValue, func(s opentunnel.Stats) float64 { return float64(s.ActiveBridges) }},
-		{desc("active_connections", "Currently admitted relay visitors, including TLS handshakes and visitors waiting for listener Accept."), prometheus.GaugeValue, func(s opentunnel.Stats) float64 { return float64(s.ActiveConnections) }},
+		{desc("bridges_attached", "Currently attached relay bridges."), prometheus.GaugeValue, func(s opentunnel.Stats) float64 { return float64(s.ActiveBridges) }},
+		{desc("visitor_connections_open", "Currently admitted relay visitors, including TLS handshakes and visitors waiting for listener Accept."), prometheus.GaugeValue, func(s opentunnel.Stats) float64 { return float64(s.ActiveConnections) }},
 		{desc("inbound_buffered_bytes", "Relay payload bytes currently buffered for admitted visitor connections."), prometheus.GaugeValue, func(s opentunnel.Stats) float64 { return float64(s.InboundBufferedBytes) }},
+	}
+	c.families = []labeledFamily{
+		{prometheus.NewDesc("opentunnel_client_bridge_attaches_total", "Completed relay bridge attachment attempts by result.", []string{"result"}, nil), []labeledValue{
+			{"ok", func(s opentunnel.Stats) float64 { return float64(s.BridgeAttachments) }},
+			{"error", func(s opentunnel.Stats) float64 { return float64(s.BridgeFailures) }},
+		}},
+		{prometheus.NewDesc("opentunnel_client_visitor_connections_total", "Relay visitor admissions by outcome, including handshakes and pending listener visitors.", []string{"outcome"}, nil), []labeledValue{
+			{"accepted", func(s opentunnel.Stats) float64 { return float64(s.ConnectionsOpened) }},
+			{"rejected", func(s opentunnel.Stats) float64 { return float64(s.ConnectionsRejected) }},
+		}},
+		{prometheus.NewDesc("opentunnel_client_visitor_bytes_total", "TLS record payload bytes read from or successfully written to the relay transport, excluding relay headers and WebSocket framing/control traffic.", []string{"direction"}, nil), []labeledValue{
+			{"in", func(s opentunnel.Stats) float64 { return float64(s.BytesReceived) }},
+			{"out", func(s opentunnel.Stats) float64 { return float64(s.BytesSent) }},
+		}},
 	}
 	return c
 }
@@ -54,12 +75,31 @@ func (c *collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, s := range c.samples {
 		ch <- s.desc
 	}
+	for _, family := range c.families {
+		ch <- family.desc
+	}
 	ch <- c.duration
+	ch <- c.certificateFailures
 }
 func (c *collector) Collect(ch chan<- prometheus.Metric) {
 	snapshot := c.source.Stats()
 	for _, s := range c.samples {
 		ch <- prometheus.MustNewConstMetric(s.desc, s.kind, s.value(snapshot))
+	}
+	for _, family := range c.families {
+		for _, value := range family.values {
+			ch <- prometheus.MustNewConstMetric(family.desc, prometheus.CounterValue, value.value(snapshot), value.label)
+		}
+	}
+	// Never iterate user-provided map keys: every exposed label is fixed here.
+	for _, class := range [...]opentunnel.CertificateFailureClass{
+		opentunnel.CertificateFailureNetwork, opentunnel.CertificateFailureTimeout,
+		opentunnel.CertificateFailureHTTP5xx, opentunnel.CertificateFailureHTTP429,
+		opentunnel.CertificateFailureBadBody, opentunnel.CertificateFailureNonce,
+		opentunnel.CertificateFailureBadNonce, opentunnel.CertificateFailureAuthorizationPending,
+		opentunnel.CertificateFailureDNS, opentunnel.CertificateFailureRejected, opentunnel.CertificateFailureOther,
+	} {
+		ch <- prometheus.MustNewConstMetric(c.certificateFailures, prometheus.CounterValue, float64(snapshot.CertificateFailures[class]), string(class))
 	}
 	ch <- prometheus.MustNewConstSummary(c.duration, snapshot.APIRequests, snapshot.APIDuration.Seconds(), nil)
 }

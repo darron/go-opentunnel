@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"time"
 )
 
 // ListenOptions selects a profile, SNI route names, and listener lifetime.
@@ -152,13 +151,11 @@ func (l *Listener) discardPending() {
 
 func (ch *channel) serveListener(secure *tls.Conn) error {
 	// Keep the exact *tls.Conn visible to net/http. Track record activity on the
-	// underlying transport so an optional idle watchdog needs no TLS wrapper.
-	ch.raw.lastActivity.Store(time.Now().UnixNano())
-	if idle := ch.session.owner.client.options.IdleTimeout; idle > 0 {
-		done := make(chan struct{})
-		go func() { defer close(done); ch.watchIdle(&ch.raw.lastActivity, idle) }()
-		defer func() { ch.cancel(); <-done }()
-	}
+	// underlying transport so inactivity watchdogs need no TLS wrapper.
+	ch.raw.activity.touch()
+	done := make(chan struct{})
+	go func() { defer close(done); ch.watchActivity(ch.raw.activity) }()
+	defer func() { ch.cancel(); <-done }()
 	select {
 	case <-ch.ctx.Done():
 		return ch.ctx.Err()

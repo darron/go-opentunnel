@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -48,11 +49,11 @@ func TestAPIStatisticsCompletedRequests(t *testing.T) {
 			if s.APIRequests != 1 || s.APIErrors != tc.wantErrors || s.APIDuration <= 0 {
 				t.Fatalf("stats = %+v", s)
 			}
-			if got := c.Stats(); got != s {
+			if got := c.Stats(); !reflect.DeepEqual(got, s) {
 				t.Fatalf("client stats = %+v, API = %+v", got, s)
 			}
 			_, _ = c.API().Get(nil, "demo", "token") //nolint:staticcheck // Nil is intentional: verify rejected inputs are not counted.
-			if c.API().Stats() != s {
+			if !reflect.DeepEqual(c.API().Stats(), s) {
 				t.Fatal("nil context counted")
 			}
 		})
@@ -422,5 +423,59 @@ func TestStatisticsHandshakeAdmissionAndRejections(t *testing.T) {
 	_ = x.Close()
 	if c.Stats().ConnectionsRejected != 2 || c.Stats().ConnectionsClosed != 1 {
 		t.Fatal("admission totals discarded on close")
+	}
+}
+
+func TestCertificateFailureStatisticsValidatedResponsesAndCopies(t *testing.T) {
+	for _, bind := range []bool{false, true} {
+		t.Run(map[bool]string{false: "poll", true: "bind"}[bind], func(t *testing.T) {
+			var body atomic.Value
+			body.Store(`{"id":"cert","state":{"type":"failed","reason":"ACME server returned no nonce"}}`)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if bind {
+					w.WriteHeader(202)
+				}
+				text, ok := body.Load().(string)
+				if !ok {
+					t.Error("fixture body has wrong type")
+					return
+				}
+				_, _ = io.WriteString(w, text)
+			}))
+			defer server.Close()
+			c, err := NewClient(ClientOptions{API: server.URL, Storage: NewMemoryStorage()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = c.Close() }()
+			for range 2 {
+				if bind {
+					_, err = c.API().BindCertificate(t.Context(), "demo", "token", "csr")
+				} else {
+					_, err = c.API().Certificate(t.Context(), "demo", "token")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := c.Stats()
+			if got.CertificateFailures[CertificateFailureNonce] != 2 || got.APIErrors != 0 {
+				t.Fatalf("terminal responses = %+v", got)
+			}
+			got.CertificateFailures[CertificateFailureNonce] = 900
+			got.CertificateFailures["secret"] = 1
+			if c.API().Stats().CertificateFailures[CertificateFailureNonce] != 2 || len(c.Stats().CertificateFailures) != 1 {
+				t.Fatal("snapshot aliases internal map")
+			}
+			body.Store(`{"id":"","state":{"type":"failed","reason":"ACME server returned no nonce"}}`)
+			if bind {
+				_, err = c.API().BindCertificate(t.Context(), "demo", "token", "csr")
+			} else {
+				_, err = c.API().Certificate(t.Context(), "demo", "token")
+			}
+			if err == nil || c.Stats().CertificateFailures[CertificateFailureNonce] != 2 {
+				t.Fatal("invalid response counted as certificate failure")
+			}
+		})
 	}
 }

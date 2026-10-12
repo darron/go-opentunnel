@@ -45,6 +45,26 @@ func TestCertificateIssuanceErrorClassifiesProviderReason(t *testing.T) {
 			if issuance.Code != tt.code || issuance.StatusCode != tt.statusCode {
 				t.Fatalf("classification = (%q, %d), want (%q, %d)", issuance.Code, issuance.StatusCode, tt.code, tt.statusCode)
 			}
+			wantClass := CertificateFailureRejected
+			switch tt.code {
+			case "rate_limited":
+				wantClass = CertificateFailureHTTP429
+			case "dns_error":
+				wantClass = CertificateFailureDNS
+			case "bad_nonce":
+				wantClass = CertificateFailureBadNonce
+			case "connection_error":
+				wantClass = CertificateFailureNetwork
+			case "server_error":
+				wantClass = CertificateFailureHTTP5xx
+			case "timeout":
+				wantClass = CertificateFailureHTTP5xx // terminal HTTP 504 fixture
+			case "unknown":
+				wantClass = CertificateFailureOther
+			}
+			if issuance.Class != wantClass {
+				t.Fatalf("class = %s, want %s", issuance.Class, wantClass)
+			}
 			if !errors.Is(issuance, ErrCertificateIssuance) {
 				t.Fatal("typed error does not unwrap to ErrCertificateIssuance")
 			}
@@ -68,7 +88,7 @@ func TestCertificateIssuanceErrorBoundsRawReason(t *testing.T) {
 
 func TestCertificateIssuanceErrorFormattingNeverExposesReason(t *testing.T) {
 	const secret = "remote-reason-sensitive-marker"
-	err := &CertificateIssuanceError{Reason: secret, Code: secret, StatusCode: 999}
+	err := &CertificateIssuanceError{Reason: secret, Code: secret, Class: CertificateFailureClass(secret), StatusCode: 999}
 	values := []any{err, *err, []any{err, *err}, map[string]any{"failure": err}}
 	for _, format := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%X"} {
 		for _, value := range values {
@@ -92,7 +112,7 @@ func TestCertificateIssuanceErrorFormattingNeverExposesReason(t *testing.T) {
 func TestCertificateIssuanceErrorJSONAndSlogNeverExposeReason(t *testing.T) {
 	const secret = "remote-reason-sensitive-marker"
 	err := &CertificateIssuanceError{Reason: secret, Code: "rate_limited", StatusCode: 429}
-	mutated := &CertificateIssuanceError{Reason: secret, Code: secret, StatusCode: 999}
+	mutated := &CertificateIssuanceError{Reason: secret, Code: secret, Class: CertificateFailureClass(secret), StatusCode: 999}
 	for _, value := range []any{err, *err, mutated, *mutated, []any{err, *err, mutated}, map[string]any{"failure": mutated}} {
 		encoded, marshalErr := json.Marshal(value)
 		if marshalErr != nil {
@@ -112,5 +132,55 @@ func TestCertificateIssuanceErrorJSONAndSlogNeverExposeReason(t *testing.T) {
 	}
 	if !strings.Contains(got, "rate_limited") || !strings.Contains(got, "429") {
 		t.Fatalf("slog omitted actionable safe fields: %s", got)
+	}
+}
+
+func TestCertificateFailureClassTerminalReasons(t *testing.T) {
+	for _, tc := range []struct {
+		reason string
+		want   CertificateFailureClass
+	}{
+		{"ACME server returned no nonce (HTTP 503)", CertificateFailureNonce},
+		{"error decoding response body: expected value at line 1 column 1", CertificateFailureBadBody},
+		{"ACME authorization ended in pending", CertificateFailureAuthorizationPending},
+		{"ACME order ended in processing", CertificateFailureAuthorizationPending},
+		{"error sending request: connection reset", CertificateFailureNetwork},
+		{"connection closed", CertificateFailureNetwork},
+		{"request timed out", CertificateFailureTimeout},
+		{"HTTP status server error (502 Bad Gateway)", CertificateFailureHTTP5xx},
+		{"ACME request failed | HTTP 429 | secret", CertificateFailureHTTP429},
+		{"DNS record update failed | HTTP 503 | secret", CertificateFailureDNS},
+		{"identical record already exists | HTTP 429", CertificateFailureDNS},
+		{"urn:ietf:params:acme:error:dns | HTTP 429", CertificateFailureDNS},
+		{"urn:ietf:params:acme:error:badNonce | HTTP 400", CertificateFailureBadNonce},
+		{"urn:ietf:params:acme:error:rejectedIdentifier | HTTP 400", CertificateFailureRejected},
+		{"urn:ietf:params:acme:error:badCSR", CertificateFailureRejected},
+		{"provider-specific mystery", CertificateFailureOther},
+	} {
+		var e *CertificateIssuanceError
+		if !errors.As(certificateIssuanceError(tc.reason), &e) || e.Class != tc.want {
+			t.Fatalf("%q => %+v; want class %s", tc.reason, e, tc.want)
+		}
+	}
+	e := CertificateIssuanceError{Reason: "secret", Code: "unknown", Class: CertificateFailureNonce}
+	if !strings.Contains(e.Error(), "nonce") {
+		t.Fatalf("safe class omitted: %s", e.Error())
+	}
+	e.Class = CertificateFailureOther
+	if !strings.Contains(e.Error(), "failed: other") {
+		t.Fatalf("recognized other omitted: %s", e.Error())
+	}
+	e.Class = "secret"
+	encoded, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(e.Error(), "secret") || strings.Contains(string(encoded), "secret") || !strings.Contains(string(encoded), `"class":"other"`) {
+		t.Fatalf("unsafe normalized class: %s / %s", e.Error(), encoded)
+	}
+	var output strings.Builder
+	slog.New(slog.NewJSONHandler(&output, nil)).Info("test", "failure", e)
+	if strings.Contains(output.String(), "secret") || !strings.Contains(output.String(), `"class":"other"`) {
+		t.Fatalf("unsafe slog: %s", output.String())
 	}
 }

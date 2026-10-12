@@ -36,7 +36,7 @@ func (ch *channel) forward() {
 		ch.raw.mu.Lock()
 		cause := ch.raw.err
 		ch.raw.mu.Unlock()
-		if errors.Is(cause, ErrIdleTimeout) || errors.Is(cause, ErrInboundLimit) {
+		if errors.Is(cause, ErrIdleTimeout) || errors.Is(cause, ErrHalfCloseTimeout) || errors.Is(cause, ErrInboundLimit) {
 			final = cause
 		}
 		ch.cancel()
@@ -89,19 +89,16 @@ func (ch *channel) forward() {
 			return
 		}
 	}
-	var stream net.Conn = secure
-	if idle := s.owner.client.options.IdleTimeout; idle > 0 {
-		active := &activityConn{Conn: secure}
-		active.last.Store(time.Now().UnixNano())
-		stream = active
-		done := make(chan struct{})
-		go func() { defer close(done); ch.watchIdle(&active.last, idle) }()
-		defer func() { ch.cancel(); <-done }()
-	}
+	active := &activityConn{Conn: secure, activity: newStreamActivity()}
+	var stream net.Conn = active
+	done := make(chan struct{})
+	go func() { defer close(done); ch.watchActivity(active.activity) }()
+	defer func() { ch.cancel(); <-done }()
 	results := make(chan error, 2)
 	go func() {
 		_, e := io.Copy(upstream, stream)
 		if e == nil {
+			active.activity.halfClose()
 			if tcp, ok := upstream.(*net.TCPConn); ok {
 				e = tcp.CloseWrite()
 			}
@@ -115,6 +112,7 @@ func (ch *channel) forward() {
 	go func() {
 		_, e := io.Copy(stream, upstream)
 		if e == nil {
+			active.activity.halfClose()
 			e = secure.CloseWrite()
 			if e == nil {
 				e = ch.raw.CloseWrite()
@@ -160,40 +158,104 @@ func (ch *channel) reset(code string) {
 	}
 }
 
+// streamActivity serializes successful byte activity with the first observed
+// half-close. That observation starts a fresh inactivity epoch even after a long
+// fully-open quiet period. Subsequent bytes extend, rather than replace, it.
+type streamActivity struct {
+	mu      sync.Mutex
+	last    time.Time
+	half    bool
+	expired bool
+	wake    chan struct{}
+}
+
+func newStreamActivity() *streamActivity {
+	return &streamActivity{last: time.Now(), wake: make(chan struct{}, 1)}
+}
+func (a *streamActivity) touch() {
+	a.mu.Lock()
+	if !a.expired {
+		a.last = time.Now()
+	}
+	a.mu.Unlock()
+}
+func (a *streamActivity) halfClose() {
+	a.mu.Lock()
+	if !a.half {
+		a.half = true
+		a.last = time.Now()
+	}
+	a.mu.Unlock()
+	select {
+	case a.wake <- struct{}{}:
+	default:
+	}
+}
+
 // activityConn tracks successfully forwarded application bytes in both directions.
 type activityConn struct {
 	net.Conn
-	last atomic.Int64
+	activity *streamActivity
 }
 
 func (c *activityConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
-		c.last.Store(time.Now().UnixNano())
+		c.activity.touch()
 	}
 	return n, err
 }
 func (c *activityConn) Write(p []byte) (int, error) {
 	n, err := c.Conn.Write(p)
 	if n > 0 {
-		c.last.Store(time.Now().UnixNano())
+		c.activity.touch()
 	}
 	return n, err
 }
-func (ch *channel) watchIdle(last *atomic.Int64, idle time.Duration) {
-	timer := time.NewTimer(idle)
+func (ch *channel) watchActivity(a *streamActivity) {
+	opts := ch.session.owner.client.options
+	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
 	for {
-		select {
-		case <-ch.ctx.Done():
-			return
-		case <-timer.C:
-			remaining := idle - time.Since(time.Unix(0, last.Load()))
+		a.mu.Lock()
+		// IdleTimeout retains its application-completion boundary for Connect.
+		// HalfCloseTimeout also counts intermediate successful transport chunks:
+		// a large TLS Write may make progress long before returning to io.Copy.
+		cause := ErrIdleTimeout
+		enabled := opts.IdleTimeout > 0
+		remaining := opts.IdleTimeout - time.Since(a.last)
+		if a.half && opts.HalfCloseTimeout > 0 {
+			last := a.last
+			if transport := ch.raw.activity; transport != a {
+				transport.mu.Lock()
+				if transport.last.After(last) {
+					last = transport.last
+				}
+				transport.mu.Unlock()
+			}
+			halfRemaining := opts.HalfCloseTimeout - time.Since(last)
+			if !enabled || halfRemaining < remaining {
+				remaining, cause, enabled = halfRemaining, ErrHalfCloseTimeout, true
+			}
+		}
+		var timerC <-chan time.Time
+		if enabled {
 			if remaining <= 0 {
-				ch.abort(ErrIdleTimeout)
+				// Expiry is observed under the same lock as application activity.
+				a.expired = true
+				a.mu.Unlock()
+				ch.abort(cause)
 				return
 			}
 			timer.Reset(remaining)
+			timerC = timer.C
+		}
+		a.mu.Unlock()
+		select {
+		case <-ch.ctx.Done():
+			return
+		case <-a.wake:
+		case <-timerC:
 		}
 	}
 }
@@ -219,7 +281,7 @@ type bridgeConn struct {
 	err           error
 	readDeadline  time.Time
 	writeDeadline time.Time
-	lastActivity  atomic.Int64
+	activity      *streamActivity
 	writeWorkers  sync.WaitGroup
 	callerClosed  atomic.Bool
 }
@@ -230,7 +292,7 @@ func newBridgeConn(s *session, id uint32, peer string, limit int) *bridgeConn {
 		ctx = s.ctx
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	return &bridgeConn{ctx: ctx, cancel: cancel, session: s, id: id, peer: peer, limit: limit, notify: make(chan struct{}), writeNotify: make(chan struct{})}
+	return &bridgeConn{ctx: ctx, cancel: cancel, session: s, id: id, peer: peer, limit: limit, notify: make(chan struct{}), writeNotify: make(chan struct{}), activity: newStreamActivity()}
 }
 func (b *bridgeConn) signal()      { close(b.notify); b.notify = make(chan struct{}) }
 func (b *bridgeConn) signalWrite() { close(b.writeNotify); b.writeNotify = make(chan struct{}) }
@@ -262,7 +324,15 @@ func (b *bridgeConn) push(data []byte) bool {
 	}
 	return true
 }
-func (b *bridgeConn) endInbound() { b.mu.Lock(); defer b.mu.Unlock(); b.readEnd = true; b.signal() }
+func (b *bridgeConn) endInbound() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.readEnd {
+		b.activity.halfClose()
+		b.readEnd = true
+		b.signal()
+	}
+}
 func (b *bridgeConn) abort(err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -298,7 +368,7 @@ func (b *bridgeConn) Read(p []byte) (int, error) {
 		}
 		if len(b.chunks) > 0 {
 			n := copy(p, b.chunks[0][b.offset:])
-			b.lastActivity.Store(time.Now().UnixNano())
+			b.activity.touch()
 			b.offset += n
 			b.bytes -= n
 			b.session.releaseInbound(n)
@@ -365,7 +435,7 @@ func (b *bridgeConn) Write(p []byte) (int, error) {
 			return n, e
 		}
 		n += size
-		b.lastActivity.Store(time.Now().UnixNano())
+		b.activity.touch()
 		p = p[size:]
 	}
 	return n, nil
@@ -431,6 +501,7 @@ func (b *bridgeConn) CloseWrite() error {
 		b.mu.Unlock()
 		return nil
 	}
+	b.activity.halfClose()
 	b.writeEnd = true
 	b.signalWrite()
 	b.mu.Unlock()

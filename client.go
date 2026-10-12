@@ -74,8 +74,8 @@ func transportDefaults(o TransportOptions) (TransportOptions, error) {
 			*p = defaults[i]
 		}
 	}
-	ds := []*time.Duration{&o.AttachTimeout, &o.HandshakeTimeout, &o.DialTimeout, &o.WriteTimeout, &o.CertificatePollInterval, &o.CertificateRefreshInterval, &o.CertificateDueInterval, &o.CertificateRetryInterval, &o.BackoffMin, &o.BackoffMax}
-	df := []time.Duration{10 * time.Second, 10 * time.Second, 10 * time.Second, 10 * time.Second, 2 * time.Second, 12 * time.Hour, time.Minute, time.Hour, 250 * time.Millisecond, 30 * time.Second}
+	ds := []*time.Duration{&o.AttachTimeout, &o.HandshakeTimeout, &o.DialTimeout, &o.WriteTimeout, &o.CertificatePollInterval, &o.CertificateRefreshInterval, &o.CertificateDueInterval, &o.CertificateRetryInterval, &o.BackoffMin, &o.BackoffMax, &o.HalfCloseTimeout}
+	df := []time.Duration{10 * time.Second, 10 * time.Second, 10 * time.Second, 10 * time.Second, 2 * time.Second, 12 * time.Hour, time.Minute, time.Hour, 250 * time.Millisecond, 30 * time.Second, time.Minute}
 	for i, p := range ds {
 		if *p < 0 {
 			return o, fmt.Errorf("%w: negative transport duration", ErrInvalid)
