@@ -429,3 +429,44 @@ func TestHalfCloseTransportProgressPreservesApplicationIdleTimeout(t *testing.T)
 		}
 	}
 }
+
+func TestHalfCloseObservationPreservesExpiredByteIdleBudget(t *testing.T) {
+	for _, listener := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ConnectEOF", true: "ListenRelayEnd"}[listener], func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			c := &Client{options: TransportOptions{IdleTimeout: time.Second, HalfCloseTimeout: 5 * time.Second}}
+			x := &Connection{client: c, ctx: ctx}
+			s := newSession(x, nil)
+			raw := newBridgeConn(s, 1, "peer", 1024)
+			ch := &channel{ctx: ctx, cancel: cancel, session: s, raw: raw}
+			activity := newStreamActivity()
+			if listener {
+				activity = raw.activity
+			}
+			// Establish an expired byte-idle budget without sleep-sensitive timing.
+			activity.mu.Lock()
+			activity.last = time.Now().Add(-2 * time.Second)
+			activity.mu.Unlock()
+			if listener {
+				raw.endInbound()
+			} else {
+				activity.halfClose()
+			}
+			done := make(chan struct{})
+			go func() { defer close(done); ch.watchActivity(activity) }()
+			defer func() { cancel(); raw.abort(net.ErrClosed); <-done }()
+			select {
+			case <-done:
+			case <-time.After(300 * time.Millisecond):
+				t.Fatal("half-close observation refreshed byte-idle budget without traffic")
+			}
+			raw.mu.Lock()
+			cause := raw.err
+			raw.mu.Unlock()
+			if !errors.Is(cause, ErrIdleTimeout) {
+				t.Fatalf("expired byte-idle cause: %v", cause)
+			}
+		})
+	}
+}

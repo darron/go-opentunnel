@@ -159,11 +159,12 @@ func (ch *channel) reset(code string) {
 }
 
 // streamActivity serializes successful byte activity with the first observed
-// half-close. That observation starts a fresh inactivity epoch even after a long
-// fully-open quiet period. Subsequent bytes extend, rather than replace, it.
+// half-close. Its independent half epoch starts fresh after a long fully-open
+// quiet period while preserving the byte-idle budget. Subsequent bytes extend it.
 type streamActivity struct {
 	mu      sync.Mutex
 	last    time.Time
+	halfAt  time.Time
 	half    bool
 	expired bool
 	wake    chan struct{}
@@ -183,7 +184,7 @@ func (a *streamActivity) halfClose() {
 	a.mu.Lock()
 	if !a.half {
 		a.half = true
-		a.last = time.Now()
+		a.halfAt = time.Now()
 	}
 	a.mu.Unlock()
 	select {
@@ -226,6 +227,9 @@ func (ch *channel) watchActivity(a *streamActivity) {
 		remaining := opts.IdleTimeout - time.Since(a.last)
 		if a.half && opts.HalfCloseTimeout > 0 {
 			last := a.last
+			if a.halfAt.After(last) {
+				last = a.halfAt
+			}
 			if transport := ch.raw.activity; transport != a {
 				transport.mu.Lock()
 				if transport.last.After(last) {
