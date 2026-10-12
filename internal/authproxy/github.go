@@ -145,7 +145,6 @@ type githubPending struct {
 type GitHubBrowserAuthenticator struct{ *githubBrowserState }
 
 type githubBrowserState struct {
-	stats    *statistics
 	config   GitHubConfig
 	sessions *Sessions
 	origin   string
@@ -205,11 +204,7 @@ func (g *GitHubBrowserAuthenticator) begin(w http.ResponseWriter, r *http.Reques
 }
 func (g *GitHubBrowserAuthenticator) callback(w http.ResponseWriter, r *http.Request) {
 	success := false
-	defer func() {
-		if g.stats != nil {
-			g.stats.login(1, success)
-		}
-	}()
+	defer func() { recordBrowserLogin(r, 1, success) }()
 	ownedHeaders(w)
 	q := r.URL.Query()
 	state := q.Get("state")

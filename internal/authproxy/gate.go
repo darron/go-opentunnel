@@ -144,7 +144,6 @@ func renderLogin(w http.ResponseWriter, r *http.Request, github bool, message st
 type PasswordBrowserAuthenticator struct{ *passwordBrowserState }
 
 type passwordBrowserState struct {
-	stats     *statistics
 	verifier  PasswordVerifier
 	sessions  *Sessions
 	origin    string
@@ -179,11 +178,7 @@ func (p *PasswordBrowserAuthenticator) Register(mux *http.ServeMux) {
 }
 func (p *PasswordBrowserAuthenticator) login(w http.ResponseWriter, r *http.Request) {
 	success := false
-	defer func() {
-		if p.stats != nil {
-			p.stats.login(0, success)
-		}
-	}()
+	defer func() { recordBrowserLogin(r, 0, success) }()
 	ownedHeaders(w)
 	if len(r.Header.Values("Origin")) != 1 || r.Header.Get("Origin") != p.origin {
 		http.Error(w, "Invalid request origin", http.StatusForbidden)

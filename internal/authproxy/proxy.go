@@ -135,12 +135,6 @@ func NewHandler(o Options) (*Handler, error) {
 		}
 	}
 
-	switch b := browser.(type) {
-	case *PasswordBrowserAuthenticator:
-		b.stats = &h.stats
-	case *GitHubBrowserAuthenticator:
-		b.stats = &h.stats
-	}
 	browser.Register(h.owned)
 	h.owned.HandleFunc("GET /__otgo/logout", h.logout)
 	h.owned.HandleFunc("POST /__otgo/logout", h.logout)
@@ -278,6 +272,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/__otgo/") || r.URL.Path == "/__otgo" {
 		h.stats.request("owned")
+		r = r.WithContext(context.WithValue(r.Context(), statisticsContextKey{}, &h.stats))
 		ownedHeaders(w)
 		h.owned.ServeHTTP(w, r)
 		return

@@ -1,8 +1,10 @@
 package authproxy
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
+	"net/http"
 	"sync/atomic"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var requestOutcomes = [...]string{"admitted", "auth_denied", "origin_denied", "protocol_denied", "public_denied", "unavailable", "owned"}
@@ -98,5 +100,15 @@ func (c *proxyCollector) Collect(ch chan<- prometheus.Metric) {
 		for _, o := range loginOutcomes {
 			ch <- prometheus.MustNewConstMetric(c.logins, prometheus.CounterValue, float64(s.Logins[m][o]), m, o)
 		}
+	}
+}
+
+// The private context key ties trusted terminal login accounting to the handler
+// serving this request. Authenticators can be reused without mutable ownership.
+type statisticsContextKey struct{}
+
+func recordBrowserLogin(r *http.Request, mode int, success bool) {
+	if s, ok := r.Context().Value(statisticsContextKey{}).(*statistics); ok {
+		s.login(mode, success)
 	}
 }

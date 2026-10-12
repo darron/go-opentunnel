@@ -193,3 +193,127 @@ type failingTransport struct{}
 func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("backend-secret-canary")
 }
+
+func TestStatisticsReusedBrowserAuthenticatorsRemainPerHandler(t *testing.T) {
+	for _, mode := range []string{"password", "github"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := fixtureConfig()
+			sessions := NewSessions(1024)
+			var browser BrowserAuthenticator
+			if mode == "password" {
+				browser = NewPasswordBrowserAuthenticator(cfg, sessions)
+			} else {
+				cfg.Mode = "github"
+				cfg.GitHub = GitHubConfig{ClientID: "id", ClientSecret: "secret", Users: []GitHubAccount{{ID: 123, Login: "allowed"}}}
+				var e error
+				browser, e = NewGitHubBrowserAuthenticator(cfg, sessions)
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
+			first, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer func() { _ = first.Close() }()
+			second, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer func() { _ = second.Close() }()
+			method, path := "POST", "/__otgo/login"
+			if mode == "github" {
+				method, path = "GET", "/__otgo/github/callback"
+			}
+			if w := runRequest(first, publicRequest(method, path)); w.Code != 403 {
+				t.Fatal(w.Code)
+			}
+			if first.Stats().Logins[mode]["failure"] != 1 || second.Stats().Logins[mode]["failure"] != 0 {
+				t.Fatalf("first login crossed handler ownership: first=%+v second=%+v", first.Stats(), second.Stats())
+			}
+			runRequest(second, publicRequest(method, path))
+			direct := http.NewServeMux()
+			browser.Register(direct)
+			runRequest(direct, publicRequest(method, path))
+			if first.Stats().Logins[mode]["failure"] != 1 || second.Stats().Logins[mode]["failure"] != 1 {
+				t.Fatalf("direct authenticator invocation borrowed handler statistics: first=%+v second=%+v", first.Stats(), second.Stats())
+			}
+		})
+	}
+}
+
+func TestStatisticsConcurrentConstructionAndReusedLogin(t *testing.T) {
+	for _, mode := range []string{"password", "github"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := fixtureConfig()
+			sessions := NewSessions(1024)
+			var browser BrowserAuthenticator
+			method, path := "POST", "/__otgo/login"
+			if mode == "password" {
+				browser = NewPasswordBrowserAuthenticator(cfg, sessions)
+			} else {
+				cfg.Mode = "github"
+				cfg.GitHub = GitHubConfig{ClientID: "id", ClientSecret: "secret", Users: []GitHubAccount{{ID: 123, Login: "allowed"}}}
+				var e error
+				browser, e = NewGitHubBrowserAuthenticator(cfg, sessions)
+				if e != nil {
+					t.Fatal(e)
+				}
+				method, path = "GET", "/__otgo/github/callback"
+			}
+			first, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer func() { _ = first.Close() }()
+			start := make(chan struct{})
+			finished := make(chan struct{})
+			const count = 64
+			go func() {
+				defer close(finished)
+				<-start
+				for range count {
+					runRequest(first, publicRequest(method, path))
+				}
+			}()
+			others := make([]*Handler, 0, count)
+			close(start)
+			for range count {
+				h, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+				if e != nil {
+					t.Fatal(e)
+				}
+				others = append(others, h)
+			}
+			<-finished
+			if got := first.Stats().Logins[mode]["failure"]; got != count {
+				t.Fatalf("concurrent login counter=%d, want%d", got, count)
+			}
+			for _, h := range others {
+				if got := h.Stats().Logins[mode]["failure"]; got != 0 {
+					t.Errorf("constructor captured somebody else's login: %d", got)
+				}
+				_ = h.Close()
+			}
+		})
+	}
+}
+
+type uninstrumentedBrowser struct{}
+
+func (uninstrumentedBrowser) Register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /__otgo/login", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusSeeOther) })
+}
+func TestStatisticsDoesNotInferCustomBrowserLogin(t *testing.T) {
+	h, e := NewHandler(Options{Config: fixtureConfig(), BrowserAuthenticator: uninstrumentedBrowser{}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = h.Close() }()
+	if w := runRequest(h, publicRequest("POST", "/__otgo/login")); w.Code != 303 {
+		t.Fatal(w.Code)
+	}
+	if s := h.Stats(); s.Logins["password"]["success"] != 0 || s.Logins["password"]["failure"] != 0 || s.Requests["owned"] != 1 {
+		t.Fatal(s)
+	}
+}
