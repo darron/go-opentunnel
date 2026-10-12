@@ -94,3 +94,42 @@ func TestProvisionCommandsApplyDeadlineToRequests(t *testing.T) {
 		}
 	}
 }
+
+type pendingTimeoutTransport struct{}
+
+func (pendingTimeoutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
+}
+func TestPendingTimeoutResumeMessageIsVerifiedAndQuoted(t *testing.T) {
+	previous := http.DefaultTransport
+	http.DefaultTransport = pendingTimeoutTransport{}
+	defer func() { http.DefaultTransport = previous }()
+	for _, stored := range []bool{true, false} {
+		root := filepath.Join(t.TempDir(), "state's $(unsafe)")
+		if stored {
+			if e := opentunnel.NewFileStorage(root).SavePending(t.Context(), "unit", opentunnel.PendingIdentity{ID: "pending", Hostname: "pending.test", Token: "secret-token", PrivateKey: "secret-key", CSR: "secret-csr"}); e != nil {
+				t.Fatal(e)
+			}
+		}
+		command := "create"
+		if stored {
+			command = "resume"
+		}
+		var out, errout bytes.Buffer
+		e := run(t.Context(), []string{command, "--json", "--data-dir", root, "--profile", "unit", "--api", "http://127.0.0.1:1/custom", "--timeout", "35ms"}, strings.NewReader(""), &out, &errout)
+		if !errors.Is(e, context.DeadlineExceeded) {
+			t.Fatal(e)
+		}
+		want := "Provisioning timed out; the stored pending request remains resumable. Run: otgo resume --profile unit --api http://127.0.0.1:1/custom --data-dir '" + strings.ReplaceAll(root, "'", "'\"'\"'") + "'\n"
+		if stored && errout.String() != want {
+			t.Fatalf("got %q want %q", errout.String(), want)
+		}
+		if !stored && errout.Len() != 0 {
+			t.Fatalf("advertised nonexistent pending: %s", errout.String())
+		}
+		if out.Len() != 0 || strings.Contains(errout.String(), "secret-") {
+			t.Fatal("credentials or stdout contract damaged")
+		}
+	}
+}

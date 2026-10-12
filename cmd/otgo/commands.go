@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/darron/go-opentunnel"
+	"github.com/darron/go-opentunnel/metrics"
 )
 
 const defaultProvisionTimeout = 5 * time.Minute
@@ -57,7 +58,7 @@ func (c *commonFlags) bind(fs *flag.FlagSet) {
 	fs.DurationVar(&c.requestTimeout, "request-timeout", 0, "per-request timeout (0 uses the client default)")
 }
 
-func (c commonFlags) client() (*opentunnel.Client, error) {
+func (c commonFlags) clientWithTransport(transport opentunnel.TransportOptions) (*opentunnel.Client, error) {
 	var store opentunnel.Storage
 	var err error
 	if c.dataDir != "" {
@@ -68,7 +69,7 @@ func (c commonFlags) client() (*opentunnel.Client, error) {
 			return nil, err
 		}
 	}
-	return opentunnel.NewClient(opentunnel.ClientOptions{API: c.api, Storage: store, RequestTimeout: c.requestTimeout})
+	return opentunnel.NewClient(opentunnel.ClientOptions{API: c.api, Storage: store, RequestTimeout: c.requestTimeout, Transport: transport})
 }
 
 func newFlagSet(name string, errout io.Writer) *flag.FlagSet {
@@ -105,11 +106,15 @@ func runCommand(ctx context.Context, args []string, in io.Reader, out, errout io
 	return runNamed(ctx, args[0], args[1:], in, out, errout)
 }
 
-func runNamed(ctx context.Context, name string, args []string, in io.Reader, out, errout io.Writer) error {
+func runNamed(ctx context.Context, name string, args []string, in io.Reader, out, errout io.Writer) (result error) {
 	fs := newFlagSet(name, errout)
 	var common commonFlags
 	common.bind(fs)
 	var timeout time.Duration
+	var runtime runtimeFlags
+	if name == "connect" || name == "listen" {
+		runtime.bind(fs)
+	}
 	var routes routeFlags
 	var proxyProtocols proxyProtocolFlags
 	var listenNames nameFlags
@@ -133,6 +138,9 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 		}
 		return err
 	}
+	if err := runtime.validate(); err != nil {
+		return err
+	}
 	if common.requestTimeout < 0 {
 		return errors.New("request-timeout must not be negative")
 	}
@@ -148,7 +156,19 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 		commandCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	client, err := common.client()
+	admin, err := bindMetrics(commandCtx, runtime.metricsListen)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if e := admin.Close(); e != nil {
+			result = e
+		}
+	}()
+	if admin != nil {
+		commandCtx = admin.ctx
+	}
+	client, err := common.clientWithTransport(opentunnel.TransportOptions{HalfCloseTimeout: runtime.halfCloseTimeout})
 	if err != nil {
 		return err
 	}
@@ -156,6 +176,12 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 
 	write := &lockedWriter{w: out}
 	writeErr := &lockedWriter{w: errout}
+	if admin != nil {
+		admin.registry.MustRegister(metrics.NewCollector(client))
+		if err := admin.announce(writeErr); err != nil {
+			return err
+		}
+	}
 	if name == "list" {
 		tunnels, err := client.List(commandCtx)
 		return printValue(write, common.json, tunnels, err)
@@ -211,7 +237,7 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 			return err
 		}
 		if err != nil {
-			return err
+			return pendingProvisionError(client, common, err, writeErr)
 		}
 		return printPointer(write, common.json, identity, nil)
 	}

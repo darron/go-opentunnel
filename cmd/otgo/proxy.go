@@ -12,6 +12,7 @@ import (
 
 	"github.com/darron/go-opentunnel"
 	"github.com/darron/go-opentunnel/internal/authproxy"
+	"github.com/darron/go-opentunnel/metrics"
 )
 
 // boundStorage turns disappearance during Listen/refresh into a hard failure.
@@ -59,10 +60,12 @@ func (s *boundStorage) SavePending(ctx context.Context, p string, id opentunnel.
 	return s.Storage.SavePending(ctx, p, id)
 }
 
-func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
+func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result error) {
 	fs := newFlagSet("proxy", errout)
 	var a authFlags
 	a.bind(fs)
+	var runtime runtimeFlags
+	runtime.bind(fs)
 	var timeout time.Duration
 	fs.DurationVar(&timeout, "timeout", 0, "overall proxy lifetime (0 runs until cancelled)")
 	if e := parseAuthFlags(fs, args, &a); e != nil {
@@ -74,6 +77,14 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 	if timeout < 0 {
 		return errors.New("timeout must not be negative")
 	}
+	if e := runtime.validate(); e != nil {
+		return e
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	paths, e := a.paths()
 	if e != nil {
 		return e
@@ -81,6 +92,27 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 	cfg, e := authproxy.LoadConfig(paths.AuthConfig)
 	if e != nil {
 		return e
+	}
+	metricsExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "metrics-listen" {
+			metricsExplicit = true
+		}
+	})
+	if !metricsExplicit {
+		runtime.metricsListen = cfg.MetricsListen
+	}
+	admin, e := bindMetrics(ctx, runtime.metricsListen)
+	if e != nil {
+		return e
+	}
+	defer func() {
+		if e := admin.Close(); e != nil {
+			result = e
+		}
+	}()
+	if admin != nil {
+		ctx = admin.ctx
 	}
 	storage := &boundStorage{Storage: opentunnel.NewFileStorage(paths.TunnelRoot), binding: cfg.Binding}
 	id, e := storage.Load(ctx, a.profile)
@@ -94,11 +126,6 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 	if e = authproxy.ValidateBinding(cfg, b); e != nil {
 		return e
 	}
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
 	return authproxy.WithProfileLock(a.profileLock(paths), func() error {
 		// Recheck after acquiring the lock, before any network operation.
 		current, e := authproxy.LoadConfig(paths.AuthConfig)
@@ -109,7 +136,7 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 			return e
 		}
 		cfg = current
-		client, e := opentunnel.NewClient(opentunnel.ClientOptions{API: a.api, Storage: storage, RequestTimeout: a.requestTimeout})
+		client, e := opentunnel.NewClient(opentunnel.ClientOptions{API: a.api, Storage: storage, RequestTimeout: a.requestTimeout, Transport: opentunnel.TransportOptions{HalfCloseTimeout: runtime.halfCloseTimeout}})
 		if e != nil {
 			return e
 		}
@@ -119,6 +146,12 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) error {
 			return e
 		}
 		defer func() { _ = h.Close() }()
+		if admin != nil {
+			admin.registry.MustRegister(metrics.NewCollector(client), h.Collector())
+			if e := admin.announce(errout); e != nil {
+				return e
+			}
+		}
 		listener, e := client.Listen(ctx, opentunnel.ListenOptions{Profile: a.profile, Routes: []string{"@"}, Lifetime: ctx})
 		if e != nil {
 			return e

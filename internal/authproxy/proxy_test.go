@@ -262,6 +262,9 @@ func TestProxyWebSocketRevocationAndClose(t *testing.T) {
 			if err != nil || string(b) != "hello" {
 				t.Fatal("WebSocket round trip")
 			}
+			if stats := h.Stats(); stats.BackendResponses["1xx"] != 1 || stats.Requests["admitted"] != 1 {
+				t.Fatal("WebSocket headers not counted", stats)
+			}
 			start := time.Now()
 			if mode == "close" {
 				err = h.Close()

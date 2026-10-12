@@ -49,15 +49,7 @@ func (a authFlags) launchCommand() string {
 	if a.requestTimeout != 0 {
 		args = append(args, "--request-timeout", a.requestTimeout.String())
 	}
-	for i, s := range args {
-		if s == "" || strings.IndexFunc(s, func(r rune) bool {
-			safe := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_./:@%+=,-", r)
-			return !safe
-		}) >= 0 {
-			args[i] = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-		}
-	}
-	return strings.Join(args, " ")
+	return shellCommand(args)
 }
 
 func runProfiles(ctx context.Context, args []string, out, errout io.Writer) error {

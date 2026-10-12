@@ -24,6 +24,7 @@ type Options struct {
 type Handler struct{ *handlerState }
 
 type handlerState struct {
+	stats     statistics
 	config    Config
 	origin    string
 	tokens    *TokenStore
@@ -134,6 +135,12 @@ func NewHandler(o Options) (*Handler, error) {
 		}
 	}
 
+	switch b := browser.(type) {
+	case *PasswordBrowserAuthenticator:
+		b.stats = &h.stats
+	case *GitHubBrowserAuthenticator:
+		b.stats = &h.stats
+	}
 	browser.Register(h.owned)
 	h.owned.HandleFunc("GET /__otgo/logout", h.logout)
 	h.owned.HandleFunc("POST /__otgo/logout", h.logout)
@@ -150,6 +157,7 @@ func NewHandler(o Options) (*Handler, error) {
 	h.transport.ResponseHeaderTimeout = 15 * time.Second
 	h.transport.MaxConnsPerHost = 256
 	h.proxy = &httputil.ReverseProxy{Transport: h.transport, FlushInterval: -1, ErrorLog: log.New(io.Discard, "", 0), ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
+		h.stats.backendErrors.Add(1)
 		http.Error(w, "Upstream unavailable", http.StatusBadGateway)
 	}, Rewrite: func(p *httputil.ProxyRequest) {
 		p.SetURL(upstream)
@@ -164,6 +172,7 @@ func NewHandler(o Options) (*Handler, error) {
 			p.Out.Header.Set("Referer", ref.String())
 		}
 	}, ModifyResponse: func(res *http.Response) error {
+		h.stats.response(res.StatusCode)
 		// Public backends can opt into caching. Authenticated content must not
 		// survive logout/expiry in an HTTP cache or be shared with another user.
 		res.Header.Set("Cache-Control", "private, no-store")
@@ -247,6 +256,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	if h.closed || len(h.active) >= 256 {
 		h.mu.Unlock()
+		h.stats.request("unavailable")
 		http.Error(w, "Proxy unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -262,16 +272,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	r = r.WithContext(ctx)
 	if !h.validPublicRequest(r) {
+		h.stats.request("public_denied")
 		http.Error(w, "Misdirected request", http.StatusMisdirectedRequest)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/__otgo/") || r.URL.Path == "/__otgo" {
+		h.stats.request("owned")
 		ownedHeaders(w)
 		h.owned.ServeHTTP(w, r)
 		return
 	}
 	c, e := h.authenticate(r)
 	if e != nil {
+		h.stats.request("auth_denied")
 		if r.Method == "GET" && strings.Contains(r.Header.Get("Accept"), "text/html") {
 			renderLogin(w, r, h.config.Mode == "github", "")
 		} else {
@@ -281,10 +294,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.validOrigin(r, c) {
+		h.stats.request("origin_denied")
 		http.Error(w, "Invalid request origin", http.StatusForbidden)
 		return
 	}
 	if r.Method == "CONNECT" || r.Header.Get("Upgrade") != "" && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		h.stats.request("protocol_denied")
 		http.Error(w, "Unsupported protocol", http.StatusBadRequest)
 		return
 	}
@@ -292,6 +307,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.active[lease] = c
 	h.mu.Unlock()
 	_ = controller.SetReadDeadline(time.Time{})
+	h.stats.request("admitted")
 	h.proxy.ServeHTTP(&leaseWriter{ResponseWriter: w, lease: lease}, r)
 }
 func (h *Handler) watch() {

@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -37,29 +39,31 @@ type GitHubConfig struct {
 	AppURL       string          `json:"app_url,omitempty"`
 }
 type Config struct {
-	Version  int              `json:"version"`
-	Binding  Binding          `json:"binding"`
-	Upstream string           `json:"upstream"`
-	Mode     string           `json:"mode"`
-	Password PasswordVerifier `json:"password"`
-	GitHub   GitHubConfig     `json:"github"`
+	MetricsListen string           `json:"metrics_listen,omitempty"`
+	Version       int              `json:"version"`
+	Binding       Binding          `json:"binding"`
+	Upstream      string           `json:"upstream"`
+	Mode          string           `json:"mode"`
+	Password      PasswordVerifier `json:"password"`
+	GitHub        GitHubConfig     `json:"github"`
 }
 type diskPassword PasswordVerifier
 type diskGitHub GitHubConfig
 type diskConfig struct {
-	Version  int          `json:"version"`
-	Binding  Binding      `json:"binding"`
-	Upstream string       `json:"upstream"`
-	Mode     string       `json:"mode"`
-	Password diskPassword `json:"password"`
-	GitHub   diskGitHub   `json:"github"`
+	MetricsListen string       `json:"metrics_listen,omitempty"`
+	Version       int          `json:"version"`
+	Binding       Binding      `json:"binding"`
+	Upstream      string       `json:"upstream"`
+	Mode          string       `json:"mode"`
+	Password      diskPassword `json:"password"`
+	GitHub        diskGitHub   `json:"github"`
 }
 
 func toDisk(c Config) diskConfig {
-	return diskConfig{c.Version, c.Binding, c.Upstream, c.Mode, diskPassword(c.Password), diskGitHub(c.GitHub)}
+	return diskConfig{c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, diskPassword(c.Password), diskGitHub(c.GitHub)}
 }
 func fromDisk(c diskConfig) Config {
-	return Config{c.Version, c.Binding, c.Upstream, c.Mode, PasswordVerifier(c.Password), GitHubConfig(c.GitHub)}
+	return Config{c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, PasswordVerifier(c.Password), GitHubConfig(c.GitHub)}
 }
 func (g GitHubConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -77,11 +81,12 @@ func (p PasswordVerifier) MarshalJSON() ([]byte, error) {
 
 func (c Config) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Version  int     `json:"version"`
-		Binding  Binding `json:"binding"`
-		Upstream string  `json:"upstream"`
-		Mode     string  `json:"mode"`
-	}{c.Version, c.Binding, c.Upstream, c.Mode})
+		MetricsListen string  `json:"metrics_listen,omitempty"`
+		Version       int     `json:"version"`
+		Binding       Binding `json:"binding"`
+		Upstream      string  `json:"upstream"`
+		Mode          string  `json:"mode"`
+	}{c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode})
 }
 func (c Config) Format(f fmt.State, _ rune) { b, _ := c.MarshalJSON(); _, _ = f.Write(b) }
 func (g GitHubConfig) Format(f fmt.State, _ rune) {
@@ -184,6 +189,9 @@ func ValidateBinding(c Config, b Binding) error {
 	return nil
 }
 func validateConfig(c Config) error {
+	if _, e := MetricsListenAddress(c.MetricsListen); e != nil {
+		return e
+	}
 	if c.Version != 0 && c.Version != 1 {
 		return errors.New("unsupported auth config version")
 	}
@@ -245,3 +253,28 @@ func SaveConfig(path string, c Config) error {
 }
 
 func ValidateUpstream(raw string) error { _, e := upstreamURL(raw); return e }
+
+// MetricsListenAddress validates and normalizes the private metrics bind address.
+// Arbitrary names are rejected without DNS resolution; localhost binds IPv4.
+func MetricsListenAddress(address string) (string, error) {
+	if address == "" {
+		return "", nil
+	}
+	host, port, e := net.SplitHostPort(address)
+	if e != nil {
+		return "", errors.New("metrics-listen requires a loopback host:port")
+	}
+	n, e := strconv.Atoi(port)
+	if e != nil || n < 0 || n > 65535 {
+		return "", errors.New("metrics-listen port must be between 0 and 65535")
+	}
+	if host == "localhost" {
+		host = "127.0.0.1"
+	} else {
+		ip, e := netip.ParseAddr(host)
+		if e != nil || !ip.IsLoopback() || ip.Zone() != "" {
+			return "", errors.New("metrics-listen host must be a loopback IP or localhost")
+		}
+	}
+	return net.JoinHostPort(host, strconv.Itoa(n)), nil
+}

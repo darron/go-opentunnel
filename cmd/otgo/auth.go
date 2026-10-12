@@ -257,7 +257,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 				defer func() { _ = client.Close() }()
 				identity, e := client.Ensure(ctx, a.profile)
 				if e != nil {
-					return e
+					return pendingProvisionError(client, a.commonFlags, e, errout)
 				}
 				binding, e := a.binding(*identity)
 				if e != nil {

@@ -214,3 +214,54 @@ func TestConfigNestedSecretRedaction(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigMetricsAddressRoundTripAndValidation(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "auth.json")
+	for _, address := range []string{"", "localhost:0", "127.0.0.1:9090", "[::1]:9090"} {
+		cfg := fixtureConfig()
+		cfg.MetricsListen = address
+		if e := SaveConfig(path, cfg); e != nil {
+			t.Fatal(e)
+		}
+		got, e := LoadConfig(path)
+		if e != nil || got.MetricsListen != address {
+			t.Fatalf("roundtrip %q: %+v %v", address, got, e)
+		}
+		raw, e := os.ReadFile(path)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if address == "" && strings.Contains(string(raw), "metrics_listen") {
+			t.Fatal("old config shape changed")
+		}
+		public, e := json.Marshal(got)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if strings.Contains(string(public), "secret-never-print") || strings.Contains(string(public), "digest") {
+			t.Fatal("redaction changed")
+		}
+	}
+	before, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, address := range []string{"0.0.0.0:90", "[::]:90", "evil.test:90", "192.0.2.1:90", "localhost", "localhost:99999", "localhost:http"} {
+		cfg := fixtureConfig()
+		cfg.MetricsListen = address
+		if e := SaveConfig(path, cfg); e == nil {
+			t.Fatalf("unsafe config accepted: %s", address)
+		}
+		after, e := os.ReadFile(path)
+		if e != nil || string(before) != string(after) {
+			t.Fatal("invalid value changed config")
+		}
+	}
+	// #nosec G703 -- path is an isolated test fixture, not user input.
+	if e := os.WriteFile(path, []byte(strings.Replace(string(before), `"metrics_listen":`, `"unknown_metrics":`, 1)), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := LoadConfig(path); e == nil {
+		t.Fatal("unknown field accepted")
+	}
+}
