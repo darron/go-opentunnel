@@ -1,6 +1,6 @@
 # Monitor otgo and embedded clients
 
-These features are on `main` for v0.9.0; released v0.8.0 does not include them.
+Available in v0.9.0 and later.
 
 Metrics are optional. They describe this Go process, not the hosted relay's
 ACME jobs, database, DNS provider or other tunnels.

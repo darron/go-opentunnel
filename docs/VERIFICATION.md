@@ -2,7 +2,7 @@
 
 ## Observability and half-close cleanup — 2026-10-12
 
-These are unreleased v0.9.0 changes on `main`, based on `2d9fc0b`; the final
+These v0.9.0 changes are based on `2d9fc0b`; the final
 runtime changes are through `fc52f06`. The optional adapter and CLI use the
 official Prometheus client. The root client does not import it. The minimum Go
 version is now 1.26; the service API and relay framing are unchanged.

@@ -172,7 +172,7 @@ live secrets.
 
 ## Monitor a running proxy
 
-These features are on `main` for v0.9.0; released v0.8.0 does not include them.
+Available in v0.9.0 and later.
 
 Start a separate local metrics listener:
 

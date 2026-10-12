@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Planned for v0.9.0:
+## v0.9.0 — Metrics and connection diagnostics — 2026-10-12
 
 - Raise the minimum Go version to 1.26 and update compatibility checks in CI.
 - Add concurrent client, connection and control API statistics, independent of
@@ -19,6 +19,8 @@ Planned for v0.9.0:
   allow longer quiet periods.
 - Explain how to resume stored pending provisioning after a CLI deadline.
   Keep the hosted service protocol and existing Go APIs compatible.
+
+[Compare v0.8.0 to v0.9.0](https://github.com/darron/go-opentunnel/compare/v0.8.0...v0.9.0)
 
 ## v0.8.0 — Dark auth pages and profile inventory — 2026-10-11
 
