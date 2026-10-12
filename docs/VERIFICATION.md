@@ -19,7 +19,8 @@ version is now 1.26; the service API and relay framing are unchanged.
 | Built CLI with isolated XDG directories | Long-command help, invalid-address/negative-timeout rejection, clean JSON stdout and zero state writes passed |
 | Workflow and Homebrew updater checks | `actionlint` and all seven Python updater tests passed |
 | Root compiled dependency graph | No Prometheus imports; the optional adapter uses the official library |
-| Relative documentation links and working-directory secret scan | All links resolved; redacted Gitleaks scan reported no findings |
+| Relative documentation links | All 173 local links resolved |
+| Working-directory and full-history secret scans | Redacted Gitleaks scans reported no findings; history scan covered all 55 commits before the final documentation correction |
 
 The statistics tests compare real WebSocket/TLS relay payload with counters,
 cover API body/validation errors and durations, retain totals after closure,
@@ -55,7 +56,10 @@ login counts to another handler. Their independent reproductions changed from
 RED to GREEN. Separate timer epochs preserve idle semantics; a private request
 context owns login accounting without mutating authenticators. New regressions
 cover both auth modes and concurrent handler construction/login under race
-checking. All task reviews approved the corrected source.
+checking. All task reviews approved the corrected source. A separate integrated
+review approved the complete change set with no critical or important findings;
+its one minor documentation correction clarified that a saved metrics address
+also starts the listener without a flag.
 
 These checks used isolated local fixtures. No personal profiles or running
 proxies were changed, no real GitHub grant was created, and fresh hosted issuance

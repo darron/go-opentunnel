@@ -15,7 +15,8 @@ otgo proxy --profile another-app --metrics-listen 127.0.0.1:9092
 ```
 
 Scrape `http://127.0.0.1:9091/metrics`. The same flag works with `connect` and
-`listen`. Without the flag, otgo starts no metrics server. `localhost` binds
+`listen`. Without the flag or a saved `metrics_listen` value, otgo starts no
+metrics server. `localhost` binds
 IPv4 loopback; literal IPv4 and IPv6 loopback addresses are accepted. Port `0`
 chooses an available port; otgo prints the actual URL. Wildcard and non-loopback
 addresses are rejected. A port already in use fails before tunnel startup.
