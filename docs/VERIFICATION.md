@@ -70,6 +70,30 @@ server ACME attempts. Listen still returns exact `*tls.Conn` values and cannot
 infer unread encrypted `close_notify`; applications must close their sockets.
 See [observability](OBSERVABILITY.md) for metric meanings and access boundaries.
 
+### v0.9.0 publication and Homebrew
+
+Published [v0.9.0](https://github.com/darron/go-opentunnel/releases/tag/v0.9.0)
+from `4726e313309302c838e2093e5ab221ae32084084`. The remote annotated tag and
+Go's public module proxy resolve to that commit. Release notes are attached to
+the GitHub release; the dated changelog and client version are committed.
+
+- `make check build-example` passed after the version update, with full
+  golangci-lint at 0 issues. [Main CI](https://github.com/darron/go-opentunnel/actions/runs/38214658796)
+  and [tag CI](https://github.com/darron/go-opentunnel/actions/runs/38214996148)
+  passed every job, including Linux race detection, current-Go vulnerability
+  checks and all five sustained fuzz targets.
+- The [release hook](https://github.com/darron/go-opentunnel/actions/runs/38215007967)
+  automatically dispatched the [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38215016179).
+  Style, strict audit, source build, install, formula test and publication passed.
+  Tap commit `db6543328404089918ff6565cb23dfc5ec249027` changed only `Formula/otgo.rb`;
+  the source archive SHA-256 is
+  `5cad9c1134742036fa9713d12815d836579773efff159f16900690082de828cf`.
+- Local Homebrew upgraded from 0.8.0 to 0.9.0. `brew test darron/tap/otgo`,
+  `profiles --help` and `proxy --help` passed. Proxy help includes the metrics
+  listener and half-close timeout flags. Both version aliases report the release
+  SHA and `clean`; the binary uses Go 1.27.2. No running proxy was restarted or
+  authentication state changed during publication.
+
 ## Visual pages and profile inventory — 2026-10-11
 
 The v0.8.0 changes use self-contained dark templates for password/GitHub login,
