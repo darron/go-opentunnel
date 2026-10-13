@@ -22,8 +22,20 @@ Publication tests replace the GitHub CLI boundary and use real archive files.
 They cover draft/prerelease rejection, moved tags, downloading existing assets,
 missing-only uploads without overwrite, conflicting bytes rejected before upload,
 and an identical retry doing no upload. Foreign architecture binaries were
-cross-compiled and inspected locally; they were not executed locally. Hosted
-workflow and download verification will be recorded after publication.
+cross-compiled and inspected locally; they were not executed locally.
+
+The [v0.9.0 backfill workflow](https://github.com/darron/go-opentunnel/actions/runs/38332624493)
+passed its Ubuntu build/native check, macOS arm64 archive smoke check and
+publication jobs. All nine assets are attached to the
+[existing release](https://github.com/darron/go-opentunnel/releases/tag/v0.9.0).
+Downloaded copies passed combined and individual checksum checks. Both macOS
+archives contain the expected Mach-O architecture; both Linux archives contain
+statically linked ELF executables for their expected architecture. All four
+report matching target/CGO build metadata and contain the full release SHA.
+The downloaded macOS arm64 CLI passed version and command help checks.
+Running the publisher again against those downloads reported **0 uploaded,
+9 already identical**, confirming that it preserved the published assets.
+The release tag and Homebrew automation were unchanged.
 
 ## Observability and half-close cleanup — 2026-10-12
 
