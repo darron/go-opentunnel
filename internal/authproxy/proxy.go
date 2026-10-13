@@ -148,7 +148,9 @@ func NewHandler(o Options) (*Handler, error) {
 	}
 	h.transport = base.Clone()
 	h.transport.Proxy = nil
-	h.transport.ResponseHeaderTimeout = 15 * time.Second
+	// Long polls may withhold headers for their entire wait. Bound them by
+	// client cancellation, credential lifetime and handler shutdown instead.
+	h.transport.ResponseHeaderTimeout = 0
 	h.transport.MaxConnsPerHost = 256
 	h.proxy = &httputil.ReverseProxy{Transport: h.transport, FlushInterval: -1, ErrorLog: log.New(io.Discard, "", 0), ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
 		h.stats.backendErrors.Add(1)

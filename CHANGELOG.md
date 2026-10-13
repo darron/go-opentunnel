@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.11.0 — Long polling through authenticated proxies — 2026-10-13
+
+- Remove the auth proxy's 15-second backend response-header deadline so long
+  polls and slow responses can wait for headers without a proxy-generated `502`.
+  Apply the behavior to every authenticated backend request.
+- Preserve client cancellation, credential revocation/expiry and proxy shutdown
+  for pending requests, along with existing request and connection limits.
+- Add regression coverage for delayed response headers and pending-poll
+  cancellation on client disconnect, browser logout and handler shutdown.
+
+[Compare v0.10.0 to v0.11.0](https://github.com/darron/go-opentunnel/compare/v0.10.0...v0.11.0)
+
 ## v0.10.0 — Setup feedback and resilient API requests — 2026-10-13
 
 - Show major steps during `otgo auth init`, with a terminal spinner, plain

@@ -235,7 +235,11 @@ and temporarily deny new logins. Pending states are not evicted to admit newer
 ones. Tunnel connections also have a finite capacity; connection floods can deny
 service before authentication. Slow login bodies are bounded and idle HTTP
 keep-alive connections close after 30 seconds. Active authenticated streams do
-not inherit a server-wide read/write timeout.
+not inherit a server-wide read/write timeout. Authenticated backend requests
+also have no response-header deadline, so long polls can wait for new events
+before sending headers. Client disconnect, credential revocation/expiry and
+proxy shutdown cancel pending polls as well as active streams. The proxy caps
+active requests and backend connections at 256.
 
 To monitor request gating and browser login outcomes, start a separate local
 listener with `--metrics-listen 127.0.0.1:9091`. Metrics are disabled by default
