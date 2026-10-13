@@ -45,7 +45,9 @@ func (r *cancelReadCloser) Close() error {
 // origin. The supplied client is cloned before its redirect policy is hardened;
 // its Transport, Jar, and redirect hook remain trusted with API credentials.
 // Nil client uses the default HTTP transport. Zero timeout selects 15 seconds;
-// negative timeout is invalid. The timeout covers reading the response body.
+// negative timeout is invalid. The timeout covers all retries, backoff and body reads.
+// Transient failures get at most six retries following the OpenTunnel protocol;
+// ambiguous failures of tunnel creation/deletion are never replayed.
 // Responses are limited to 1 MiB. Use DefaultAPI for the hosted service.
 func NewAPI(base string, client *http.Client, timeout time.Duration) (*API, error) {
 	if timeout < 0 {
@@ -138,32 +140,87 @@ func (a *API) endpointURL(id, suffix string) *url.URL {
 	return &u
 }
 
-func (a *API) request(ctx context.Context, method, id, suffix, token string, body []byte) (*http.Response, error) {
+func (a *API) request(ctx context.Context, method, id, suffix, token string, body []byte, policy apiRetryPolicy, expected int) (result *http.Response, err error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: nil context", ErrInvalid)
 	}
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
-	req, err := http.NewRequestWithContext(ctx, method, a.endpointURL(id, suffix).String(), bytes.NewReader(body))
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "opentunnel/"+Version)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
 	started := time.Now()
-	resp, err := a.client.Do(req)
-	if err != nil {
-		cancel()
-		a.recordCompletion(started, err)
-		return nil, err
+	defer func() {
+		if err != nil {
+			cancel()
+			a.recordCompletion(started, err)
+		}
+	}()
+	repeatable := policy == apiRequestRepeatable
+	for attempt := 0; ; attempt++ {
+		req, e := http.NewRequestWithContext(ctx, method, a.endpointURL(id, suffix).String(), bytes.NewReader(body))
+		if e != nil {
+			return nil, e
+		}
+		req.Header.Set("User-Agent", "opentunnel-go/"+Version)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, e := a.client.Do(req)
+		if e != nil {
+			// A response alongside an error means CheckRedirect rejected the redirect.
+			// It must not be retried, even if a caller hook returns a network-like error.
+			if resp != nil {
+				_ = resp.Body.Close()
+				return nil, e
+			}
+			if !retryAPINetwork(e, repeatable) {
+				return nil, e
+			}
+			if attempt == apiMaxRetries {
+				return nil, &apiTransientError{err: e}
+			}
+			if e = waitAPIRetry(ctx, apiRetryDelay(attempt, "")); e != nil {
+				return nil, &apiTransientError{err: e}
+			}
+			continue
+		}
+		if retryAPIStatus(resp.StatusCode, repeatable) && attempt < apiMaxRetries {
+			// Close before waiting. Do not read a potentially stalled error body just
+			// to reuse its connection, or cancel the context needed by the next attempt.
+			_ = resp.Body.Close()
+			if e = waitAPIRetry(ctx, apiRetryDelay(attempt, resp.Header.Get("Retry-After"))); e != nil {
+				return nil, &apiTransientError{err: e}
+			}
+			continue
+		}
+		// Include body reads in the attempt: a truncated success is safe to replay
+		// for certificate operations, but ambiguous for tunnel creation/deletion.
+		data, e := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponse+1))
+		_ = resp.Body.Close()
+		if resp.StatusCode != expected && (e != nil || len(data) > maxAPIResponse) {
+			// Keep an established error status even when its untrusted body
+			// stalls, truncates or overflows. A 401 must not become a retryable
+			// read error, and an exhausted 503 must remain transient.
+			data, e = nil, nil
+		}
+		if e != nil {
+			if !repeatable || !retryAPINetwork(e, true) {
+				return nil, e
+			}
+			if attempt == apiMaxRetries {
+				return nil, &apiTransientError{err: e}
+			}
+			if e = waitAPIRetry(ctx, apiRetryDelay(attempt, "")); e != nil {
+				return nil, &apiTransientError{err: e}
+			}
+			continue
+		}
+		if len(data) > maxAPIResponse {
+			return nil, fmt.Errorf("%w: API response exceeds limit", ErrInvalid)
+		}
+		resp.Body = &cancelReadCloser{ReadCloser: io.NopCloser(bytes.NewReader(data)), cancel: cancel, started: started}
+		return resp, nil
 	}
-	resp.Body = &cancelReadCloser{ReadCloser: resp.Body, cancel: cancel, started: started}
-	return resp, nil
 }
 
 // completeResponse runs once at the public operation boundary, after body read
@@ -197,7 +254,7 @@ func (a *API) response(resp *http.Response, expected int, out any) error {
 			Tag string `json:"_tag"`
 		}
 		_ = json.Unmarshal(data, &remote)
-		return &APIError{StatusCode: resp.StatusCode, Tag: diagnosticAPITag(remote.Tag), Message: "request rejected"}
+		return &APIError{StatusCode: resp.StatusCode, Tag: diagnosticAPITag(remote.Tag), Message: apiStatusMessage(resp.StatusCode)}
 	}
 	if out == nil {
 		return nil
@@ -212,7 +269,7 @@ func (a *API) response(resp *http.Response, expected int, out any) error {
 // token. It does not generate a private key, request a certificate or save the
 // result. Use Client.Create for the complete provisioning workflow.
 func (a *API) Create(ctx context.Context) (out CreateTunnelResponse, err error) {
-	resp, err := a.request(ctx, http.MethodPost, "", "", "", []byte("{}"))
+	resp, err := a.request(ctx, http.MethodPost, "", "", "", []byte("{}"), apiRequestOnce, http.StatusCreated)
 	if err != nil {
 		return out, err
 	}
@@ -229,7 +286,7 @@ func (a *API) Create(ctx context.Context) (out CreateTunnelResponse, err error) 
 // Get returns the remote state of tunnel id using token. Missing tunnels return
 // an APIError with HTTP status 404, unlike Client.Get's absent local result.
 func (a *API) Get(ctx context.Context, id, token string) (out TunnelInfo, err error) {
-	resp, err := a.request(ctx, http.MethodGet, id, "", token, nil)
+	resp, err := a.request(ctx, http.MethodGet, id, "", token, nil, apiRequestRepeatable, http.StatusOK)
 	if err != nil {
 		return out, err
 	}
@@ -250,7 +307,7 @@ func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (out C
 	body, _ := json.Marshal(struct {
 		CSR string `json:"csr"`
 	}{csr})
-	resp, err := a.request(ctx, http.MethodPost, id, "/certificate", token, body)
+	resp, err := a.request(ctx, http.MethodPost, id, "/certificate", token, body, apiRequestRepeatable, http.StatusAccepted)
 	if err != nil {
 		return out, err
 	}
@@ -267,7 +324,7 @@ func (a *API) BindCertificate(ctx context.Context, id, token, csr string) (out C
 // Stats counts each validated failed response; repeated polls can count the same
 // failed state again. It does not count remote issuance attempts or jobs.
 func (a *API) Certificate(ctx context.Context, id, token string) (out CertificateInfo, err error) {
-	resp, err := a.request(ctx, http.MethodGet, id, "/certificate", token, nil)
+	resp, err := a.request(ctx, http.MethodGet, id, "/certificate", token, nil, apiRequestRepeatable, http.StatusOK)
 	if err != nil {
 		return out, err
 	}
@@ -282,7 +339,7 @@ func (a *API) Certificate(ctx context.Context, id, token string) (out Certificat
 // return an APIError with HTTP status 404. It does not stop local connections or
 // remove stored credentials; Client.Remove performs that coordinated cleanup.
 func (a *API) Remove(ctx context.Context, id, token string) (err error) {
-	resp, err := a.request(ctx, http.MethodDelete, id, "", token, nil)
+	resp, err := a.request(ctx, http.MethodDelete, id, "", token, nil, apiRequestOnce, http.StatusNoContent)
 	if err != nil {
 		return err
 	}

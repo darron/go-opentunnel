@@ -140,6 +140,27 @@ inspection using a stored identity's ID and token. Terminal certificate issuance
 failures return [typed diagnostics](CERTIFICATES.md); their normal rendering
 omits the raw remote reason.
 
+Control API and relay requests identify the client as `opentunnel-go/<version>`.
+The API follows the [upstream retry contract](https://github.com/anomalyco/opentunnel/blob/0cad49c74303bfdb2c0495e9c58fd1bdb9d619db/protocol.md#http-api):
+
+- Tunnel/certificate GETs and CSR submissions retry network failures, HTTP 429 and
+  5xx, including interrupted success-body reads.
+- Tunnel creation and deletion retry only a failed dial or HTTP 429, 503, 521,
+  522, 523 or 525. An uncertain creation result is returned without replay.
+- At most six retries use equal-jitter exponential backoff from 250 ms, capped at
+  eight seconds. Numeric `Retry-After` seconds override jitter, with the same cap.
+  The existing API timeout limits the entire operation, so it can stop earlier.
+- Redirect-policy failures, TLS verification failures and malformed success data
+  are not retried. Intermediate response bodies close before the next attempt.
+
+Connecting with a saved identity can use its still-valid local certificate after
+transient API exhaustion, including rate limits and an internal API deadline.
+Caller cancellation/deadlines, authentication failures, invalid redirects and
+malformed success data do not permit fallback. Fixed Cloudflare error meanings
+are reported; raw error bodies remain redacted even though some upstream message
+vectors reflect them. otgo uses its own JSON storage, not the upstream CLI's TOML
+profiles; upstream route-table changes do not change its saved configuration.
+
 Use HTTPS for remote API bases. Plain HTTP is accepted only for exact
 `localhost` or a literal loopback IP such as `127.0.0.1` or `::1`; loopback-like
 DNS names are rejected without resolution. The package clones a supplied

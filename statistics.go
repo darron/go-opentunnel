@@ -10,9 +10,10 @@ import (
 // survive connection shutdown. Concurrent operations may progress between snapshots.
 // It contains no tunnel, route, visitor, session or credential metadata.
 type Stats struct {
-	// APIRequests counts completed HTTP API requests, including failed attempts.
+	// APIRequests counts completed logical API operations, including failures.
+	// Internal retries count once; intermediate failures are not APIErrors.
 	// APIErrors counts transport, body, decoding, validation and HTTP status errors.
-	// APIDuration is total completed request time, including body read/validation.
+	// APIDuration includes all attempts, backoff, body reads and validation.
 	// Inputs rejected before an HTTP request is attempted do not count.
 	APIRequests, APIErrors uint64
 	APIDuration            time.Duration

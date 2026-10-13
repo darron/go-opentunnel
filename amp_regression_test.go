@@ -352,7 +352,11 @@ func TestPendingPersistenceFailureCompensatesOrReturnsRecoveryCredentials(t *tes
 			})
 			c := testClient(t, a, pendingSaveFailure{NewMemoryStorage()})
 			_, err := c.Create(t.Context(), "", ProvisionOptions{})
-			if err == nil || deletes.Load() != 1 || a.submissions.Load() != 0 {
+			expectedDeletes := int32(1)
+			if deleteFails {
+				expectedDeletes = 7
+			}
+			if err == nil || deletes.Load() != expectedDeletes || a.submissions.Load() != 0 {
 				t.Fatalf("failed persistence left creation uncompensated: err=%v deletes=%d submissions=%d", err, deletes.Load(), a.submissions.Load())
 			}
 			if deleteFails {

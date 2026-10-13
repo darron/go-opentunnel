@@ -50,12 +50,13 @@ func TestForegroundCertificateCooldownPreservesObservedReason(t *testing.T) {
 	}
 }
 
-func TestResumeAmbiguousBindCooldownReturnsTypedUnknownFailure(t *testing.T) {
+func TestResumeExhaustedBindRetriesCooldownReturnsTypedUnknownFailure(t *testing.T) {
 	a := newTestAPI(t)
 	var binds atomic.Int32
 	a.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/certificate") {
 			binds.Add(1)
+			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{"_tag": "ServiceUnavailableError"})
 			return
@@ -64,12 +65,12 @@ func TestResumeAmbiguousBindCooldownReturnsTypedUnknownFailure(t *testing.T) {
 	})
 	c := testClient(t, a, NewMemoryStorage())
 	if _, err := c.Create(t.Context(), "", ProvisionOptions{}); err == nil {
-		t.Fatal("ambiguous bind unexpectedly succeeded")
+		t.Fatal("exhausted bind retries unexpectedly succeeded")
 	}
 	_, err := c.Resume(t.Context(), "", ProvisionOptions{})
 	assertCertificateIssuanceFailure(t, "Resume", err, "", "unknown", 0)
-	if binds.Load() != 1 {
-		t.Fatalf("performed %d binds inside cooldown, want 1", binds.Load())
+	if binds.Load() != 7 {
+		t.Fatalf("performed %d binds after retries and cooldown, want 7", binds.Load())
 	}
 }
 

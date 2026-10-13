@@ -93,6 +93,9 @@ func newTestAPI(t *testing.T) *testAPI {
 	return a
 }
 func (a *testAPI) serve(w http.ResponseWriter, r *http.Request) {
+	if r.UserAgent() != "opentunnel-go/"+Version {
+		a.t.Errorf("API/relay User-Agent = %q", r.UserAgent())
+	}
 	if strings.HasSuffix(r.URL.Path, "/connect") {
 		a.mu.Lock()
 		bridge := a.bridge
@@ -117,6 +120,7 @@ func (a *testAPI) serve(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/tunnel/demo" {
 		if r.Method == "DELETE" {
 			if a.deleteFail.Load() {
+				w.Header().Set("Retry-After", "0")
 				w.WriteHeader(503)
 				_, _ = io.WriteString(w, `{"_tag":"ServiceUnavailableError","message":"try later"}`)
 			} else {

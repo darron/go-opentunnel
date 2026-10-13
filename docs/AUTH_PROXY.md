@@ -12,6 +12,10 @@ to the CLI; the Go library keeps its existing API.
    otgo auth init --profile inbox --upstream http://127.0.0.1:57732
    ```
 
+   Setup reports its major steps on stderr, with a spinner in a terminal.
+   Certificate issuance can take several minutes. Redirected stderr gets plain
+   step messages; `--json` suppresses progress and keeps stdout machine-readable.
+
    Save the generated password in your password manager; it is shown once.
    To supply your own, use `--password-stdin` with one line of 12–1024 bytes.
    The CLI does not echo passwords or accept them in flags.
@@ -110,7 +114,9 @@ First complete password setup to save the backend and tunnel.
 
    Replace `darron` with your GitHub login. Repeat `--allow-user` for other accounts.
 
-2. Open the exact temporary loopback URL printed by the CLI. Follow its buttons
+2. Setup tries to open the default browser. If it cannot, open the exact
+   temporary loopback URL printed by the CLI. Use `--no-browser` to open it yourself
+   or when running without a graphical desktop. Follow its buttons
    to GitHub and approve App creation. It requests no repository permissions or
    webhook deliveries. otgo saves the client credentials privately.
 

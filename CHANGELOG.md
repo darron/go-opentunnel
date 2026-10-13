@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Show major steps during `otgo auth init`, with a terminal spinner, plain
+  redirected progress and clean JSON output.
+- Open the default browser for guided GitHub setup, retain the printed URL as a
+  fallback, and add `--no-browser` for manual/headless use.
+- Identify API and relay traffic as `opentunnel-go/<version>`, as requested by
+  upstream, so it can be distinguished from the official CLI.
+- Follow upstream transient API retry rules with bounded backoff and a total
+  deadline. Retry safe certificate operations without replaying an uncertain
+  tunnel creation; preserve HTTP status and redact remote error bodies.
+- Use still-valid saved certificates after transient API checks, including rate
+  limits and API timeouts. Refuse fallback after authentication, redirect-policy,
+  TLS verification or malformed-response failures. Add pinned retry vectors and
+  CLI/API regression tests.
+
 - Attach CLI-only macOS and Linux binaries for amd64 and arm64, individual
   SHA-256 files and `SHA256SUMS` to published stable GitHub releases. Add verified
   builds, native smoke checks and safe retry/backfill support; keep Homebrew's

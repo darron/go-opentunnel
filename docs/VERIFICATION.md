@@ -1,5 +1,47 @@
 # Local verification record
 
+## Setup feedback and upstream API retries — 2026-10-13
+
+These development changes start from `127cc68`. Go 1.27.2 on macOS arm64 was
+used for the checks below. No dependencies were added.
+
+| Check | Result |
+| --- | --- |
+| `make check` | Full tests, vet, formatting, golangci-lint (0 issues) and CLI build passed |
+| `make race` | All packages passed |
+| `govulncheck` v1.9.0 | No vulnerabilities found |
+| Release tooling | All 16 Python tests passed |
+| Documentation links | All 193 local Markdown links resolved |
+| Secret scan | Gitleaks found no leaks |
+| Independent security/correctness review | No remaining Critical or Important findings after fixes |
+| Native CLI terminal check | A local delayed/rejected API showed advancing spinner frames; `TERM=dumb` showed plain steps. Failure left no password or success output |
+| Hosted auth smoke test | Complete fresh-state run passed, including both profiles and confirmed cleanup; see [live results](LIVE_TESTING.md) |
+
+Setup fixtures observe progress before a blocked API call finishes, preserve JSON
+output, join the spinner on shutdown and exercise successful saving. CLI-level
+GitHub tests run the real loopback wizard with a fixture GitHub HTTP response and
+an executable launcher fixture. Default launch, `--no-browser`, launcher failure,
+usable printed fallback, cancellation and token-free warnings passed. The existing
+GitHub setup/callback/security suite and all-package race suite also passed. No new
+hosted GitHub App or identity grant was made during this run.
+
+The pinned upstream API retry vectors match the documented statuses, backoff
+bounds and fixed Cloudflare diagnostics. Local HTTP tests verify replayed bytes
+and credentials, six-retry limits, cancellation, body cleanup, logical statistics
+and interrupted success-body reads. Saved-certificate tests distinguish API
+outages/internal deadlines from caller deadlines, 401/404, invalid redirects,
+malformed responses and TLS verification failures. Truncated/oversized error
+bodies retain their known status, so a broken 401 body cannot enable fallback.
+Raw-body message vectors remain deliberately redacted.
+
+Three temporary broken-code mutations were independently detected by behavioral
+test failures: reverting to the official CLI User-Agent, allowing an ambiguous
+502 creation to retry, and disabling CLI setup progress. Original source was
+restored and those tests passed again. Earlier CSR cooldown and failed-cleanup
+regressions now assert seven permitted HTTP attempts followed by no new logical
+operation inside the cooldown, rather than assuming a single HTTP attempt.
+
+
 ## Release binary packaging — 2026-10-12
 
 The release workflow builds only the CLI from the requested stable tag. Four

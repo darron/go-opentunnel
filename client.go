@@ -446,8 +446,7 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard 
 	if e != nil {
 		// A valid local identity can attach during a temporary API outage. Do not
 		// bypass authentication/not-found failures or local certificate validation.
-		var rejected *APIError
-		if allowExpired && (!errors.As(e, &rejected) || rejected.StatusCode >= 500) && ctx.Err() == nil {
+		if allowExpired && transientAPIError(e) && ctx.Err() == nil {
 			if local, valid := parseCertificate(*id); valid == nil {
 				id.CertificateExpiry = local.Leaf.NotAfter
 				return id, nil

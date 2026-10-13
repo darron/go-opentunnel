@@ -62,7 +62,7 @@ func parseAuthFlags(fs *flag.FlagSet, args []string, a *authFlags) error {
 	}
 	return nil
 }
-func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Writer) error {
+func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Writer) (result error) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "help" {
 		_, e := io.WriteString(out, "Usage: otgo auth <init|github|paths|reset|token create|token list|token reset|token revoke> [flags]\n")
 		return e
@@ -86,7 +86,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 	a.bind(fs)
 	var upstream, id, clientID string
 	var users nameFlags
-	var clientSecretStdin bool
+	var clientSecretStdin, noBrowser bool
 	var passwordStdin, generate, replace bool
 	ttl := time.Hour
 	timeout := defaultProvisionTimeout
@@ -98,6 +98,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		fs.DurationVar(&timeout, "timeout", timeout, "overall provisioning timeout")
 	}
 	if name == "github" {
+		fs.BoolVar(&noBrowser, "no-browser", false, "print the setup URL without opening a browser")
 		fs.Var(&users, "allow-user", "approved GitHub username (repeatable)")
 		fs.StringVar(&clientID, "client-id", "", "existing OAuth/GitHub App client ID")
 		fs.BoolVar(&clientSecretStdin, "client-secret-stdin", false, "read the existing client secret from stdin")
@@ -182,7 +183,15 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				if clientID == "" {
-					return authproxy.RunGitHubSetup(ctx, paths, binding, users, out, authproxy.SetupLaunch{Profile: a.profile, Command: a.launchCommand()})
+					launch := authproxy.SetupLaunch{Profile: a.profile, Command: a.launchCommand()}
+					if !noBrowser {
+						launch.OnReady = func(ctx context.Context, address string) {
+							if openBrowser(ctx, address) != nil {
+								_, _ = fmt.Fprintln(errout, "Could not open the default browser. Open the setup URL printed above.")
+							}
+						}
+					}
+					return authproxy.RunGitHubSetup(ctx, paths, binding, users, out, launch)
 				}
 				accounts, e := authproxy.ResolveGitHubUsers(ctx, users)
 				if e != nil {
@@ -220,8 +229,16 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		if e := authproxy.ValidateUpstream(upstream); e != nil {
 			return e
 		}
+		progress := newAuthProgress(errout, !a.json, terminalProgress(errout))
+		defer func() {
+			if err := progress.stop(); result == nil {
+				result = err
+			}
+		}()
+		progress.step("Preparing password")
 		var password string
 		if passwordStdin {
+			progress.step("Reading password from stdin")
 			input, e := readPasswordInput(ctx, in)
 			if e != nil {
 				return errors.New("cannot read password")
@@ -245,6 +262,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 			ctx, cancel = context.WithTimeout(ctx, timeout)
 			defer cancel()
 		}
+		progress.step("Checking profile and saved configuration")
 		return authproxy.WithProfileLock(a.profileLock(paths), func() error {
 			return authproxy.WithMutationLock(paths.AuthConfig, func() error {
 				if _, e := os.Lstat(paths.AuthConfig); e == nil && !replace {
@@ -255,14 +273,17 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				defer func() { _ = client.Close() }()
+				progress.step("Provisioning tunnel and certificate (certificate issuance can take several minutes)")
 				identity, e := client.Ensure(ctx, a.profile)
 				if e != nil {
+					_ = progress.stop()
 					return pendingProvisionError(client, a.commonFlags, e, errout)
 				}
 				binding, e := a.binding(*identity)
 				if e != nil {
 					return e
 				}
+				progress.step("Saving authentication configuration and revoking old machine tokens")
 				cfg := authproxy.Config{Binding: binding, Upstream: upstream, Mode: "password", Password: verifier}
 				// A missing config can leave an older backend's token registry.
 				// Every initialization establishes a new authorization boundary.
@@ -270,6 +291,10 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				if e := authproxy.SaveConfig(paths.AuthConfig, cfg); e != nil {
+					return e
+				}
+				progress.step("Authentication configured")
+				if e := progress.stop(); e != nil {
 					return e
 				}
 				if a.json {

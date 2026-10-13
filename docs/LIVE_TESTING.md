@@ -1,5 +1,35 @@
 # Public-service validation
 
+## Setup/retry development check — 2026-10-13
+
+After the setup feedback and API retry changes, the rebuilt CLI completed
+`python3 scripts/auth_smoke.py` against the hosted service with ordinary HTTPS
+verification and empty private temporary state. API and relay requests use
+`opentunnel-go/<version>`. Existing saved profiles and running proxies were
+untouched.
+
+- Fresh provisioning, certificate issuance and protected public traffic passed.
+- Every anonymous method/route, including MCP/discovery, was denied with zero
+  backend requests. Password login, invalid credential denial, browser
+  origin/CSRF checks and secure cookies passed.
+- Authenticated MCP access, credential/header stripping, backend redirects and
+  cookies, private cache policy and foreign-subresource denial passed.
+- Eight simultaneous 2 MiB uploads round-tripped intact. Machine-token
+  revocation closed live SSE and WebSocket streams in **0.253 seconds**.
+- Corrupt token registries failed closed. Restart retained the tunnel/backend
+  and machine tokens while invalidating browser sessions; logout worked.
+- Two simultaneous profiles used different backends. Credentials for one
+  profile were denied by the other.
+- All owned test processes stopped, local credentials were removed and
+  authenticated API 404 confirmed deletion of both temporary tunnels.
+
+Transient API failures were injected only in local fixtures. This hosted run
+confirms service interoperability; it does not induce provider rate limits or
+issuance failures. GitHub setup/browser-launch changes were checked locally with
+fixture provider responses and launcher executables, without creating another
+GitHub App. See [local checks](VERIFICATION.md) for the review and regression tests.
+
+
 ## v0.7.0 security audit — 2026-10-11
 
 Built the v0.7.0 CLI and embedding example with Go 1.27.2 after the final queue

@@ -487,3 +487,41 @@ func setupGet(ctx context.Context, client *http.Client, address string) (*http.R
 	}
 	return client.Do(req)
 }
+
+func TestGitHubSetupReadyCallbackHasLiveListenerAndPrintedFallback(t *testing.T) {
+	s, _, _ := setupFixture(t)
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, `{"id":123,"login":"allowed"}`) }))
+	defer provider.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	output := setupOutput{lines: make(chan string, 8)}
+	invoked := false
+	err := runGitHubSetup(ctx, s.paths, s.binding, []string{"allowed"}, output, newGitHubProvider(provider.Client(), githubEndpoints{API: provider.URL}), SetupLaunch{OnReady: func(ctx context.Context, address string) {
+		invoked = true
+		select {
+		case line := <-output.lines:
+			if !strings.Contains(line, address) {
+				t.Error("fallback did not include setup URL")
+			}
+		default:
+			t.Error("browser callback preceded printed fallback")
+		}
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := setupGet(ctx, &http.Client{Timeout: time.Second, Jar: jar}, address)
+		if err != nil {
+			t.Errorf("listener unavailable to browser: %v", err)
+		} else {
+			_ = res.Body.Close()
+			if res.StatusCode != http.StatusOK {
+				t.Errorf("setup status: %d", res.StatusCode)
+			}
+		}
+		cancel()
+	}})
+	if !invoked || !errors.Is(err, context.Canceled) {
+		t.Fatalf("callback=%v, result=%v", invoked, err)
+	}
+}

@@ -267,8 +267,14 @@ func TestEmptyAuthProfileUsesDefaultProfileLock(t *testing.T) {
 }
 
 func TestFreshAuthInitRevokesOrphanedMachineTokens(t *testing.T) {
-	for _, failSave := range []bool{false, true} {
-		t.Run(map[bool]string{false: "successful-save", true: "failed-save"}[failSave], func(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		failSave, json bool
+	}{
+		{"successful-save", false, false}, {"successful-json-save", false, true}, {"failed-save", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failSave := tc.failSave
 			flags, paths := authFixture(t)
 			cfg, err := authproxy.LoadConfig(paths.AuthConfig)
 			if err != nil {
@@ -319,7 +325,23 @@ func TestFreshAuthInitRevokesOrphanedMachineTokens(t *testing.T) {
 				}
 			}
 			args := append([]string{"auth", "init", "--api", api.URL, "--upstream", "http://127.0.0.1:8001", "--password-stdin"}, flags...)
-			err = run(t.Context(), args, strings.NewReader("replacement-password\n"), io.Discard, io.Discard)
+			if tc.json {
+				args = append(args, "--json")
+			}
+			var output, progress bytes.Buffer
+			err = run(t.Context(), args, strings.NewReader("replacement-password\n"), &output, &progress)
+			if strings.Contains(output.String(), "replacement-password") || strings.Contains(progress.String(), "replacement-password") {
+				t.Fatal("stdin password leaked")
+			}
+			if !failSave {
+				if tc.json {
+					if !json.Valid(output.Bytes()) || progress.Len() != 0 {
+						t.Fatalf("JSON output polluted: %q stderr=%q", output.String(), progress.String())
+					}
+				} else if !strings.Contains(progress.String(), "Saving authentication configuration") || !strings.Contains(progress.String(), "Authentication configured") || !strings.Contains(output.String(), "configured inbox:") {
+					t.Fatalf("missing completion/progress: stdout=%q stderr=%q", output.String(), progress.String())
+				}
+			}
 			if (err != nil) != failSave {
 				t.Fatalf("setup result: %v", err)
 			}

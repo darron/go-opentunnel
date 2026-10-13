@@ -572,6 +572,7 @@ func TestValidIdentityConnectsDuringCertificateAPIOutage(t *testing.T) {
 			return
 		}
 		if outage.Load() && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/certificate") {
+			w.Header().Set("Retry-After", "0")
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}

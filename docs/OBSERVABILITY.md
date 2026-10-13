@@ -82,9 +82,9 @@ work and conflict on metric descriptors.
 
 ## Read the numbers
 
-- Control API counts and total duration cover completed requests, including
-  response-body reading and validation. Failed HTTP responses, malformed bodies
-  and transport failures count as errors.
+- Control API counters count one completed logical operation, even when it retries.
+  Total duration includes retries, backoff, response-body reading and validation.
+  Only the final failure counts as an error; successful retries do not.
 - Bridge attempts and attachments distinguish relay connection attempts from
   successful attachment. An attach failure is separate from a later disconnect.
 - Visitor counters cover admission and closure. Active visitors include TLS

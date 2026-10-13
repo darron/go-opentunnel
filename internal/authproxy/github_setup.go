@@ -35,7 +35,12 @@ type githubManifest struct {
 }
 
 // SetupLaunch carries the CLI-selected profile and credential-free startup command.
-type SetupLaunch struct{ Profile, Command string }
+type SetupLaunch struct {
+	Profile, Command string
+	// OnReady runs after the listener starts and the fallback URL is printed.
+	// It must return promptly and honor ctx; browser launch failure is nonfatal.
+	OnReady func(ctx context.Context, address string)
+}
 
 type githubSetup struct{ *githubSetupState }
 
@@ -323,6 +328,9 @@ func runGitHubSetup(ctx context.Context, paths Paths, binding Binding, approvedU
 	}()
 	if _, e = fmt.Fprintf(out, "Open %s to register the GitHub App. Setup expires in ten minutes.\n", startURL); e != nil {
 		return e
+	}
+	if setup.launch.OnReady != nil {
+		setup.launch.OnReady(ctx, startURL)
 	}
 	select {
 	case e := <-setup.completed:

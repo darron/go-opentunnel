@@ -160,7 +160,7 @@ func (s *session) run() error {
 	}
 	attachCtx, cancel := context.WithTimeout(s.ctx, s.owner.client.options.AttachTimeout)
 	defer cancel()
-	ws, response, err := websocket.Dial(attachCtx, u.String(), &websocket.DialOptions{HTTPClient: s.owner.client.api.client, Subprotocols: []string{"opentunnel"}, HTTPHeader: http.Header{"User-Agent": []string{"go-opentunnel/" + Version}}})
+	ws, response, err := websocket.Dial(attachCtx, u.String(), &websocket.DialOptions{HTTPClient: s.owner.client.api.client, Subprotocols: []string{"opentunnel"}, HTTPHeader: http.Header{"User-Agent": []string{"opentunnel-go/" + Version}}})
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()

@@ -138,7 +138,8 @@ type ClientOptions struct {
 	// HTTPClient performs API and bridge handshakes. Nil uses the default HTTP
 	// transport. Custom transport, cookie jar and hooks are trusted with secrets.
 	HTTPClient *http.Client
-	// RequestTimeout limits each control API request. Zero selects 15 seconds.
+	// RequestTimeout limits each control API operation, including retries and
+	// body reads. Zero selects 15 seconds.
 	RequestTimeout time.Duration
 	// Transport configures connection limits and timing.
 	Transport TransportOptions

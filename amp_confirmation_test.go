@@ -11,12 +11,13 @@ import (
 	"time"
 )
 
-func TestAmbiguousInitialBindCooldownSurvivesResume(t *testing.T) {
+func TestTransientInitialBindRetriesThenCooldownSurvivesResume(t *testing.T) {
 	a := newTestAPI(t)
 	var binds atomic.Int32
 	a.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/certificate") {
 			binds.Add(1)
+			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{"_tag": "ServiceUnavailableError"})
 			return
@@ -25,14 +26,14 @@ func TestAmbiguousInitialBindCooldownSurvivesResume(t *testing.T) {
 	})
 	c := testClient(t, a, NewMemoryStorage())
 	if _, err := c.Create(t.Context(), "", ProvisionOptions{}); err == nil {
-		t.Fatal("ambiguous bind unexpectedly succeeded")
+		t.Fatal("exhausted bind retries unexpectedly succeeded")
 	}
 	for range 4 {
 		if _, err := c.Resume(t.Context(), "", ProvisionOptions{}); !errors.Is(err, ErrCertificateIssuance) {
 			t.Fatalf("Resume: %v", err)
 		}
 	}
-	if binds.Load() != 1 {
+	if binds.Load() != 7 {
 		t.Fatalf("%d binds inside cooldown", binds.Load())
 	}
 	pending, err := c.Pending(t.Context(), "")
@@ -41,7 +42,7 @@ func TestAmbiguousInitialBindCooldownSurvivesResume(t *testing.T) {
 	}
 }
 
-func TestAmbiguousRuntimeBindCooldownSharedByPublicCalls(t *testing.T) {
+func TestTransientRuntimeBindRetriesThenCooldownSharedByPublicCalls(t *testing.T) {
 	f := newRelay(t)
 	var failing atomic.Bool
 	var binds atomic.Int32
@@ -49,6 +50,7 @@ func TestAmbiguousRuntimeBindCooldownSharedByPublicCalls(t *testing.T) {
 		if failing.Load() && strings.HasSuffix(r.URL.Path, "/certificate") {
 			if r.Method == http.MethodPost {
 				binds.Add(1)
+				w.Header().Set("Retry-After", "0")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_ = json.NewEncoder(w).Encode(map[string]string{"_tag": "ServiceUnavailableError"})
 			} else {
@@ -63,7 +65,7 @@ func TestAmbiguousRuntimeBindCooldownSharedByPublicCalls(t *testing.T) {
 	_ = f.next(t)
 	failing.Store(true)
 	if err := x.refreshOnce(); err == nil {
-		t.Fatal("ambiguous bind unexpectedly succeeded")
+		t.Fatal("exhausted bind retries unexpectedly succeeded")
 	}
 	for range 4 {
 		_ = x.refreshOnce()
@@ -82,7 +84,7 @@ func TestAmbiguousRuntimeBindCooldownSharedByPublicCalls(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if binds.Load() != 1 {
+	if binds.Load() != 7 {
 		t.Fatalf("%d binds inside shared cooldown", binds.Load())
 	}
 }

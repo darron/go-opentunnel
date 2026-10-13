@@ -83,7 +83,8 @@ otgo auth github --profile inbox --allow-user darron
 otgo proxy --profile inbox
 ```
 
-Follow the printed setup link to create a GitHub App. The completion page shows
+Setup tries to open your default browser; the printed link is a fallback. Use
+`--no-browser` to open it yourself. The completion page shows
 your profile and a copyable proxy command. It requests no repository
 permissions. Repeat `--allow-user` to approve more accounts. GitHub login replaces
 password login. Existing OAuth/GitHub Apps are also supported.

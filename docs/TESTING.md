@@ -67,6 +67,29 @@ CI repeats the full suite on Go 1.26 for Linux and macOS. A separate current-Go
 job runs the suite and `govulncheck`; a bounded eight-minute fuzz job saves any
 new crash input for 14 days. These jobs do not create public tunnels.
 
+## Check setup feedback and transient API retries
+
+```sh
+go test -race -count=1 -run 'Test(AuthInitProgress|AnimatedProgress|AuthGitHubBrowser|OpenBrowser|FreshAuthInit)' ./cmd/otgo
+go test -race -count=1 -run 'TestGitHubSetupReady' ./internal/authproxy
+go test -race -count=1 -run 'Test(APIRetry|APIErrorStatus|ClientSavedCertificate)' .
+```
+
+The setup tests observe progress while a real API request is blocked, check
+successful plain/JSON output, stop the spinner before later output, and invoke
+`auth github` through the real loopback wizard. Only the GitHub HTTP boundary
+and OS launcher executable are fixtures; no GitHub App or browser is created.
+They check default opening, `--no-browser`, launch failure, a usable printed
+fallback, cancellation and token-free launcher warnings.
+
+Pinned upstream vectors verify both retry policies and backoff bounds. HTTP
+fixtures check repeated POST bytes/credentials, cleanup before the next attempt,
+maximum attempts, deadline cancellation and truncated success bodies. A failed
+creation read is never repeated. Saved-certificate fixtures separate transient
+outages from authentication, malformed data, redirect and TLS failures, including
+internal versus caller deadlines. Error status survives a truncated/oversized
+error body. The existing fake relay also asserts the Go User-Agent.
+
 ## Check observability and half-close cleanup
 
 ```sh
