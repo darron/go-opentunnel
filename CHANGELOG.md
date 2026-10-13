@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Attach CLI-only macOS and Linux binaries for amd64 and arm64, individual
+  SHA-256 files and `SHA256SUMS` to published stable GitHub releases. Add verified
+  builds, native smoke checks and safe retry/backfill support; keep Homebrew's
+  existing source-build update flow.
+
 ## v0.9.0 — Metrics and connection diagnostics — 2026-10-12
 
 - Raise the minimum Go version to 1.26 and update compatibility checks in CI.

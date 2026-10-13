@@ -51,8 +51,12 @@ uses a narrowly scoped secret to dispatch the tap's `update-otgo.yml` workflow
 on main. There is no cron schedule. Drafts and prereleases do not trigger updates.
 A tag push by itself is insufficient: publish the GitHub release.
 
+The separate [binary release workflow](RELEASES.md) attaches downloadable CLI
+archives and SHA-256 files. It does not change the tap's source-build procedure.
+
 If release creation is later automated using `GITHUB_TOKEN`, that publishing job
-must explicitly dispatch this workflow with the release tag. GitHub suppresses
+must explicitly dispatch this workflow and `release-binaries.yml` with the release
+tag. GitHub suppresses
 new workflow runs from most events created with that token, including release
 publication; `workflow_dispatch` is an exception. See
 [GitHub's workflow trigger rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).

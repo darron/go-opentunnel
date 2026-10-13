@@ -27,8 +27,8 @@ jobs:
         run: go test ./...
       - name: Vet
         run: go vet ./...
-      - name: Test Homebrew updater
-        run: python3 -m unittest discover -s scripts -p 'test_update_homebrew.py'
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Build CLI and example
         run: |
           go build ./cmd/otgo

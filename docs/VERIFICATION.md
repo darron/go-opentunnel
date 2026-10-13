@@ -1,5 +1,30 @@
 # Local verification record
 
+## Release binary packaging — 2026-10-12
+
+The release workflow builds only the CLI from the requested stable tag. Four
+macOS/Linux archives (amd64 and arm64) contain `otgo` and `LICENSE`; each has an
+individual SHA256 file, and `SHA256SUMS` covers all four. Homebrew automation is
+unchanged. See [the release guide](RELEASES.md).
+
+| Check | Result |
+| --- | --- |
+| Go 1.27.2 `make check` | Full tests, vet, formatting, lint (0 issues) and CLI build passed |
+| Python release tooling | All 16 tests passed: seven Homebrew tests and nine archive/publication tests |
+| Four-target build from clean v0.9.0 source | Passed; version and embedded SHA match `4726e313309302c838e2093e5ab221ae32084084` |
+| Archive and checksum verification | All four archives contain exactly the executable and license; individual and combined hashes passed |
+| Extracted native macOS arm64 binary | Exact version/SHA/clean output, help, proxy help and profile help passed |
+| Workflow syntax | `actionlint` passed |
+| Documentation links | All 179 local links resolved |
+| Independent security/correctness review | Ready; no Critical or Important findings |
+
+Publication tests replace the GitHub CLI boundary and use real archive files.
+They cover draft/prerelease rejection, moved tags, downloading existing assets,
+missing-only uploads without overwrite, conflicting bytes rejected before upload,
+and an identical retry doing no upload. Foreign architecture binaries were
+cross-compiled and inspected locally; they were not executed locally. Hosted
+workflow and download verification will be recorded after publication.
+
 ## Observability and half-close cleanup — 2026-10-12
 
 These v0.9.0 changes are based on `2d9fc0b`; the final

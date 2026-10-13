@@ -18,6 +18,10 @@ brew install darron/tap/otgo
 otgo version
 ```
 
+Or download a macOS or Linux binary from
+[GitHub releases](https://github.com/darron/go-opentunnel/releases).
+[Verify the SHA-256 checksum](docs/RELEASES.md#verify-and-install) before installing.
+
 `otgo version` (or `otgo --version`) shows the version, full Git SHA and whether
 the source was clean or dirty when built. Missing build metadata is `unknown`.
 

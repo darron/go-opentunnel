@@ -1,0 +1,147 @@
+name: Publish release binaries
+
+"on":
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable vMAJOR.MINOR.PATCH tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: otgo-release-binaries-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: >-
+      (github.event_name == 'release' && !github.event.release.draft && !github.event.release.prerelease) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      revision: ${{ steps.release.outputs.revision }}
+    steps:
+      # Keep automation separate from the immutable release source for backfills.
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: automation
+          persist-credentials: false
+      - name: Validate release and resolve its commit
+        id: release
+        env:
+          REQUESTED_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, "automation/scripts")
+          from release_artifacts import command, validate_metadata
+          import json
+          tag = os.environ["REQUESTED_TAG"]
+          validate_metadata(tag, "0" * 40)
+          repo = os.environ["GITHUB_REPOSITORY"]
+          release = json.loads(command(["gh", "release", "view", tag, "--repo", repo,
+                                        "--json", "tagName,isDraft,isPrerelease"]))
+          if release["tagName"] != tag or release["isDraft"] or release["isPrerelease"]:
+              raise SystemExit("release must be published and stable")
+          revision = command(["gh", "api", f"repos/{repo}/commits/{tag}", "--jq", ".sha"])
+          validate_metadata(tag, revision)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"tag={tag}\nrevision={revision}\n")
+          PY
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.release.outputs.revision }}
+          path: source
+          persist-credentials: false
+      # actions/setup-go v7.0.0; use current patched Go for published binaries.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+          cache-dependency-path: source/go.sum
+      - name: Test packaging and build only the CLI
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_REVISION: ${{ steps.release.outputs.revision }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s automation/scripts -p 'test_release_artifacts.py'
+          python3 automation/scripts/release_artifacts.py build --source source --output dist \
+            --tag "${RELEASE_TAG}" --revision "${RELEASE_REVISION}"
+          (cd dist && sha256sum --check SHA256SUMS)
+      # actions/upload-artifact v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: otgo-release
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  macos-smoke:
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      # actions/download-artifact v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: otgo-release
+          path: dist
+      - name: Verify checksums and run the native macOS CLI
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_REVISION: ${{ needs.build.outputs.revision }}
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 --check SHA256SUMS
+          case "$(uname -m)" in
+            arm64) arch=arm64 ;;
+            x86_64) arch=amd64 ;;
+            *) exit 1 ;;
+          esac
+          tar -xzf "otgo_${RELEASE_TAG#v}_darwin_${arch}.tar.gz"
+          test "$(./otgo version)" = "otgo ${RELEASE_TAG#v} sha=${RELEASE_REVISION} clean"
+          ./otgo help
+          ./otgo proxy --help
+          ./otgo profiles --help
+
+  publish:
+    needs: [build, macos-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # Fresh runner: no release binary executes with publication credentials.
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: automation
+          persist-credentials: false
+      # actions/download-artifact v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: otgo-release
+          path: dist
+      - name: Verify and attach assets to the existing release
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_REVISION: ${{ needs.build.outputs.revision }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 automation/scripts/release_artifacts.py publish --output dist \
+            --tag "${RELEASE_TAG}" --revision "${RELEASE_REVISION}" --repo "${GITHUB_REPOSITORY}"
