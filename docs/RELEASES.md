@@ -14,10 +14,10 @@ Download the archive for your machine and its matching `.sha256` file. For
 example, on Apple silicon:
 
 ```sh
-gh release download v0.9.0 --repo darron/go-opentunnel \
-  --pattern 'otgo_0.9.0_darwin_arm64.tar.gz*'
-shasum -a 256 --check otgo_0.9.0_darwin_arm64.tar.gz.sha256
-tar -xzf otgo_0.9.0_darwin_arm64.tar.gz
+gh release download v0.10.0 --repo darron/go-opentunnel \
+  --pattern 'otgo_0.10.0_darwin_arm64.tar.gz*'
+shasum -a 256 --check otgo_0.10.0_darwin_arm64.tar.gz.sha256
+tar -xzf otgo_0.10.0_darwin_arm64.tar.gz
 ./otgo version
 install -m 755 otgo /usr/local/bin/otgo
 ```
@@ -62,7 +62,7 @@ Run from `main` for an already-published stable release:
 
 ```sh
 gh workflow run release-binaries.yml --repo darron/go-opentunnel \
-  --ref main -f tag=v0.9.0
+  --ref main -f tag=v0.10.0
 ```
 
 The workflow uses its own automation revision but builds the requested release's

@@ -90,16 +90,16 @@ hook visibly; the release remains published and can be retried.
 After adding the secret, retry the complete hook for an already-published release:
 
 ```sh
-gh workflow run update-homebrew.yml --repo darron/go-opentunnel -f tag=v0.7.0
+gh workflow run update-homebrew.yml --repo darron/go-opentunnel -f tag=v0.10.0
 ```
 
 To run the tap directly using your local GitHub login:
 
 ```sh
-gh workflow run update-otgo.yml --repo darron/homebrew-tap -f tag=v0.7.0
+gh workflow run update-otgo.yml --repo darron/homebrew-tap -f tag=v0.10.0
 ```
 
-The commands above require a published `v0.7.0` release. For another release,
+The commands above require a published `v0.10.0` release. For another release,
 replace the tag. Leave the tap workflow's tag empty to select the latest stable
 release. Drafts and prereleases are refused. Updates are serialized; non-fast-forward pushes fail instead of
 overwriting another change. Rerun after a failure. Actions failures appear in the

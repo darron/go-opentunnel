@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.10.0 — Setup feedback and resilient API requests — 2026-10-13
+
 - Show major steps during `otgo auth init`, with a terminal spinner, plain
   redirected progress and clean JSON output.
 - Open the default browser for guided GitHub setup, retain the printed URL as a
@@ -15,11 +17,12 @@
   limits and API timeouts. Refuse fallback after authentication, redirect-policy,
   TLS verification or malformed-response failures. Add pinned retry vectors and
   CLI/API regression tests.
-
 - Attach CLI-only macOS and Linux binaries for amd64 and arm64, individual
   SHA-256 files and `SHA256SUMS` to published stable GitHub releases. Add verified
   builds, native smoke checks and safe retry/backfill support; keep Homebrew's
   existing source-build update flow.
+
+[Compare v0.9.0 to v0.10.0](https://github.com/darron/go-opentunnel/compare/v0.9.0...v0.10.0)
 
 ## v0.9.0 — Metrics and connection diagnostics — 2026-10-12
 
