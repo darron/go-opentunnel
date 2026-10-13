@@ -1,5 +1,27 @@
 # Public-service validation
 
+## v0.11.0 long-poll release check — 2026-10-13
+
+The rebuilt v0.11.0 CLI completed the hosted auth smoke test with empty private
+temporary state. A temporary adaptation of the existing backend withheld all
+headers for 16 seconds on `/long-poll`. An authenticated request through the
+public tunnel returned HTTP 200 and the expected JSON after **16.476 seconds**,
+past the former 15-second deadline. This checks the complete hosted path rather
+than only the local transport.
+
+The rest of `scripts/auth_smoke.py` passed: anonymous methods/routes, MCP and
+discovery were denied with zero backend requests; password and machine-token
+authentication, origin/CSRF checks, credential/header stripping, cache policy,
+uploads, corrupt-registry denial, restart, logout and two-profile isolation
+remained intact. Revocation closed SSE and WebSocket streams in **0.158 seconds**.
+
+All owned processes stopped, local credentials were removed and authenticated
+API 404 confirmed deletion of both temporary tunnels. Existing profiles and
+running proxies were untouched. Pending-header cancellation was checked by local
+race tests; this hosted run checked the delayed successful response and existing
+stream revocation. No new GitHub App grant was made. The temporary fixture
+adaptations and raw logs stayed outside the repo.
+
 ## v0.10.0 release-version check — 2026-10-13
 
 After updating `Version` to `0.10.0`, `make check` rebuilt the CLI and

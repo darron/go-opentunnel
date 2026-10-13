@@ -1,5 +1,31 @@
 # Local verification record
 
+## v0.11.0 long polling and publication — 2026-10-13
+
+The annotated tag and [release](https://github.com/darron/go-opentunnel/releases/tag/v0.11.0)
+point to `14620a57b0fe2dc88860304df90093cc24da09f5`. The auth proxy now waits
+for backend headers without a 15-second deadline; request cancellation,
+credential lifetime, shutdown and capacity limits remain in effect.
+
+| Check | Result |
+| --- | --- |
+| Local checks | Go 1.27.2 `make check` passed: full tests, vet, formatting, lint (0 issues) and CLI build; all 16 release-tooling tests and `actionlint` passed |
+| Long-poll race regressions | Delayed headers and pending-request cancellation on client cancellation, session revocation and handler shutdown passed |
+| Regression sensitivity | Restoring the former deadline in an isolated temporary checkout made the delayed-header test fail with HTTP 502; the fixed source passed |
+| [Release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38438527691) | Linux/macOS tests, race checks, lint, vulnerability checks and sustained fuzzing passed before tagging |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/38439335733) | Four archives and five checksum files published after native Linux/macOS checks |
+| Downloaded assets | All nine present; archive contents and combined/individual SHA-256 checks passed; expected target/CGO metadata and release SHA verified |
+| Native downloaded CLI | macOS arm64 reported the exact version, release SHA and `clean`; five command help checks passed |
+| [Homebrew dispatch](https://github.com/darron/go-opentunnel/actions/runs/38439335640) and [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38439356971) | Passed; tap commit `a6c5814744cf0cadc3a3da699ad208ca28a69fcf` changed only `Formula/otgo.rb` |
+| Local Homebrew upgrade/test | Source build and formula tests passed; installed CLI reported `otgo 0.11.0 sha=14620a57b0fe2dc88860304df90093cc24da09f5 clean` |
+| Hosted auth smoke | Complete fresh-state run passed, including a 16.476-second wait for headers and confirmed cleanup; see [live results](LIVE_TESTING.md) |
+
+The temporary mutation did not alter the release checkout. Linux arm64 and
+macOS amd64 binaries were inspected but not executed locally; native Linux amd64
+and macOS arm64 checks passed in the workflow. Existing saved profiles and
+running proxies were untouched. Release notes remain on GitHub, and the dated
+changes are in [CHANGELOG.md](../CHANGELOG.md).
+
 ## v0.10.0 publication — 2026-10-13
 
 The annotated tag and [release](https://github.com/darron/go-opentunnel/releases/tag/v0.10.0)
