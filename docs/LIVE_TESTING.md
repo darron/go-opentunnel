@@ -1,5 +1,24 @@
 # Public-service validation
 
+## v0.10.0 release-version check — 2026-10-13
+
+After updating `Version` to `0.10.0`, `make check` rebuilt the CLI and
+`python3 scripts/auth_smoke.py` repeated the complete hosted auth run with exit 0.
+The service accepted fresh provisioning and relay attachment with the updated
+`opentunnel-go/0.10.0` User-Agent.
+
+Anonymous methods/routes, MCP and discovery were denied with zero backend
+requests. Password login, browser origin/CSRF rules, secure cookies, authenticated
+MCP, header/credential stripping, redirects, cache policy, simultaneous uploads,
+corruption handling, logout, restart and two-profile isolation all passed. Token
+revocation closed active SSE and WebSocket streams in **0.213 seconds**.
+
+All owned processes stopped, local credentials were removed and authenticated
+API 404 confirmed removal of both temporary tunnels. Existing profiles and
+running proxies were untouched. This repeat used password and machine-token
+authentication; GitHub provider/browser-launch checks remain the local fixtures
+described below, without a new hosted GitHub grant.
+
 ## Setup/retry development check — 2026-10-13
 
 After the setup feedback and API retry changes, the rebuilt CLI completed

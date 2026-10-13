@@ -1,5 +1,28 @@
 # Local verification record
 
+## v0.10.0 publication — 2026-10-13
+
+The annotated tag and [release](https://github.com/darron/go-opentunnel/releases/tag/v0.10.0)
+point to `26886fc92cfdc5885b07ecb644c4a25d2726a203`. Release notes are attached
+to GitHub; the dated changes are in [CHANGELOG.md](../CHANGELOG.md).
+
+| Check | Result |
+| --- | --- |
+| Local release checks | `make check` passed, including full tests, vet, formatting, lint (0 issues) and CLI build; all 16 release-tooling tests and `actionlint` passed |
+| [Release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38420603264) | Linux/macOS tests, race checks, lint, vulnerability checks and sustained fuzzing passed before tagging |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/38421364739) | Four CLI archives and five checksum files published after Linux/macOS native checks |
+| Downloaded assets | All nine assets present; archive contents, combined and individual SHA-256 checks passed |
+| Downloaded native CLI | macOS arm64 reported the exact version, full release SHA and `clean`; general, proxy, profiles and both auth setup help checks passed |
+| [Homebrew dispatch](https://github.com/darron/go-opentunnel/actions/runs/38421364738) and [tap workflow](https://github.com/darron/homebrew-tap/actions/runs/38421381300) | Passed; tap commit `f0b89c9b3c29a71bb28060d3302c5fa004df3bc8` changed only `Formula/otgo.rb` |
+| Local Homebrew upgrade | Source build and `brew test darron/tap/otgo` passed; installed CLI reported `otgo 0.10.0 sha=26886fc92cfdc5885b07ecb644c4a25d2726a203 clean` |
+| Hosted release-version check | Fresh-state auth smoke passed with the CLI advertising 0.10.0, including confirmed deletion of both temporary tunnels; see [live results](LIVE_TESTING.md) |
+
+All four downloaded binaries had the expected architecture and Go target/CGO
+metadata, with the release SHA embedded. Linux executables are statically linked.
+Linux amd64 and macOS arm64 execution were checked in the workflow; Linux arm64
+and macOS amd64 were inspected but not executed locally. Existing saved profiles
+and running proxies were untouched.
+
 ## Setup feedback and upstream API retries — 2026-10-13
 
 These development changes start from `127cc68`. Go 1.27.2 on macOS arm64 was
