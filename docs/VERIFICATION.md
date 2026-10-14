@@ -1,5 +1,33 @@
 # Local verification record
 
+## v0.12.0 publication — 2026-10-14
+
+The annotated [v0.12.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.12.0)
+points to `12d58b03b7faace29132de5b72e2b95674a38eb1`. Homebrew installs the
+published CLI executable rather than compiling it. The API and tunnel protocol
+are unchanged.
+
+| Check | Result |
+| --- | --- |
+| [Release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38599293781) | Linux/macOS tests, Linux race suite, lint, current-Go vulnerability checks and all five sustained fuzz targets passed before tagging |
+| [Legacy formula migration](https://github.com/darron/homebrew-tap/actions/runs/38599277664) | Published v0.11.0 binaries passed checksum checks, all four formula target evaluations, style/audit, native installation, formula tests and installed/released byte comparison |
+| [Binary publication and dispatch](https://github.com/darron/go-opentunnel/actions/runs/38600038872) | All four archives and five checksum files published after native Linux/macOS checks; automatic Homebrew dispatch succeeded afterward |
+| Downloaded release assets | Exactly nine files; combined/individual SHA-256 checks, archive contents and all target/CGO metadata passed |
+| Downloaded native CLI | Exact v0.12.0 version, full release SHA and clean state; general, proxy, profiles and both auth setup help checks passed |
+| [v0.12.0 tap update](https://github.com/darron/homebrew-tap/actions/runs/38600211495) | Validation and fresh-runner publishing passed; commit `0b3f7f330c17f46be97b8db120337ab741453fb2` changed only `Formula/otgo.rb` |
+| Local Homebrew upgrade | Upgraded 0.11.0 to 0.12.0 from the release archive; `brew test darron/tap/otgo` passed |
+| Installed/released comparison | `cmp` passed; both macOS arm64 executables have SHA-256 `630b8c36d956a15b9932ba8bd1e091927a448bfe677b226b11c62fadc5a21149` |
+| Independent review | Both important findings and documentation feedback fixed and rechecked; 18 root and 9 tap Python tests plus workflow checks passed, with no remaining findings |
+| Documentation links | All 186 local Markdown file links resolved before publication |
+
+The installed CLI reports
+`otgo 0.12.0 sha=12d58b03b7faace29132de5b72e2b95674a38eb1 clean`.
+Linux arm64 and macOS amd64 binaries were inspected rather than executed locally;
+native Linux amd64 and macOS arm64 checks passed in the release workflow.
+The owned temporary local test tap was removed. Saved user profiles and running
+proxies were untouched. This packaging release did not repeat hosted tunnel tests;
+the previous hosted authentication/long-poll record remains below.
+
 ## v0.12.0 binary Homebrew preparation — 2026-10-14
 
 Go 1.27.2 on macOS arm64: `make check` passed full tests, vet, formatting,
