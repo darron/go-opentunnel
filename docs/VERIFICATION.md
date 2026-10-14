@@ -1,5 +1,25 @@
 # Local verification record
 
+## v0.12.0 binary Homebrew preparation — 2026-10-14
+
+Go 1.27.2 on macOS arm64: `make check` passed full tests, vet, formatting,
+golangci-lint (0 issues) and the CLI build. All 18 Python release-tooling tests
+and both workflow Actionlint checks passed. Homebrew style, strict audit and
+real formula evaluation selected the expected URL and checksum for all four
+targets using the published v0.11.0 archives.
+
+Independent review identified permissive legacy-formula migration and a missing
+stable-release recheck on the publishing runner. Both were fixed. New regressions
+failed before the migration fix and pass afterward: manual source changes are
+preserved by refusing migration, and same-version binary metadata cannot change.
+The publisher rechecks release stability, tag revision and the validated formula
+hash on a fresh runner. Script copies in the source and tap repos match.
+
+New ACME diagnostic fixtures cover the hostname-prefixed DNS and unauthorized
+messages in upstream's server recovery change. No production client behavior
+changed apart from the release version. This packaging pass does not claim a new
+hosted tunnel test; v0.11.0's hosted results remain recorded below.
+
 ## v0.11.0 long polling and publication — 2026-10-13
 
 The annotated tag and [release](https://github.com/darron/go-opentunnel/releases/tag/v0.11.0)

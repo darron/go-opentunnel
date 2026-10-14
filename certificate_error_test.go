@@ -143,6 +143,8 @@ func TestCertificateFailureClassTerminalReasons(t *testing.T) {
 		{"ACME server returned no nonce (HTTP 503)", CertificateFailureNonce},
 		{"error decoding response body: expected value at line 1 column 1", CertificateFailureBadBody},
 		{"ACME authorization ended in pending", CertificateFailureAuthorizationPending},
+		{"ACME authorization for example.opentunnel.xyz ended in invalid: urn:ietf:params:acme:error:dns: DNS problem: NXDOMAIN", CertificateFailureDNS},
+		{"ACME authorization for example.opentunnel.xyz ended in invalid: urn:ietf:params:acme:error:unauthorized: validation failed", CertificateFailureRejected},
 		{"ACME order ended in processing", CertificateFailureAuthorizationPending},
 		{"error sending request: connection reset", CertificateFailureNetwork},
 		{"connection closed", CertificateFailureNetwork},

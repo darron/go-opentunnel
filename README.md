@@ -36,7 +36,7 @@ patched release of a [supported Go version](https://go.dev/doc/devel/release#pol
 The core client uses `github.com/coder/websocket`. The optional metrics adapter
 and otgo use the official Prometheus Go client. Licensed under [MIT](LICENSE).
 See the [changelog](CHANGELOG.md) for release highlights and the
-[Homebrew guide](docs/HOMEBREW.md) for updates and HEAD installs.
+[Homebrew guide](docs/HOMEBREW.md) for binary installation and updates.
 
 ## Protect a local application with otgo
 

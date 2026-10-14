@@ -9,6 +9,11 @@ name: Publish release binaries
         description: Published stable vMAJOR.MINOR.PATCH tag
         required: true
         type: string
+      update_homebrew:
+        description: Update Homebrew after a successful manual publication
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -145,3 +150,12 @@ jobs:
           set -euo pipefail
           python3 automation/scripts/release_artifacts.py publish --output dist \
             --tag "${RELEASE_TAG}" --revision "${RELEASE_REVISION}" --repo "${GITHUB_REPOSITORY}"
+
+  homebrew:
+    needs: [build, publish]
+    if: github.event_name == 'release' || inputs.update_homebrew
+    uses: ./.github/workflows/update-homebrew.yml
+    with:
+      tag: ${{ needs.build.outputs.tag }}
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

@@ -161,6 +161,14 @@ are reported; raw error bodies remain redacted even though some upstream message
 vectors reflect them. otgo uses its own JSON storage, not the upstream CLI's TOML
 profiles; upstream route-table changes do not change its saved configuration.
 
+Upstream's [ACME authorization recovery change](https://github.com/anomalyco/opentunnel/commit/a735deaf6243fec19f2d6054e0a2d172f5a030cf)
+is server-only: deactivating stuck authorizations, retaining DNS challenge records
+and requeuing issuance jobs are the service's responsibility. The Go client does
+not run ACME orders or manage DNS records. Its existing error classification
+recognizes the new hostname-prefixed ACME failure messages; regression fixtures
+cover DNS and authorization failures. This commit does not require a client
+protocol change and does not establish which revision the hosted service runs.
+
 Use HTTPS for remote API bases. Plain HTTP is accepted only for exact
 `localhost` or a literal loopback IP such as `127.0.0.1` or `::1`; loopback-like
 DNS names are rejected without resolution. The package clones a supplied

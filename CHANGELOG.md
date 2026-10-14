@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.12.0 — Identical release binaries through Homebrew — 2026-10-14
+
+- Install the published GitHub binary archives through Homebrew, selecting
+  macOS/Linux and arm64/amd64 automatically. Remove the Go build dependency and
+  source-based `--HEAD` installation; development builds remain available with
+  `make build`.
+- Update the tap only after release binaries and checksums have been published.
+  Verify all four archives against their individual and combined SHA-256 files,
+  validate the candidate formula, and compare the installed executable with the
+  release executable byte for byte before publishing the tap change.
+- Preserve manual retry/backfill, numeric downgrade protection and isolated tap
+  publishing. Add binary-formula migration and invalid-asset regression coverage.
+- Check upstream's new ACME failure wording against existing certificate
+  diagnostics. The upstream authorization cleanup/recovery fix is server-only;
+  no service protocol or client runtime change is required.
+
+[Compare v0.11.0 to v0.12.0](https://github.com/darron/go-opentunnel/compare/v0.11.0...v0.12.0)
+
 ## v0.11.0 — Long polling through authenticated proxies — 2026-10-13
 
 - Remove the auth proxy's 15-second backend response-header deadline so long
