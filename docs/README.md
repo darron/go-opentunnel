@@ -21,6 +21,7 @@ commands and the shortest working examples.
 | Task | Guide |
 | --- | --- |
 | Forward to a TCP backend with PROXY v1/v2 headers | [Forwarding](FORWARDING.md) |
+| Connect to an API/relay using a private CA | [Custom CA trust](CUSTOM_CA.md) |
 | Diagnose certificate issuance failures | [Certificates](CERTIFICATES.md) |
 | Serve HTTP directly through the tunnel | [TLS listener](LISTENER.md) |
 | Browse exported types, methods and Go examples | [Go API documentation](https://pkg.go.dev/github.com/darron/go-opentunnel) |

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.13.0 — Custom CA trust and upstream compatibility — 2026-10-16
+
+- Add `ClientOptions.CACertFile` and `NewHTTPClientWithCACert` for private or
+  self-hosted API/relay certificates. Add PEM trust without replacing existing
+  roots, disabling certificate verification, or changing visitor/backend TLS.
+- Add `--ca-cert` to otgo commands and `OPENTUNNEL_CA_CERT`. Auth setup saves an absolute
+  `ca_cert` path; proxy startup reuses it. Flags override the environment, then
+  saved configuration. Profile and resume commands retain the selected CA path.
+- Reject unreadable, empty, malformed and oversized bundles before connecting.
+  Clone caller-owned HTTP/TLS configuration instead of mutating it.
+- Test the Go WebSocket client against the exact OpenTunnel v0.5.2 server codec,
+  pinned by commit and SHA-256, including fragmented messages, interleaved pings,
+  binary channel IDs, payload boundaries and close handshakes. Repeat it in CI.
+- Add TLS integration and CLI/config regression coverage. No Go runtime
+  dependency or wire-protocol change is required for upstream v0.5.2.
+
+[Compare v0.12.0 to v0.13.0](https://github.com/darron/go-opentunnel/compare/v0.12.0...v0.13.0)
+
 ## v0.12.0 — Identical release binaries through Homebrew — 2026-10-14
 
 - Install the published GitHub binary archives through Homebrew, selecting

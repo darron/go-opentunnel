@@ -1,5 +1,32 @@
 # Public-service validation
 
+## v0.13.0 custom CA and hosted regression check — 2026-10-16
+
+The rebuilt v0.13.0 CLI passed `scripts/auth_smoke.py` against the hosted service
+with empty private temporary state. `OPENTUNNEL_CA_CERT` selected an additional,
+locally generated test CA throughout the run. Public API and WSS certificates
+still verified, demonstrating that the extra CA did not replace public trust.
+The two fresh tunnels used normally issued visitor certificates.
+
+Anonymous methods, paths, MCP and discovery were denied with zero backend hits.
+Password and machine-token login, CSRF/origin checks, secure cookies,
+credential/header stripping, cache controls, eight simultaneous 2 MiB uploads,
+SSE/WebSocket forwarding, corruption handling, restart, logout and simultaneous
+profiles with different backends passed. Revocation closed both streams in
+**0.184 seconds**. Cross-profile credentials were denied.
+
+All owned processes stopped, local credentials were removed, and authenticated
+API 404 confirmed deletion of both temporary tunnels. Saved user profiles and
+running proxies were untouched. No new GitHub App or authorization grant was
+created; GitHub flow and CA isolation are covered by local regression tests.
+
+Separately, the rebuilt example app passed local root, request metadata,
+incremental HTTP streaming and real WebSocket echo checks, then exited cleanly
+on SIGINT. That local-only run created no tunnel or persistent state. The
+self-hosted TLS and exact upstream codec checks are described in
+[Testing](TESTING.md#custom-ca-and-upstream-websocket-compatibility).
+
+
 ## v0.11.0 long-poll release check — 2026-10-13
 
 The rebuilt v0.11.0 CLI completed the hosted auth smoke test with empty private

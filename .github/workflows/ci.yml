@@ -33,6 +33,12 @@ jobs:
         run: |
           go build ./cmd/otgo
           go build ./examples/webapp
+      - name: Test pinned upstream WebSocket codec
+        if: runner.os == 'Linux'
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          python3 scripts/upstream_compat.py
       - name: Race test
         if: runner.os == 'Linux'
         run: go test -race ./...

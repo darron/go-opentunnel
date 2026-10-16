@@ -212,3 +212,11 @@ handshake state; this does not authenticate a visitor with a client certificate.
 `RemoteAddr` is the relay-provided peer string. The relay can forge it, so it is
 not a separate proof of visitor identity. The package never uses HTTP forwarding
 headers to infer TLS or peer state. See [the listener contracts](LISTENER.md).
+
+## Private API and relay CAs
+
+[Custom CA trust](CUSTOM_CA.md) adds operator-selected certificates only to the
+control API and relay HTTP transport. It preserves certificate/hostname checks
+and redirect restrictions. Visitor TLS, backend trust and GitHub trust stay
+separate. An added CA is trusted to issue certificates for client connections;
+it does not change the domain operator impersonation boundary above.

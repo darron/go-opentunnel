@@ -1,5 +1,42 @@
 # Local verification record
 
+## v0.13.0 custom CA preparation — 2026-10-16
+
+Go 1.27.2 on macOS arm64. The library and CLI share added CA trust for API
+HTTPS and relay WSS; visitor TLS, backend HTTPS and GitHub trust stay separate.
+No Go runtime dependency was added.
+
+| Check | Result |
+| --- | --- |
+| `make check build-example` | Full tests, vet, formatting, golangci-lint **0 issues**, CLI and example builds passed |
+| `go test -race ./... -count=1` | Full race suite passed after the GitHub setup fix |
+| New CA integration tests | Real HTTPS provisioning, WSS relay attachment and separately verified visitor TLS; hostname/untrusted rejection and cross-origin redirect denial passed |
+| Real CLI subprocess test | `auth init` saved the CA; proxy startup/restart without a CA flag or variable worked; anonymous MCP denied and machine bearer accepted |
+| Config and GitHub regression tests | Flag/env/saved precedence, explicit empty option, absolute paths, quoted launch/resume commands, retained/changed/cleared CA and provider trust isolation passed |
+| Failure-before-commit regression | Reproduced premature CA persistence with a failing test, then fixed it; failed setup and cancelled conversion preserve the config byte for byte |
+| PEM regression | A malformed block followed by a valid one failed the new test before the parser fix; strict blocks, multiple certificates, bounds and invalid file types now pass |
+| `python3 scripts/upstream_compat.py` | Exact pinned upstream v0.5.2 Reader/Writer passed text/binary fragmentation, interleaved pings, size boundaries and close checks under the Go race detector |
+| `make fuzz-sustained` | All five 45-second targets passed, approximately 6.1 million executions combined |
+| Vulnerability and release tooling | `govulncheck` found no vulnerabilities; all 18 Python release-tool tests and Actionlint passed |
+| Hosted CLI and local example | [Public-service auth checks, cleanup, HTTP streaming and WebSocket echo passed](LIVE_TESTING.md#v0130-custom-ca-and-hosted-regression-check--2026-10-16) |
+
+Claude and Amp/Oracle independently found the premature GitHub CA persistence
+issue (P2), with no P0/P1 findings. The fix stages the CA in memory and commits
+it alongside approved GitHub credentials. Added tests cover failed provider
+requests, cancellation during conversion and successful retain/replace/clear.
+Both reviewers confirmed the fix with focused tests, including race checks,
+and reported no remaining release blocker. A final test also exercises the
+legacy TLS dial hook, addressing Amp's remaining coverage note.
+Custom TLS dialers are rejected because they bypass `TLSClientConfig`; the
+legacy hook check has a narrow deprecation-lint annotation.
+
+The compatibility test uses the actual upstream codec, not the full Rust server,
+database or ACME service. Hosted checks do not establish the operator's deployed
+revision. No new GitHub App grant was created for this release. Hosted tests used
+owned temporary identities and confirmed remote deletion; existing profiles and
+running proxies were untouched.
+
+
 ## v0.12.0 publication — 2026-10-14
 
 The annotated [v0.12.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.12.0)

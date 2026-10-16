@@ -176,6 +176,12 @@ DNS names are rejected without resolution. The package clones a supplied
 port), both before and after invoking the caller's redirect hook. A supplied
 transport, cookie jar, or hook is trusted with credentials.
 
+`ClientOptions.CACertFile` adds PEM trust for control API HTTPS and relay WSS.
+It clones the HTTP transport and preserves existing roots and verification.
+For direct `NewAPI` use, `NewHTTPClientWithCACert` supplies the same trust.
+Visitor TLS and backend/GitHub trust remain separate. See [custom CA trust](CUSTOM_CA.md)
+for CLI precedence, saved profile settings, validation and custom-client limits.
+
 ## Certificate provisioning
 
 1. Create a tunnel, then generate a local P-256 key and ECDSA-SHA256 PKCS#10 CSR.

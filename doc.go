@@ -79,6 +79,12 @@
 // directly. Relay-provided peer metadata is not an independently verified
 // visitor address and should not be treated as an end-to-end identity.
 //
+// Set [ClientOptions].CACertFile to add PEM certificates to the API and relay
+// trust roots. For low-level [NewAPI] use, [NewHTTPClientWithCACert] builds an
+// HTTP client with the same behavior. Certificate and hostname verification stay
+// enabled. The library does not read OPENTUNNEL_CA_CERT; that variable belongs
+// to otgo. This setting does not affect visitor TLS or backend connections.
+//
 // The local private key never leaves the client. A normally operating relay
 // carries encrypted visitor TLS, but the hosted domain/certificate operator
 // remains inside the HTTPS trust boundary and could impersonate the hostname

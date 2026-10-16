@@ -49,6 +49,9 @@ func (a authFlags) launchCommand() string {
 	if a.requestTimeout != 0 {
 		args = append(args, "--request-timeout", a.requestTimeout.String())
 	}
+	if caCertFile, err := a.effectiveCACert(""); err == nil && (caCertFile != "" || a.caCertExplicit) {
+		args = append(args, "--ca-cert", caCertFile)
+	}
 	return shellCommand(args)
 }
 
@@ -174,6 +177,10 @@ func runProfiles(ctx context.Context, args []string, out, errout io.Writer) erro
 					row.Status = "api-mismatch"
 				default:
 					row.Status = "ready"
+					selected.caCertFile, e = selected.effectiveCACert(cfg.CACertFile)
+					if e != nil {
+						return e
+					}
 					row.Command = selected.launchCommand()
 				}
 			}

@@ -34,6 +34,13 @@ func pendingProvisionError(client *opentunnel.Client, common commonFlags, err er
 		}
 		args = append(args, "--data-dir", path)
 	}
+	caCertFile, caErr := common.effectiveCACert("")
+	if caErr != nil {
+		return err
+	}
+	if caCertFile != "" || common.caCertExplicit {
+		args = append(args, "--ca-cert", caCertFile)
+	}
 	_, writeErr := fmt.Fprintln(errout, "Provisioning timed out; the stored pending request remains resumable. Run:", shellCommand(args))
 	return errors.Join(err, writeErr)
 }

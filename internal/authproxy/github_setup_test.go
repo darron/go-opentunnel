@@ -284,6 +284,12 @@ func TestGitHubSetupStartCapabilityAndPrefix(t *testing.T) {
 
 func TestGitHubSetupCancellationDuringConversionPreservesConfig(t *testing.T) {
 	s, _, _ := setupFixture(t)
+	saved := s.cfg
+	saved.CACertFile = filepath.Join(secureTempDir(t), "saved.pem")
+	if err := SaveConfig(s.paths.AuthConfig, saved); err != nil {
+		t.Fatal(err)
+	}
+	override := filepath.Join(secureTempDir(t), "replacement.pem")
 	before, err := os.ReadFile(s.paths.AuthConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -305,7 +311,7 @@ func TestGitHubSetupCancellationDuringConversionPreservesConfig(t *testing.T) {
 	output := setupOutput{lines: make(chan string, 8)}
 	done := make(chan error, 1)
 	go func() {
-		done <- runGitHubSetup(ctx, s.paths, s.binding, []string{"allowed"}, output, newGitHubProvider(provider.Client(), githubEndpoints{API: provider.URL}))
+		done <- runGitHubSetup(ctx, s.paths, s.binding, []string{"allowed"}, output, newGitHubProvider(provider.Client(), githubEndpoints{API: provider.URL}), SetupLaunch{CACertFile: &override})
 	}()
 	var address string
 	select {
@@ -523,5 +529,44 @@ func TestGitHubSetupReadyCallbackHasLiveListenerAndPrintedFallback(t *testing.T)
 	}})
 	if !invoked || !errors.Is(err, context.Canceled) {
 		t.Fatalf("callback=%v, result=%v", invoked, err)
+	}
+}
+
+func TestGitHubSetupCACertCommitsWithApprovedCredentials(t *testing.T) {
+	for _, mode := range []string{"retain", "replace", "clear"} {
+		t.Run(mode, func(t *testing.T) {
+			existing, out, _ := setupFixture(t)
+			cfg := existing.cfg
+			cfg.CACertFile = filepath.Join(secureTempDir(t), "saved.pem")
+			if err := SaveConfig(existing.paths.AuthConfig, cfg); err != nil {
+				t.Fatal(err)
+			}
+			var launch SetupLaunch
+			want := cfg.CACertFile
+			switch mode {
+			case "replace":
+				want = filepath.Join(secureTempDir(t), "replacement.pem")
+				launch.CACertFile = &want
+			case "clear":
+				want = ""
+				launch.CACertFile = &want
+			}
+			setup, err := newGitHubSetup(cfg, existing.paths, existing.binding, existing.accounts, existing.provider, existing.origin, out, launch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := LoadConfig(existing.paths.AuthConfig)
+			if err != nil || before.CACertFile != cfg.CACertFile {
+				t.Fatal("CA changed before approval")
+			}
+			cookie := startRegistration(t, setup)
+			if response := setupCallback(setup, cookie, setup.state); response.Code != http.StatusOK {
+				t.Fatalf("callback: %d", response.Code)
+			}
+			after, err := LoadConfig(existing.paths.AuthConfig)
+			if err != nil || after.CACertFile != want || after.Mode != "github" || after.GitHub.ClientSecret != "new-secret" {
+				t.Fatal("CA and credentials not committed together")
+			}
+		})
 	}
 }

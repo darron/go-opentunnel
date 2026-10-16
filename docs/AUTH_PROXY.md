@@ -63,6 +63,10 @@ to keep metrics off. Give each concurrent profile a different port. The command
 flag overrides the saved value; `--metrics-listen=""` disables it for one run.
 See [observability](OBSERVABILITY.md) for the scrape format and access boundary.
 
+For private API/relay certificates, `auth init --ca-cert /absolute/ca.pem` saves
+the bundle path as `ca_cert` in the profile. Proxy startup reuses it. See
+[custom CA trust](CUSTOM_CA.md) for flag/environment precedence and scope.
+
 Find saved profiles and their endpoints with:
 
 ```sh

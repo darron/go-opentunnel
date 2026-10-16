@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -38,7 +39,7 @@ Commands:
   connect                  Run a tunnel connection
   listen                   Serve an HTTP diagnostic handler directly over tunnel TLS
 
-All command flags follow the command. Common flags are --api, --data-dir,
+All command flags follow the command. Common flags are --api, --ca-cert, --data-dir,
 --profile, --json, and --request-timeout. Run ` + "`otgo <command> --help`" + ` for command flags.
 `
 
@@ -48,19 +49,40 @@ type commonFlags struct {
 	profile        string
 	json           bool
 	requestTimeout time.Duration
+	caCertFile     string
+	caCertExplicit bool
 }
 
 func (c *commonFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.api, "api", "", "OpenTunnel API base URL")
+	c.caCertFile = os.Getenv("OPENTUNNEL_CA_CERT")
+	fs.Func("ca-cert", "PEM trust bundle for the API and relay (default: OPENTUNNEL_CA_CERT or saved auth config)", func(value string) error {
+		c.caCertFile, c.caCertExplicit = value, true
+		return nil
+	})
 	fs.StringVar(&c.dataDir, "data-dir", "", "storage directory (default: XDG OpenTunnel directory)")
 	fs.StringVar(&c.profile, "profile", "default", "storage profile")
 	fs.BoolVar(&c.json, "json", false, "write JSON output")
 	fs.DurationVar(&c.requestTimeout, "request-timeout", 0, "per-request timeout (0 uses the client default)")
 }
 
+func (c commonFlags) effectiveCACert(saved string) (string, error) {
+	path := c.caCertFile
+	if path == "" && !c.caCertExplicit {
+		path = saved
+	}
+	if path == "" {
+		return "", nil
+	}
+	return filepath.Abs(path)
+}
+
 func (c commonFlags) clientWithTransport(transport opentunnel.TransportOptions) (*opentunnel.Client, error) {
+	caCertFile, err := c.effectiveCACert("")
+	if err != nil {
+		return nil, err
+	}
 	var store opentunnel.Storage
-	var err error
 	if c.dataDir != "" {
 		store = opentunnel.NewFileStorage(c.dataDir)
 	} else {
@@ -69,7 +91,7 @@ func (c commonFlags) clientWithTransport(transport opentunnel.TransportOptions) 
 			return nil, err
 		}
 	}
-	return opentunnel.NewClient(opentunnel.ClientOptions{API: c.api, Storage: store, RequestTimeout: c.requestTimeout, Transport: transport})
+	return opentunnel.NewClient(opentunnel.ClientOptions{API: c.api, Storage: store, RequestTimeout: c.requestTimeout, Transport: transport, CACertFile: caCertFile})
 }
 
 func newFlagSet(name string, errout io.Writer) *flag.FlagSet {

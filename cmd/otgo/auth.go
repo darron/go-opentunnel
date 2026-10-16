@@ -41,7 +41,11 @@ func (a authFlags) profileLock(paths authproxy.Paths) string {
 	return filepath.Join(paths.TunnelRoot, a.profile, "otgo-proxy")
 }
 func (a authFlags) clientAt(paths authproxy.Paths) (*opentunnel.Client, error) {
-	return opentunnel.NewClient(opentunnel.ClientOptions{API: a.api, Storage: opentunnel.NewFileStorage(paths.TunnelRoot), RequestTimeout: a.requestTimeout})
+	caCertFile, err := a.effectiveCACert("")
+	if err != nil {
+		return nil, err
+	}
+	return opentunnel.NewClient(opentunnel.ClientOptions{API: a.api, Storage: opentunnel.NewFileStorage(paths.TunnelRoot), RequestTimeout: a.requestTimeout, CACertFile: caCertFile})
 }
 func (a authFlags) binding(id opentunnel.Identity) (authproxy.Binding, error) {
 	origin, e := a.apiOrigin()
@@ -163,6 +167,10 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 				if e != nil {
 					return e
 				}
+				a.caCertFile, e = a.effectiveCACert(cfg.CACertFile)
+				if e != nil {
+					return e
+				}
 				client, e := a.clientAt(paths)
 				if e != nil {
 					return e
@@ -183,7 +191,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				if clientID == "" {
-					launch := authproxy.SetupLaunch{Profile: a.profile, Command: a.launchCommand()}
+					launch := authproxy.SetupLaunch{Profile: a.profile, Command: a.launchCommand(), CACertFile: &a.caCertFile}
 					if !noBrowser {
 						launch.OnReady = func(ctx context.Context, address string) {
 							if openBrowser(ctx, address) != nil {
@@ -198,6 +206,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				cfg.Mode = "github"
+				cfg.CACertFile = a.caCertFile
 				cfg.Password = authproxy.PasswordVerifier{}
 				cfg.GitHub = authproxy.GitHubConfig{ClientID: clientID, ClientSecret: secret, Users: accounts}
 				if e := authproxy.SaveConfig(paths.AuthConfig, cfg); e != nil {
@@ -284,7 +293,11 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 					return e
 				}
 				progress.step("Saving authentication configuration and revoking old machine tokens")
-				cfg := authproxy.Config{Binding: binding, Upstream: upstream, Mode: "password", Password: verifier}
+				caCertFile, e := a.effectiveCACert("")
+				if e != nil {
+					return e
+				}
+				cfg := authproxy.Config{Binding: binding, Upstream: upstream, Mode: "password", Password: verifier, CACertFile: caCertFile}
 				// A missing config can leave an older backend's token registry.
 				// Every initialization establishes a new authorization boundary.
 				if e := authproxy.ResetTokens(paths.TokenFile); e != nil {

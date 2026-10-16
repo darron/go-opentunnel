@@ -18,7 +18,7 @@ func TestLaunchCommandQuotesStoragePathsWithoutExecutingThem(t *testing.T) {
 	}
 	marker := filepath.Join(t.TempDir(), "must-not-exist")
 	path := "relative dir/' $(touch " + marker + ") `touch " + marker + "` <script>"
-	a := authFlags{commonFlags: commonFlags{profile: "inbox", dataDir: path, api: "https://api.example.test/base", requestTimeout: 7 * time.Second}, configPath: path + "/auth.json", tokenPath: path + "/tokens.json"}
+	a := authFlags{commonFlags: commonFlags{profile: "inbox", dataDir: path, api: "https://api.example.test/base", requestTimeout: 7 * time.Second, caCertFile: path + "/ca.pem", caCertExplicit: true}, configPath: path + "/auth.json", tokenPath: path + "/tokens.json"}
 	// Let a real shell parse the displayed command, replacing execution with an
 	// argument dump. A quoting regression would execute the canary substitutions.
 	// #nosec G204 -- Deliberate real-shell quoting test; every input is a test-owned canary.
@@ -31,7 +31,7 @@ func TestLaunchCommandQuotesStoragePathsWithoutExecutingThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"otgo", "proxy", "--profile", "inbox", "--api", "https://api.example.test/base", "--data-dir", absolute, "--auth-config", absolute + "/auth.json", "--token-file", absolute + "/tokens.json", "--request-timeout", "7s"}
+	want := []string{"otgo", "proxy", "--profile", "inbox", "--api", "https://api.example.test/base", "--data-dir", absolute, "--auth-config", absolute + "/auth.json", "--token-file", absolute + "/tokens.json", "--request-timeout", "7s", "--ca-cert", absolute + "/ca.pem"}
 	if args := strings.Split(strings.TrimSuffix(string(got), "\x00"), "\x00"); !reflect.DeepEqual(args, want) {
 		t.Fatalf("arguments corrupted: %q", args)
 	}
@@ -44,6 +44,7 @@ func TestLaunchCommandQuotesStoragePathsWithoutExecutingThem(t *testing.T) {
 	if err := parseAuthFlags(fs, want[2:], &parsed); err != nil {
 		t.Fatal(err)
 	}
+	a.caCertFile = absolute + "/ca.pem"
 	a.dataDir = absolute
 	a.configPath = absolute + "/auth.json"
 	a.tokenPath = absolute + "/tokens.json"

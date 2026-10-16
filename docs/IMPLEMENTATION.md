@@ -13,6 +13,7 @@ the root package has no Prometheus imports.
 | File | Responsibility |
 | --- | --- |
 | `api.go` | HTTP endpoints, finite deadlines, 1 MiB response limit, escaped IDs, typed errors, redirect hardening, and response-body ownership |
+| `ca_cert.go` | Bounded, strict PEM loading and cloned HTTP transport trust for API HTTPS and relay WSS |
 | `certificate.go` | Local P-256 keys/CSRs; certificate checks for key, validity, exact hostname, and wildcard SAN; material-only parsing for expired renewal attachment |
 | `storage.go` | Concurrent memory storage and compatible file layout; private temporary files, marker-scoped removal, metadata last, permissions, and symlink rejection |
 | `client.go` | Per-profile lifecycle lock, pending state before issuance, same-key recovery, owned cancellation, and bounded local cleanup after confirmed remote deletion |

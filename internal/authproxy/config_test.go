@@ -1,6 +1,7 @@
 package authproxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -263,5 +264,50 @@ func TestConfigMetricsAddressRoundTripAndValidation(t *testing.T) {
 	}
 	if _, e := LoadConfig(path); e == nil {
 		t.Fatal("unknown field accepted")
+	}
+}
+
+func TestConfigCACertRoundTripAndValidation(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "auth.json")
+	cfg := fixtureConfig()
+	cfg.CACertFile = filepath.Join(secureTempDir(t), "ca.pem")
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadConfig(path)
+	if err != nil || got.CACertFile != cfg.CACertFile {
+		t.Fatalf("roundtrip: %v %+v", err, got)
+	}
+	public, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(public), "ca_cert") || strings.Contains(string(public), "secret-never-print") || strings.Contains(string(public), "digest") {
+		t.Fatal("CA config damaged redaction")
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"relative.pem", "/tmp/invalid\x00.pem"} {
+		cfg.CACertFile = value
+		if err := SaveConfig(path, cfg); err == nil {
+			t.Fatalf("accepted %q", value)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatal("invalid CA path changed config")
+		}
+	}
+	cfg.CACertFile = ""
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "ca_cert") {
+		t.Fatal("empty CA changed old config shape")
 	}
 }

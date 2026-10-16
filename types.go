@@ -12,7 +12,7 @@ import (
 const DefaultAPI = "https://opentunnel.xyz"
 
 // Version is this module's protocol client version.
-const Version = "0.12.0"
+const Version = "0.13.0"
 
 var (
 	// ErrClosed reports an operation attempted after its Client, Connection, or Listener was closed.
@@ -138,6 +138,12 @@ type ClientOptions struct {
 	// HTTPClient performs API and bridge handshakes. Nil uses the default HTTP
 	// transport. Custom transport, cookie jar and hooks are trusted with secrets.
 	HTTPClient *http.Client
+	// CACertFile adds PEM certificates to the API and relay trust roots. Empty
+	// uses HTTPClient's existing trust. With a custom HTTPClient, its transport
+	// must be an *http.Transport with TLS verification enabled and no custom
+	// TLS dialer; it is cloned.
+	// This does not change visitor TLS, backend trust, or process-wide defaults.
+	CACertFile string
 	// RequestTimeout limits each control API operation, including retries and
 	// body reads. Zero selects 15 seconds.
 	RequestTimeout time.Duration

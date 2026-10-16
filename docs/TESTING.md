@@ -386,3 +386,29 @@ Check phone widths, keyboard focus, long commands and copy/paste. The completion
 page must remain usable after stopping the preview server with Ctrl-C: its logo,
 styles and clipboard script are embedded in the HTML. A denied or unavailable
 clipboard selects the command for manual copying.
+
+## Custom CA and upstream WebSocket compatibility
+
+```sh
+go test -race -count=1 -run TestCACert ./...
+go test -count=1 -run TestConfigCACert ./internal/authproxy
+python3 scripts/upstream_compat.py
+```
+
+CA tests use generated keys and real HTTPS/WSS handshakes. They check malformed
+bundles, added roots and caller ownership, untrusted/hostname-mismatched servers,
+independently verified visitor TLS, CLI flag/environment precedence, saved config
+and copyable launch commands. No fixture contains a working production key.
+
+The optional compatibility runner requires Rust/Cargo and network access. It
+builds the exact upstream v0.5.2 `websocket.rs` from commit
+`9f451413341c502c40c6a55e51cb5ee0a5b60cb1`, verifies its SHA-256, and connects
+our real Go WebSocket client to its Reader/Writer. Text and binary messages span
+0, 1, 125, 126, 32772, 65535, 65536 and 1 MiB; a ping crosses each partial message.
+Four-byte channel IDs and clean close handshakes are checked. Cargo dependencies
+are locked and test-only; source/build files live in a temporary directory.
+
+This runs on Linux in CI. Ordinary `go test` skips only this optional test unless
+`OTGO_UPSTREAM_WEBSOCKET_FIXTURE` names the built adapter. It is a test of the
+actual upstream codec, not the full Rust server, database, ACME service, or
+hosted deployment version. Hosted behavior is checked separately.

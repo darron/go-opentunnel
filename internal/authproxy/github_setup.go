@@ -37,6 +37,10 @@ type githubManifest struct {
 // SetupLaunch carries the CLI-selected profile and credential-free startup command.
 type SetupLaunch struct {
 	Profile, Command string
+	// CACertFile optionally replaces the saved CA path with the successful
+	// credential commit. A pointer to an empty string clears it. Cancellation
+	// or failure before that commit leaves the saved configuration unchanged.
+	CACertFile *string
 	// OnReady runs after the listener starts and the fallback URL is printed.
 	// It must return promptly and honor ctx; browser launch failure is nonfatal.
 	OnReady func(ctx context.Context, address string)
@@ -68,6 +72,9 @@ type githubSetupState struct {
 }
 
 func newGitHubSetup(cfg Config, paths Paths, binding Binding, accounts []GitHubAccount, provider *githubProvider, origin string, out io.Writer, launch ...SetupLaunch) (*githubSetup, error) {
+	if len(launch) > 0 && launch[0].CACertFile != nil {
+		cfg.CACertFile = *launch[0].CACertFile
+	}
 	if e := ValidateBinding(cfg, binding); e != nil {
 		return nil, e
 	}

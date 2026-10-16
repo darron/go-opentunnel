@@ -38,6 +38,9 @@ and otgo use the official Prometheus Go client. Licensed under [MIT](LICENSE).
 See the [changelog](CHANGELOG.md) for release highlights and the
 [Homebrew guide](docs/HOMEBREW.md) for binary installation and updates.
 
+For private API/relay certificates, use `ClientOptions.CACertFile` or
+`--ca-cert` after an otgo command. See [custom CA trust](docs/CUSTOM_CA.md).
+
 ## Protect a local application with otgo
 
 1. Save a backend under a named profile:

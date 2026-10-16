@@ -39,6 +39,7 @@ type GitHubConfig struct {
 	AppURL       string          `json:"app_url,omitempty"`
 }
 type Config struct {
+	CACertFile    string           `json:"ca_cert,omitempty"`
 	MetricsListen string           `json:"metrics_listen,omitempty"`
 	Version       int              `json:"version"`
 	Binding       Binding          `json:"binding"`
@@ -50,6 +51,7 @@ type Config struct {
 type diskPassword PasswordVerifier
 type diskGitHub GitHubConfig
 type diskConfig struct {
+	CACertFile    string       `json:"ca_cert,omitempty"`
 	MetricsListen string       `json:"metrics_listen,omitempty"`
 	Version       int          `json:"version"`
 	Binding       Binding      `json:"binding"`
@@ -60,10 +62,10 @@ type diskConfig struct {
 }
 
 func toDisk(c Config) diskConfig {
-	return diskConfig{c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, diskPassword(c.Password), diskGitHub(c.GitHub)}
+	return diskConfig{c.CACertFile, c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, diskPassword(c.Password), diskGitHub(c.GitHub)}
 }
 func fromDisk(c diskConfig) Config {
-	return Config{c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, PasswordVerifier(c.Password), GitHubConfig(c.GitHub)}
+	return Config{c.CACertFile, c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, PasswordVerifier(c.Password), GitHubConfig(c.GitHub)}
 }
 func (g GitHubConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -81,12 +83,13 @@ func (p PasswordVerifier) MarshalJSON() ([]byte, error) {
 
 func (c Config) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
+		CACertFile    string  `json:"ca_cert,omitempty"`
 		MetricsListen string  `json:"metrics_listen,omitempty"`
 		Version       int     `json:"version"`
 		Binding       Binding `json:"binding"`
 		Upstream      string  `json:"upstream"`
 		Mode          string  `json:"mode"`
-	}{c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode})
+	}{c.CACertFile, c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode})
 }
 func (c Config) Format(f fmt.State, _ rune) { b, _ := c.MarshalJSON(); _, _ = f.Write(b) }
 func (g GitHubConfig) Format(f fmt.State, _ rune) {
@@ -189,6 +192,9 @@ func ValidateBinding(c Config, b Binding) error {
 	return nil
 }
 func validateConfig(c Config) error {
+	if c.CACertFile != "" && (!filepath.IsAbs(c.CACertFile) || strings.ContainsRune(c.CACertFile, 0)) {
+		return errors.New("ca_cert must be an absolute PEM file path")
+	}
 	if _, e := MetricsListenAddress(c.MetricsListen); e != nil {
 		return e
 	}

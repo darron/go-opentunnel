@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -27,16 +28,25 @@ type Client struct {
 	profiles      sync.Map
 	recoveryAfter sync.Map // profile -> time.Time; writes require the profile lock
 	wg            sync.WaitGroup
+	caHTTPClient  *http.Client // Owns the cloned transport when CACertFile is set.
 }
 
 // NewClient creates an owner for provisioning and running tunnels. Zero options
 // select the hosted API, persistent XDG storage, and documented transport defaults.
 // Call Close when the application no longer needs the client.
 // NewClient does not contact the service or create a tunnel. Invalid API URLs,
-// negative resource limits/timeouts and inconsistent backoff limits return ErrInvalid.
+// CA bundles, negative resource limits/timeouts and inconsistent backoff limits
+// return ErrInvalid.
 func NewClient(options ClientOptions) (*Client, error) {
 	if options.API == "" {
 		options.API = DefaultAPI
+	}
+	if options.CACertFile != "" {
+		client, err := httpClientWithCACert(options.HTTPClient, options.CACertFile)
+		if err != nil {
+			return nil, err
+		}
+		options.HTTPClient = client
 	}
 	api, err := NewAPI(options.API, options.HTTPClient, options.RequestTimeout)
 	if err != nil {
@@ -53,7 +63,11 @@ func NewClient(options ClientOptions) (*Client, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Client{api: api, store: options.Storage, options: opts, ctx: ctx, cancel: cancel, connections: make(map[*Connection]string)}, nil
+	client := &Client{api: api, store: options.Storage, options: opts, ctx: ctx, cancel: cancel, connections: make(map[*Connection]string)}
+	if options.CACertFile != "" {
+		client.caHTTPClient = options.HTTPClient
+	}
+	return client, nil
 }
 
 // API returns the low-level HTTP client for remote inspection and custom workflows.
@@ -635,6 +649,9 @@ func (c *Client) Close() error {
 		_ = conn.Close()
 	}
 	c.wg.Wait()
+	if c.caHTTPClient != nil {
+		c.caHTTPClient.CloseIdleConnections()
+	}
 	return nil
 }
 
