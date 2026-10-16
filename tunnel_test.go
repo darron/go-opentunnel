@@ -22,6 +22,7 @@ type relayFixture struct {
 	api        *testAPI
 	sessions   chan *relaySession
 	mu         sync.Mutex
+	closed     bool
 	all        []*relaySession
 	attachCode string
 	sessionID  string
@@ -47,6 +48,7 @@ type relaySession struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	mu         sync.Mutex
+	closed     bool
 	channels   map[uint32]*relayChannel
 	controls   chan controlMessage
 	routes     []string
@@ -62,6 +64,7 @@ func newRelay(t *testing.T) *relayFixture {
 	f.api.mu.Unlock()
 	t.Cleanup(func() {
 		f.mu.Lock()
+		f.closed = true
 		all := append([]*relaySession(nil), f.all...)
 		f.mu.Unlock()
 		for _, s := range all {
@@ -79,6 +82,11 @@ func (f *relayFixture) accept(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &relaySession{fixture: f, ws: ws, ctx: ctx, cancel: cancel, channels: make(map[uint32]*relayChannel), controls: make(chan controlMessage, 8192)}
 	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		s.close()
+		return
+	}
 	f.all = append(f.all, s)
 	code, sessionID, hb, idle := f.attachCode, f.sessionID, f.heartbeat, f.idle
 	routes := append([]string(nil), f.routes...)
@@ -103,9 +111,19 @@ func (f *relayFixture) accept(w http.ResponseWriter, r *http.Request) {
 		routes = m.Routes
 	}
 	_ = s.control(controlMessage{Type: "attached", Session: sessionID, Routes: routes, HeartbeatMS: hb, IdleTimeoutMS: idle})
+	// Serialize every worker registration with close, including the first Add.
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	s.wg.Add(1)
+	s.mu.Unlock()
 	go func() { defer s.wg.Done(); s.read() }()
-	f.sessions <- s
+	select {
+	case f.sessions <- s:
+	case <-s.ctx.Done():
+	}
 }
 func (s *relaySession) read() {
 	for {
@@ -174,13 +192,14 @@ func (s *relaySession) control(m controlMessage) error {
 	return s.ws.Write(ctx, websocket.MessageText, b)
 }
 func (s *relaySession) close() {
-	s.cancel()
-	_ = s.ws.CloseNow()
 	s.mu.Lock()
+	s.closed = true
 	for _, ch := range s.channels {
 		_ = ch.socket.Close()
 	}
 	s.mu.Unlock()
+	s.cancel()
+	_ = s.ws.CloseNow()
 	s.wg.Wait()
 }
 func (f *relayFixture) next(t *testing.T) *relaySession {
@@ -232,6 +251,12 @@ func (s *relaySession) publicRaw(t *testing.T, id uint32, sni string) net.Conn {
 	}
 	ch := &relayChannel{socket: tcp, input: make(chan relayChunk, 128)}
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		_ = tcp.Close()
+		_ = public.Close()
+		t.Fatal("relay session is closed")
+	}
 	s.channels[id] = ch
 	s.wg.Add(2)
 	s.mu.Unlock()
@@ -266,6 +291,10 @@ func (s *relaySession) publicRaw(t *testing.T, id uint32, sni string) net.Conn {
 	peer := s.fixture.peer
 	s.fixture.mu.Unlock()
 	if e := s.control(controlMessage{Type: "open", Conn: id, Peer: peer, SNI: sni, ALPN: "h2,http/1.1"}); e != nil {
+		// The second worker has not started; balance its reservation on failure.
+		s.wg.Done()
+		_ = tcp.Close()
+		_ = public.Close()
 		t.Fatal(e)
 	}
 	go func() {

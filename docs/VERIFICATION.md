@@ -30,6 +30,16 @@ legacy TLS dial hook, addressing Amp's remaining coverage note.
 Custom TLS dialers are rejected because they bypass `TLSClientConfig`; the
 legacy hook check has a narrow deprecation-lint annotation.
 
+The first Linux CI run caught an existing relay-fixture teardown race: cleanup
+could wait on a session before its HTTP handler registered the first worker.
+Fixture and session shutdown now prevent late registration, and all worker
+registrations share the session lock with shutdown. This changes test code only.
+The full local race suite and 1,000 repetitions of the affected test passed.
+Claude and Amp/Oracle also caught an existing failure-path worker reservation;
+failed channel-open control writes now balance it and close both sockets before
+reporting the test failure, so cleanup can finish. Both confirmed the correction;
+repeated focused race tests and lint passed afterward.
+
 The compatibility test uses the actual upstream codec, not the full Rust server,
 database or ACME service. Hosted checks do not establish the operator's deployed
 revision. No new GitHub App grant was created for this release. Hosted tests used
