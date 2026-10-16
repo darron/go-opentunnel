@@ -1,5 +1,31 @@
 # Local verification record
 
+## v0.13.0 publication — 2026-10-16
+
+The annotated [v0.13.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.13.0)
+points to `caec102691d804485f93804b316da3b953c3ae20`. Release notes are on
+GitHub; the dated changes are in [CHANGELOG.md](../CHANGELOG.md). No Go runtime
+dependency or tunnel wire-protocol change was added.
+
+| Check | Result |
+| --- | --- |
+| [Release-commit CI](https://github.com/darron/go-opentunnel/actions/runs/38940456005) | Linux/macOS tests, Linux race suite, pinned upstream codec, lint, current-Go vulnerability checks and all five sustained fuzz targets passed before tagging |
+| [Binary publication and dispatch](https://github.com/darron/go-opentunnel/actions/runs/38943941597) | Four archives and five checksum files published after native Linux/macOS checks; automatic Homebrew dispatch succeeded |
+| Downloaded release assets | Exactly nine files; combined/individual SHA-256 checks, archive contents, embedded revision and all target/CGO metadata passed |
+| Downloaded native CLI | Exact v0.13.0 version, full release SHA and clean state; general, proxy, profiles and both auth setup help checks passed, including the CA option |
+| [Tap update](https://github.com/darron/homebrew-tap/actions/runs/38944110976) | Validation and fresh-runner publishing passed; commit `28e33a1f07e246ff70036882aa3b1a61f672fe67` changed only `Formula/otgo.rb` |
+| Local Homebrew upgrade | Upgraded 0.12.0 to 0.13.0 from the release archive; `brew test darron/tap/otgo` passed |
+| Installed/released comparison | `cmp` passed; both macOS arm64 executables have SHA-256 `960daf0780feddac7063e4725dd1e5d1953d66d6dac117615eb8670a62ec8414` |
+| Independent reviews | Claude and Amp/Oracle confirmed the GitHub configuration fix and the CI-discovered test-fixture corrections; focused race checks passed with no remaining blocker |
+
+The installed CLI reports
+`otgo 0.13.0 sha=caec102691d804485f93804b316da3b953c3ae20 clean`.
+Linux arm64 and macOS amd64 binaries were inspected rather than executed locally;
+native Linux amd64 and macOS arm64 checks passed in the release workflow. Both
+Linux binaries are statically linked. Existing saved profiles and running proxies
+were untouched. Hosted-service results and the exact limits of the upstream codec
+check are recorded in the preparation section below and [live results](LIVE_TESTING.md#v0130-custom-ca-and-hosted-regression-check--2026-10-16).
+
 ## v0.13.0 custom CA preparation — 2026-10-16
 
 Go 1.27.2 on macOS arm64. The library and CLI share added CA trust for API
