@@ -39,7 +39,7 @@ func TestChannelAbortUnblocksQueuedWriteWithoutStoppingSession(t *testing.T) {
 		}
 	case <-time.After(100 * time.Millisecond):
 		cancel()
-		<-done
+		<-done //nolint:errcheck // Join cleanup; the timeout below already fails the test.
 		t.Fatal("channel abort did not unblock queued write")
 	}
 	if ctx.Err() != nil {
@@ -177,7 +177,7 @@ func TestWriteDeadlineUpdateInterruptsPendingChannelSend(t *testing.T) {
 		}
 	case <-time.After(150 * time.Millisecond):
 		_ = b.Close()
-		<-done
+		<-done //nolint:errcheck // Join cleanup; the timeout below already fails the test.
 		t.Fatal("changing write deadline did not affect the pending send")
 	}
 	if s.ctx.Err() != nil {
@@ -253,7 +253,7 @@ func TestRemoveDuringForegroundIssuanceCannotResurrectProfile(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		cancel()
-		<-done
+		<-done //nolint:errcheck // Join cleanup; the timeout below already fails the test.
 		t.Fatal("foreground worker did not notice removal")
 	}
 	if removeErr != nil {

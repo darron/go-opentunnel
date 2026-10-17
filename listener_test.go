@@ -78,7 +78,10 @@ func TestListenerHTTPPreservesTLSAndPeer(t *testing.T) {
 	})}
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(l) }()
-	t.Cleanup(func() { _ = server.Close(); <-served })
+	t.Cleanup(func() {
+		_ = server.Close()
+		<-served //nolint:errcheck // Join Serve after closing the test server.
+	})
 	public := s.public(t, 1, "api.demo.test")
 	_, err := io.WriteString(public, "GET /origin HTTP/1.1\r\nHost: api.demo.test\r\nConnection: close\r\nX-Forwarded-For: forged\r\nX-Forwarded-Proto: http\r\n\r\n")
 	if err != nil {
@@ -379,7 +382,11 @@ func TestListenerHTTPStreamingAndWebSocketUpgrade(t *testing.T) {
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(l) }()
-	t.Cleanup(func() { _ = l.Close(); _ = server.Close(); <-done })
+	t.Cleanup(func() {
+		_ = l.Close()
+		_ = server.Close()
+		<-done //nolint:errcheck // Join Serve after closing the test listener and server.
+	})
 	s := f.next(t)
 	var count uint32
 	var mu sync.Mutex

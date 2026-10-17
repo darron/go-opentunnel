@@ -193,6 +193,11 @@ The [webapp example](examples/webapp/main.go) demonstrates HTTP, streaming,
 WebSockets and shutdown. Run `go run ./examples/webapp`; use `--forward` for TCP
 forwarding or `--local-only` for a loopback test server.
 
+To verify GitHub authentication inside the app, follow the
+[webapp walkthrough](examples/webapp/README.md). Its optional identity mode checks
+otgo's signature on every route and exposes the verified username and numeric ID
+at `/whoami`. It runs behind `otgo proxy` with a pinned public key.
+
 Read the [listener guide](docs/LISTENER.md) for shutdown and peer trust, and the
 [Go API documentation](https://pkg.go.dev/github.com/darron/go-opentunnel) for
 types, methods and examples. The [package reference](docs/DESIGN.md#public-package-and-api)

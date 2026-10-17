@@ -182,7 +182,12 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result
 		server := newProxyServer(h)
 		served := make(chan error, 1)
 		go func() { served <- server.Serve(listener); close(served) }()
-		defer func() { _ = listener.Close(); _ = server.Close(); _ = h.Close(); <-served }()
+		defer func() {
+			_ = listener.Close()
+			_ = server.Close()
+			_ = h.Close()
+			<-served //nolint:errcheck // Shutdown join; the normal path handles Serve's result.
+		}()
 		write := &lockedWriter{w: out}
 		e = writeProxyAnnouncement(write, a.json, a.profile, cfg, qrMode, qrTerminal(out))
 		if e != nil {

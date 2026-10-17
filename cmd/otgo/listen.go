@@ -24,7 +24,11 @@ func listen(ctx context.Context, client *opentunnel.Client, profile string, name
 	go func() { served <- server.Serve(listener); close(served) }()
 	// Close the listener before joining Serve. Server.Close also handles ordinary
 	// HTTP connections; listener.Close covers hijacked application sockets.
-	defer func() { _ = listener.Close(); _ = server.Close(); <-served }()
+	defer func() {
+		_ = listener.Close()
+		_ = server.Close()
+		<-served //nolint:errcheck // Shutdown join; the normal path handles Serve's result.
+	}()
 	if asJSON {
 		err = json.NewEncoder(out).Encode(struct {
 			Type     string              `json:"type"`

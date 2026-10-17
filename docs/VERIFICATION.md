@@ -1,5 +1,55 @@
 # Local verification record
 
+## v0.14.2 preparation — 2026-10-17
+
+CI now pins golangci-lint **v2.15.0**. Its newer errcheck checks receives from
+error channels. Reviewed all 15 findings: these sites intentionally join shutdown,
+cancellation or test completion without asserting the returned error. Each now
+has a line-specific `nolint:errcheck` with its reason. Both errcheck and staticcheck
+remain enabled; no global exclusions or runtime behavior changes were added.
+
+| Check | Result |
+| --- | --- |
+| `golangci-lint config verify` | Passed with v2.15.0 |
+| Full lint, without issue-count limits | `golangci-lint run --max-same-issues 0 --max-issues-per-linter 0 ./...`: **0 issues** |
+| `make check build-example` | Full tests, vet, formatting, v2.15.0 lint and both builds passed |
+| Final race suite | `go test -race ./... -count=1`: all packages passed after the version update |
+| Release checks | All 18 Python release-tool tests, `actionlint`, all 212 relative file links across 28 Markdown files and `git diff --check` passed; `govulncheck` v1.9.0 found no vulnerabilities |
+| Focused example regressions | Invalid assertions, verified user/streaming and real HTTP/WebSocket tests passed with verbose output |
+| Browser fixture demo | Actual built webapp returned `200` with verified user JSON for a current assertion; an untrusted signature, expired assertion and absent assertion each returned `401` with `GitHub sign-in required` |
+| Direct backend request | Without the fixture adapter or a signed assertion, `/whoami` returned `401` |
+| Chrome | The localhost demo displayed all four expected backend results; DOM assertions and visual screenshot inspection passed |
+
+The temporary demo uses a separate localhost adapter to sign requests with
+ephemeral test keys. Its username and ID are fixture data, not a new GitHub
+authorization. The adapter source and keys are outside the repository. No personal
+profiles or credentials were used, and no public tunnel was created.
+
+## Verified-identity webapp example — 2026-10-17
+
+The optional identity mode wraps every example route with the strict backend
+verifier and returns the verified GitHub login and numeric ID at `/whoami`.
+Without identity flags, the original unauthenticated demonstration is unchanged.
+
+| Check | Result |
+| --- | --- |
+| Test-first access boundary | Before the verifier was added, unsigned requests reached the handlers; route/method denial regressions failed, then passed with the gate |
+| `make check build-example` | Full suite, vet, formatting, golangci-lint v2.14.0 **0 issues**, CLI and example builds passed on Go 1.27.2 |
+| Race checks | `go test -race ./... -count=1` passed; the final example changes also passed a focused race rerun |
+| Signed request fixtures | Independently signed current assertions succeed; expired assertions, wrong keys/audiences, changed methods/targets, forged usernames and duplicate assertions are rejected |
+| Real HTTP and WebSockets | `/whoami` returned the signed user over HTTP; unsigned WebSocket admission failed and a signed WebSocket echoed a message |
+| Streams and configuration | Signed streaming still flushes all chunks; partial/explicitly empty identity flags, invalid origins, missing files and invalid keys fail closed |
+| Built example CLI | Help lists the identity flags; the wrong run mode, incomplete/empty configuration and a missing public key all exit nonzero before serving |
+| Expiry mutation control | A temporary Go overlay replacing `VerifyRequest` with `InspectRequest` made the expired-assertion test fail; the checkout was unchanged |
+| Documentation | Relative links in the updated guides and `git diff --check` passed |
+
+The initial lint pass used the repository's then-pinned v2.14.0. Local v2.15.0 reported
+pre-existing channel-receive errcheck findings that conflict with staticcheck's
+blank-assignment rule. The subsequent upgrade and its resolution are recorded above.
+These checks used local fixtures, without reading personal profiles, creating a
+public tunnel or repeating GitHub browser authorization. The browser walkthrough
+is documented for a separate live check.
+
 ## v0.14.1 preparation — 2026-10-16
 
 The new offline `auth verify` command checks the selected profile's pinned key

@@ -774,7 +774,7 @@ func TestTunnelStalledChannelDoesNotBlockHealthyChannel(t *testing.T) {
 	}
 	_ = slow.Close()
 	select {
-	case <-writeDone:
+	case <-writeDone: //nolint:errcheck // Closing the stalled connection must join the writer.
 	case <-time.After(time.Second):
 		t.Fatal("stalled write leaked")
 	}

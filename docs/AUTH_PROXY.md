@@ -263,6 +263,12 @@ backend with `VerifyRequest`, rather than relying on a successful CLI check.
 
 ### Enforce identity in a Go backend
 
+A [runnable webapp example](../examples/webapp/README.md#run-behind-github-authentication)
+shows the full setup, verifies every route (including streams and WebSockets), and
+returns the verified GitHub user at `/whoami`. Its
+[middleware](../examples/webapp/auth.go) passes verified identity through context
+so handlers do not trust raw headers.
+
 A Go backend can verify before handling any protected request:
 
 ```go

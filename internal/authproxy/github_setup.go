@@ -331,7 +331,7 @@ func runGitHubSetup(ctx context.Context, paths Paths, binding Binding, approvedU
 			result = setup.commitErr
 		}
 		setup.mu.Unlock()
-		<-served
+		<-served //nolint:errcheck // Shutdown join; the normal path handles Serve's result.
 	}()
 	if _, e = fmt.Fprintf(out, "Open %s to register the GitHub App. Setup expires in ten minutes.\n", startURL); e != nil {
 		return e

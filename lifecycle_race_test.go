@@ -151,7 +151,7 @@ func TestLifecycleRemoteResetStopsBlockedUpstreamAndLeavesBridgeUsable(t *testin
 	}
 	waitStatus(t, x, func(status Status) bool { return status.Connections == 0 })
 	select {
-	case <-writeDone:
+	case <-writeDone: //nolint:errcheck // Reset must unblock the writer; its result is not asserted.
 	case <-time.After(2 * time.Second):
 		t.Fatal("public writer remained blocked after remote reset")
 	}
@@ -310,7 +310,7 @@ func TestLifecycleOutboundQueueCancellationWhenRelayStopsReading(t *testing.T) {
 	defer joined.Stop()
 	for range 40 {
 		select {
-		case <-producerDone:
+		case <-producerDone: //nolint:errcheck // Cancellation must join every producer regardless of write result.
 		case <-joined.C:
 			t.Fatal("blocked outbound producers did not stop after cancellation")
 		}

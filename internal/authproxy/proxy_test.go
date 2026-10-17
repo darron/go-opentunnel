@@ -211,7 +211,7 @@ func TestProxyStreamRevocation(t *testing.T) {
 			ended := make(chan error, 1)
 			go func() { _, e := io.Copy(io.Discard, reader); ended <- e }()
 			select {
-			case <-ended:
+			case <-ended: //nolint:errcheck // Revocation must end the stream; read errors are expected.
 				if time.Since(started) > time.Second {
 					t.Fatal("slow stream revocation")
 				}

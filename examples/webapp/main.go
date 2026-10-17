@@ -32,13 +32,26 @@ func run() error {
 	profile := flag.String("profile", "webapp", "tunnel profile")
 	forward := flag.Bool("forward", false, "forward tunnel traffic to the loopback HTTP listener")
 	localOnly := flag.Bool("local-only", false, "serve only the loopback target; do not create a tunnel")
+	var auth identityConfig
+	flag.StringVar(&auth.PublicKey, "identity-public-key", "", "trusted otgo public-key PEM file (requires --local-only)")
+	flag.StringVar(&auth.Issuer, "identity-issuer", "", "expected otgo public origin, e.g. https://YOUR-HOST.opentunnel.xyz")
+	flag.StringVar(&auth.Audience, "identity-audience", "", "exact backend origin, e.g. http://127.0.0.1:8080")
 	flag.Parse()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprintln(w, "go-opentunnel embedded example") })
-	mux.HandleFunc("/request", requestMetadata)
-	mux.HandleFunc("/stream", stream)
-	mux.HandleFunc("/ws", echo)
-	server := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	// Explicit empty flags must fail closed, rather than selecting public mode.
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "identity-public-key", "identity-issuer", "identity-audience":
+			auth.requested = true
+		}
+	})
+	if auth.enabled() && !*localOnly {
+		return errors.New("identity verification requires --local-only; run otgo proxy separately")
+	}
+	handler, err := newHandler(auth)
+	if err != nil {
+		return err
+	}
+	server := &http.Server{Addr: *addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -71,7 +84,11 @@ func run() error {
 		defer func() { _ = listener.Close() }()
 		errs := make(chan error, 1)
 		go func() { errs <- server.Serve(listener); close(errs) }()
-		defer func() { _ = listener.Close(); _ = server.Close(); <-errs }()
+		defer func() {
+			_ = listener.Close()
+			_ = server.Close()
+			<-errs //nolint:errcheck // Shutdown join; waitConnection handles Serve's result.
+		}()
 		log.Printf("serving handler directly through https://%s", listener.Identity().Hostname)
 		return waitConnection(ctx, errs, listener)
 	}

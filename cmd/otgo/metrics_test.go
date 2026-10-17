@@ -278,7 +278,7 @@ func TestProxySavedMetricsOverrideAndPrivateScrape(t *testing.T) {
 				}
 				cancel()
 				select {
-				case <-done:
+				case <-done: //nolint:errcheck // Only completion matters after cancelling the CLI.
 				case <-time.After(3 * time.Second):
 					t.Fatal("CLI cancellation did not join")
 				}

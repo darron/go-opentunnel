@@ -280,7 +280,7 @@ func TestAggregateInboundOverflowResetsOneChannelAndReleasesSessionBudget(t *tes
 		t.Fatalf("aggregate overflow stopped session: %+v", status)
 	}
 	select {
-	case <-writeDone:
+	case <-writeDone: //nolint:errcheck // Overflow must unblock the writer; its result is not asserted.
 	case <-time.After(6 * time.Second):
 		t.Fatal("overflowed public writer did not stop")
 	}

@@ -4,6 +4,8 @@
 
 These commands do not create a public tunnel.
 
+Use golangci-lint **v2.15.0**, matching the version pinned in CI.
+
 1. Check tests, vet, formatting, lint, and builds:
 
    ```sh
@@ -72,11 +74,20 @@ new crash input for 14 days. These jobs do not create public tunnels.
 ## Check QR codes and signed GitHub identity
 
 ```sh
+go test -race -count=1 ./examples/webapp
 go test -race -count=1 ./identity
 go test -race -count=1 -run 'Test(GitHubIdentity|NonGitHubCredentials|SignedIdentities|IdentityKey)' ./internal/authproxy
 go test -count=1 -run 'Test(ProxyAnnouncementQRCode|QRValidation|AuthPublicKey|AuthVerify)' ./cmd/otgo
 go test -race -count=1 -run '^TestCACertCLIAuthInitAndSavedProxyRestart$' .
 ```
+
+The webapp tests use independently signed assertions with the real verifier.
+They check denial across routes and methods, expired and forged assertions,
+changed request fields, startup configuration errors, verified `/whoami` over
+HTTP, streaming, and real WebSocket denial and echo. An unsigned HTTP check
+preserves the original demonstration mode. These fixtures do not contact GitHub
+or create a public tunnel. For a manual browser check, follow the
+[webapp walkthrough](../examples/webapp/README.md#run-behind-github-authentication).
 
 The OAuth fixture obtains an actual local session from the callback and verifies
 its signed identity at a real HTTP backend. It checks username renames, forged

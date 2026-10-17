@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v0.14.2 — Verified-auth webapp example — 2026-10-17
+
+- Add a runnable webapp mode that verifies signed GitHub identity before every
+  route, including streaming and WebSocket admission. Add `/whoami`, a setup
+  walkthrough, and regression tests for invalid assertions and configuration.
+- Reject expired assertions and incomplete or explicitly empty identity settings
+  in the example's protected mode. Keep the original unauthenticated demo available
+  when identity flags are omitted.
+- Pin CI to golangci-lint v2.15.0; document intentionally ignored error-channel
+  results at shutdown and test-completion joins without disabling lint checks globally.
+
+[Compare v0.14.1 to v0.14.2](https://github.com/darron/go-opentunnel/compare/v0.14.1...v0.14.2)
+
 ## v0.14.1 — Offline identity verification — 2026-10-16
 
 - Add `otgo auth verify` to check an `X-Otgo-Identity` assertion against the
