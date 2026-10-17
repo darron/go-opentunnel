@@ -17,7 +17,7 @@ new optional `identity` package verifies backend assertions with pinned keys.
 | Signing-key lifecycle | Stable offline export, running-proxy export, fingerprint checks, missing/corrupt/unsafe keys, changed backend/stale export metadata, reset and token-file collision checks passed |
 | Terminal output | Independently decoded rendered QR cells match only the public HTTPS URL; JSON remains clean even with forced QR; a compiled test binary under a real PTY passed automatic detection and `TERM=dumb` suppression |
 | Upstream compatibility | Exact pinned v0.5.2 WebSocket codec passed under the Go race detector; commit `9f451413341c502c40c6a55e51cb5ee0a5b60cb1`, source SHA-256 `c55cd51cee51926091202b43a7a7c4cb7dc24e7f1211a377a879610e813025f1` |
-| Sustained fuzzing | All six 45-second targets passed, approximately 9.4 million executions combined; the valid identity seed is refreshed so expiry cannot weaken request-binding coverage |
+| Sustained fuzzing | All six 45-second targets passed; identity fuzzing was repeated with a worker-stable positive control, freshly signed per case so expiry cannot weaken request-binding coverage |
 | Tooling | `govulncheck` found no vulnerabilities; all 18 Python release-tool tests, Actionlint and diff checks passed |
 | API/docs | Go documentation renders, compiling examples pass, and 202 local Markdown file links resolve |
 
@@ -34,6 +34,11 @@ finding or launch blocker. An additional security pass found no remaining
 critical or important issue. Review transcripts remained outside the repository.
 The suggested positive terminal-detection check was added and passed under a PTY.
 The full hosted smoke test also passed again after the fixes, including cleanup.
+A final fuzz-harness check replaced the random serialized seed with a stable
+marker signed inside each worker and required valid requests to succeed. The
+positive control failed before the fixture correction, then passed under race
+and sustained fuzzing; an overlay mutation that rejects every request was also
+caught. Production code was unchanged by this test-only correction.
 
 The public assertion proves profile testimony about a GitHub login. Bodies,
 one-time replay prevention and continuous stream-message identity remain outside

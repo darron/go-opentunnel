@@ -19,14 +19,7 @@ func FuzzVerifyRequest(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	now := time.Now().Truncate(time.Second)
-	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{"iss": "https://demo.test", "aud": "http://127.0.0.1:8000", "sub": "123", "github_login": "fixture-user", "method": "POST", "request_uri_sha256": "KxJrhKRERiROulKshQ-flw4Ibbix0Q5ADx0j3VlzTz4", "iat": now.Unix(), "exp": now.Add(30 * time.Second).Unix(), "jti": "fuzz-fixture"})
-	token.Header["typ"] = "otgo-identity+jwt"
-	encoded, err := token.SignedString(private)
-	if err != nil {
-		f.Fatal(err)
-	}
-	f.Add("POST", "/mcp%2Fstream?a=1&a=2", "127.0.0.1:8000", encoded)
+	f.Add("POST", "/mcp%2Fstream?a=1&a=2", "127.0.0.1:8000", "valid")
 	f.Add("GET", "/other", "other.test", "e30.e30.fake")
 	f.Fuzz(func(t *testing.T, method, uri, host, assertion string) {
 		if len(uri) > 8192 || len(method) > 128 || len(host) > 512 {
@@ -37,9 +30,9 @@ func FuzzVerifyRequest(f *testing.F) {
 			return
 		}
 		wireAssertion := assertion
-		if assertion == encoded {
-			// Keep the valid seed live throughout a sustained run; expiry must not
-			// turn the request-binding checks into unconditional rejection.
+		if assertion == "valid" {
+			// Sign inside each worker. The stable marker survives worker restarts;
+			// fresh timestamps keep the positive control live after 30 seconds.
 			fresh := time.Now().Truncate(time.Second)
 			refreshed := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{"iss": "https://demo.test", "aud": "http://127.0.0.1:8000", "sub": "123", "github_login": "fixture-user", "method": "POST", "request_uri_sha256": requestTargetHash("/mcp%2Fstream?a=1&a=2"), "iat": fresh.Unix(), "exp": fresh.Add(30 * time.Second).Unix(), "jti": "fuzz-fixture"})
 			refreshed.Header["typ"] = "otgo-identity+jwt"
@@ -50,8 +43,13 @@ func FuzzVerifyRequest(f *testing.F) {
 		}
 		r := &http.Request{Method: method, URL: u, RequestURI: uri, Host: host, Header: http.Header{"X-Otgo-Identity": {wireAssertion}, "X-Github-User": {"fixture-user"}, "X-Github-Id": {"123"}}}
 		user, err := VerifyRequest(r, public, VerifyOptions{Issuer: "https://demo.test", Audience: "http://127.0.0.1:8000"})
-		if err == nil && (assertion != encoded || method != "POST" || uri != "/mcp%2Fstream?a=1&a=2" || !strings.EqualFold(host, "127.0.0.1:8000") || user.ID != "123" || user.Login != "fixture-user") {
-			t.Fatalf("forged identity admitted: %+v", user)
+		expected := assertion == "valid" && method == "POST" && uri == "/mcp%2Fstream?a=1&a=2" && strings.EqualFold(host, "127.0.0.1:8000")
+		if (err == nil) != expected {
+			t.Fatalf("request binding: expected valid=%v, error=%v", expected, err)
 		}
+		if err == nil && (user.ID != "123" || user.Login != "fixture-user") {
+			t.Fatalf("wrong identity: %+v", user)
+		}
+
 	})
 }
