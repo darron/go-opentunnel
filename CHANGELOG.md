@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.14.1 — Offline identity verification — 2026-10-16
+
+- Add `otgo auth verify` to check an `X-Otgo-Identity` assertion against the
+  selected profile's pinned key, issuer, backend origin, method and exact path/query.
+  Read assertions through stdin; support human-readable and JSON results with
+  nonzero exit status on failure. Report expired assertions and their issuance and
+  expiration timestamps without failing by default; add `--require-current` for
+  strict checks.
+- Optionally compare the captured `X-GitHub-User` and `X-GitHub-ID` values with
+  signed identity. Clearly distinguish assertion checks from backend enforcement.
+- Keep verification offline and preserve existing signing keys and configuration;
+  reject missing, corrupt, unsafe or mismatched pinned keys.
+- Add diagnostic `identity.InspectRequest` while keeping backend `VerifyRequest`
+  strict about expiration. Add CLI and verifier regression coverage. No tunnel
+  client API, wire protocol or profile-format changes.
+
+[Compare v0.14.0 to v0.14.1](https://github.com/darron/go-opentunnel/compare/v0.14.0...v0.14.1)
+
 ## v0.14.0 — Phone access and signed GitHub identity — 2026-10-16
 
 - Show a scannable public URL QR code after protected proxy startup in interactive

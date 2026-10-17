@@ -68,7 +68,7 @@ func parseAuthFlags(fs *flag.FlagSet, args []string, a *authFlags) error {
 }
 func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Writer) (result error) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "help" {
-		_, e := io.WriteString(out, "Usage: otgo auth <init|github|public-key|paths|reset|token create|token list|token reset|token revoke> [flags]\n")
+		_, e := io.WriteString(out, "Usage: otgo auth <init|github|public-key|verify|paths|reset|token create|token list|token reset|token revoke> [flags]\n")
 		return e
 	}
 	name := args[0]
@@ -81,7 +81,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		args = args[1:]
 	}
 	switch name {
-	case "init", "github", "public-key", "paths", "reset", "token create", "token list", "token reset", "token revoke":
+	case "init", "github", "public-key", "verify", "paths", "reset", "token create", "token list", "token reset", "token revoke":
 	default:
 		return errors.New("unknown auth command")
 	}
@@ -92,6 +92,10 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 	var users nameFlags
 	var clientSecretStdin, noBrowser bool
 	var passwordStdin, generate, replace bool
+	var verify identityVerifyFlags
+	if name == "verify" {
+		verify.bind(fs)
+	}
 	ttl := time.Hour
 	timeout := defaultProvisionTimeout
 	if name == "init" {
@@ -139,6 +143,9 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 	}
 	if name == "public-key" {
 		return runAuthPublicKey(ctx, a, paths, out)
+	}
+	if name == "verify" {
+		return runAuthVerify(ctx, a, paths, verify, in, out)
 	}
 	if name == "github" {
 		if len(users) == 0 {

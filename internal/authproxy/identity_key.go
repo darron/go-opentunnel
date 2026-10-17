@@ -26,6 +26,20 @@ type identityKeyFile struct {
 // every start. A config fingerprint detects key loss or substitution. Callers
 // must not already hold the auth config mutation lock.
 func EnsureIdentityKey(paths Paths, expected Config) (ed25519.PrivateKey, error) {
+	return loadIdentityKey(paths, expected, true)
+}
+
+// LoadIdentityPublicKey reads the existing pinned profile key without creating,
+// replacing or pinning one. It uses the same storage and binding checks as startup.
+func LoadIdentityPublicKey(paths Paths, expected Config) (ed25519.PublicKey, error) {
+	key, err := loadIdentityKey(paths, expected, false)
+	if err != nil {
+		return nil, err
+	}
+	return append(ed25519.PublicKey(nil), key[ed25519.SeedSize:]...), nil
+}
+
+func loadIdentityKey(paths Paths, expected Config, create bool) (ed25519.PrivateKey, error) {
 	var key ed25519.PrivateKey
 	err := WithMutationLock(paths.AuthConfig, func() error {
 		current, err := LoadConfig(paths.AuthConfig)
@@ -37,6 +51,9 @@ func EnsureIdentityKey(paths Paths, expected Config) (ed25519.PrivateKey, error)
 		}
 		if current.Upstream != expected.Upstream {
 			return errors.New("auth backend changed during identity key operation")
+		}
+		if !create && (current.IdentityKeyID == "" || current.IdentityKeyID != expected.IdentityKeyID) {
+			return errors.New("identity key is not pinned or changed; start the GitHub proxy or export its public key first")
 		}
 		path := IdentityKeyPath(paths)
 		_, err = checkPrivateFile(path)

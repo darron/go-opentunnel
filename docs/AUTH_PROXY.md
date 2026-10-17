@@ -219,6 +219,50 @@ storage/API flags as that profile. Keep the private signing file private; the
 public PEM can be shared, but its integrity matters. Never trust a key received
 alongside an incoming request.
 
+### Check an assertion with the CLI
+
+For an offline diagnostic, copy an `X-Otgo-Identity` value and pipe it
+into the verifier. On macOS, with only that header value in the clipboard:
+
+```sh
+pbpaste | otgo auth verify --profile echo \
+  --assertion-stdin --method GET --request-uri /
+```
+
+Assertions expire within 30 seconds. By default, an otherwise valid expired
+assertion still exits zero: the output marks it **EXPIRED** and shows its original
+issuance/expiration timestamps. Add `--require-current` to fail on expiration.
+Future-issued or otherwise invalid assertions always fail. Supply the exact backend method,
+escaped path and raw query, preserving parameter order and encoding; quote targets
+containing `&`.
+The command uses the selected profile's existing pinned key, issuer and backend
+origin. Use the same storage/API flags as the running proxy. It works offline
+while the proxy runs and never creates or replaces a signing key.
+
+To also check the accompanying GitHub header values, supply both:
+
+```sh
+pbpaste | otgo auth verify --profile echo \
+  --assertion-stdin --method GET --request-uri / \
+  --github-user darron --github-id 5176 --json
+```
+
+Success exits zero and prints the verified identity, expected origins,
+issuance/expiration timestamps and current/expired status. `--json` includes `Verified`, `ValidNow`,
+`Identity.IssuedAt`, `Identity.ExpiresAt` and `GitHubHeadersChecked`.
+`Verified: true` means signature and binding checks passed; use `ValidNow` to
+check current validity. An expired assertion is never valid for backend access.
+Failure exits nonzero with an error on stderr and no success output. The command
+never echoes the assertion. Keep it out of shell arguments, history and logs.
+
+Without the two GitHub flags, the command verifies the signed identity but cannot
+compare it with the actual companion headers. It models the profile's configured
+backend Host and TLS scheme; it does not observe the real backend connection,
+authenticate the request body or prevent replay. Enforce identity inside the
+backend with `VerifyRequest`, rather than relying on a successful CLI check.
+
+### Enforce identity in a Go backend
+
 A Go backend can verify before handling any protected request:
 
 ```go

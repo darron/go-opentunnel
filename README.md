@@ -105,6 +105,16 @@ to verify requests. See [signed backend identity](docs/AUTH_PROXY.md#signed-back
 for the trust boundary and an example. Password and machine-token requests do not
 carry GitHub identity.
 
+For a quick offline check, pipe an assertion value into:
+
+```sh
+otgo auth verify --profile inbox --assertion-stdin --method GET --request-uri /
+```
+
+Use the exact backend path/query. Expired assertions show their original issuance/expiration
+timestamps; add `--require-current` to reject them. See [CLI verification](docs/AUTH_PROXY.md#check-an-assertion-with-the-cli)
+for clipboard usage, companion-header checks and JSON output.
+
 ### Machine clients and MCP
 
 Create a short-lived token while the proxy runs:

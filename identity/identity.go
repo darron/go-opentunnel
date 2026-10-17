@@ -39,6 +39,14 @@ type GitHubIdentity struct {
 	AssertionID string
 }
 
+// Inspection is a diagnostic result, not authorization to handle a request.
+// Identity has a valid signature and request binding; ValidNow is false for an
+// expired assertion, whose original validity window remains in Identity.
+type Inspection struct {
+	Identity GitHubIdentity
+	ValidNow bool
+}
+
 type claims struct {
 	jwt.RegisteredClaims
 	Login             string `json:"github_login"`
@@ -73,6 +81,23 @@ func ParsePublicKey(data []byte) (ed25519.PublicKey, error) {
 // It does not authenticate a request body, enforce one-time use, or continuously
 // reauthenticate an established stream. A bad or missing assertion is an error.
 func VerifyRequest(r *http.Request, key ed25519.PublicKey, options VerifyOptions) (GitHubIdentity, error) {
+	return verifyRequest(r, key, options, time.Now(), false)
+}
+
+// InspectRequest checks the same signature, claims and request binding as
+// VerifyRequest, but reports expiration through ValidNow instead of an error.
+// Future-issued and otherwise invalid assertions still fail. Use VerifyRequest
+// for backend access control; this function is for offline diagnostics only.
+func InspectRequest(r *http.Request, key ed25519.PublicKey, options VerifyOptions) (Inspection, error) {
+	now := time.Now()
+	user, err := verifyRequest(r, key, options, now, true)
+	if err != nil {
+		return Inspection{}, err
+	}
+	return Inspection{Identity: user, ValidNow: now.Before(user.ExpiresAt)}, nil
+}
+
+func verifyRequest(r *http.Request, key ed25519.PublicKey, options VerifyOptions, now time.Time, allowExpired bool) (GitHubIdentity, error) {
 	if r == nil || r.URL == nil || r.RequestURI == "" || r.RequestURI != r.URL.RequestURI() || len(key) != ed25519.PublicKeySize || !validOrigin(options.Issuer, true) || !validOrigin(options.Audience, false) {
 		return GitHubIdentity{}, errInvalid
 	}
@@ -91,7 +116,15 @@ func VerifyRequest(r *http.Request, key ed25519.PublicKey, options VerifyOptions
 		}
 	}
 	var c claims
-	token, err := jwt.ParseWithClaims(encoded, &c, func(_ *jwt.Token) (any, error) { return key, nil }, jwt.WithValidMethods([]string{"EdDSA"}), jwt.WithIssuer(options.Issuer), jwt.WithAudience(options.Audience), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithStrictDecoding())
+	parse := func(at time.Time) (*jwt.Token, error) {
+		return jwt.ParseWithClaims(encoded, &c, func(_ *jwt.Token) (any, error) { return key, nil }, jwt.WithValidMethods([]string{"EdDSA"}), jwt.WithIssuer(options.Issuer), jwt.WithAudience(options.Audience), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithStrictDecoding(), jwt.WithTimeFunc(func() time.Time { return at }))
+	}
+	token, err := parse(now)
+	if allowExpired && errors.Is(err, jwt.ErrTokenExpired) && c.ExpiresAt != nil && !now.Before(c.ExpiresAt.Time) {
+		// Recheck every signature/claim at the last instant of the signed window.
+		// Never accept an expiry error alone: it can accompany other JWT errors.
+		token, err = parse(c.ExpiresAt.Add(-time.Nanosecond))
+	}
 	if err != nil || !token.Valid || token.Header["typ"] != "otgo-identity+jwt" || c.IssuedAt == nil || c.ExpiresAt == nil || len(c.Audience) != 1 || c.ID == "" || len(c.ID) > 128 {
 		return GitHubIdentity{}, errInvalid
 	}

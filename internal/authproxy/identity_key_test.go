@@ -151,3 +151,60 @@ func TestResolvePathsRejectsIdentityKeyTokenCollision(t *testing.T) {
 		t.Fatal("accepted token registry at the identity key path")
 	}
 }
+
+// Verification must reject stale snapshots and an existing-but-unpinned key
+// without silently adopting a key or changing either protected file.
+func TestLoadIdentityPublicKeyRejectsStaleOrUnpinnedState(t *testing.T) {
+	for _, mode := range []string{"stale binding", "stale backend", "stale fingerprint", "existing unpinned", "missing key"} {
+		t.Run(mode, func(t *testing.T) {
+			paths := Paths{AuthConfig: filepath.Join(secureTempDir(t), "auth.json")}
+			cfg := fixtureConfig()
+			if err := SaveConfig(paths.AuthConfig, cfg); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := EnsureIdentityKey(paths, cfg); err != nil {
+				t.Fatal(err)
+			}
+			expected, err := LoadConfig(paths.AuthConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "stale binding":
+				expected.Binding.TunnelID = "other"
+			case "stale backend":
+				expected.Upstream = "http://127.0.0.1:9999"
+			case "stale fingerprint":
+				expected.IdentityKeyID = "other"
+			case "existing unpinned":
+				expected.IdentityKeyID = ""
+				if err := SaveConfig(paths.AuthConfig, expected); err != nil {
+					t.Fatal(err)
+				}
+			case "missing key":
+				if err := os.Remove(IdentityKeyPath(paths)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			beforeConfig, err := os.ReadFile(paths.AuthConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeKey, keyErr := os.ReadFile(IdentityKeyPath(paths))
+			if keyErr != nil && !os.IsNotExist(keyErr) {
+				t.Fatal(keyErr)
+			}
+			if _, err := LoadIdentityPublicKey(paths, expected); err == nil {
+				t.Fatal("accepted stale or unpinned signing state")
+			}
+			afterConfig, err := os.ReadFile(paths.AuthConfig)
+			if err != nil || string(beforeConfig) != string(afterConfig) {
+				t.Fatal("changed protected config")
+			}
+			afterKey, afterErr := os.ReadFile(IdentityKeyPath(paths))
+			if string(beforeKey) != string(afterKey) || os.IsNotExist(keyErr) != os.IsNotExist(afterErr) || (afterErr != nil && !os.IsNotExist(afterErr)) {
+				t.Fatal("changed or recreated protected key")
+			}
+		})
+	}
+}

@@ -50,6 +50,10 @@ fields for up to 30 seconds, including after logout. Keep the backend hop on
 loopback or HTTPS, and verify before trusting identity. The signing key is
 separate from the tunnel TLS key; same-account compromise can steal either.
 
+`auth verify` and `identity.InspectRequest` are diagnostics: they can report an
+expired assertion's signed identity and timestamps. They do not authorize access.
+Use `identity.VerifyRequest` in the backend; it always rejects expired assertions.
+
 The setup wizard uses a one-use loopback capability and a browser-bound cookie;
 all its routes use `/__otgo/github/setup`. Cookie-authenticated foreign
 subresources are rejected using browser fetch metadata; normal top-level GET

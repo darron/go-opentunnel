@@ -74,7 +74,7 @@ new crash input for 14 days. These jobs do not create public tunnels.
 ```sh
 go test -race -count=1 ./identity
 go test -race -count=1 -run 'Test(GitHubIdentity|NonGitHubCredentials|SignedIdentities|IdentityKey)' ./internal/authproxy
-go test -count=1 -run 'Test(ProxyAnnouncementQRCode|QRValidation|AuthPublicKey)' ./cmd/otgo
+go test -count=1 -run 'Test(ProxyAnnouncementQRCode|QRValidation|AuthPublicKey|AuthVerify)' ./cmd/otgo
 go test -race -count=1 -run '^TestCACertCLIAuthInitAndSavedProxyRestart$' .
 ```
 
@@ -85,6 +85,15 @@ concurrent users. Password and machine-token requests never assert a GitHub user
 Verifier tests cover changed signatures, keys, algorithms, routing fields, headers,
 issuer/audience and validity dates. Key tests check persistence, concurrent access,
 missing/corrupt/foreign keys, permissions and symlinks.
+
+`TestAuthVerify` runs the CLI dispatcher with independently signed assertions. It
+requires a positive result for a valid assertion, and rejects wrong keys,
+issuer/audience, invalid dates, method, exact target and companion header values.
+Expired assertions report their window, while `--require-current` rejects them;
+backend `VerifyRequest` remains strict. Other
+CLI cases cover HTTPS backends, text/JSON output, bounded stdin, read errors,
+unusable stored keys and unchanged profile files. These are offline diagnostics;
+backend HTTP/TLS enforcement remains covered by the verifier integration tests.
 
 A separate QR implementation decodes pixels reconstructed from the terminal
 output; success requires the exact public URL. CLI subprocess fixtures check QR

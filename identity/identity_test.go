@@ -26,7 +26,7 @@ func TestVerifyRequest(t *testing.T) {
 	claims := func() jwt.MapClaims {
 		return jwt.MapClaims{"iss": "https://demo.test", "aud": "http://127.0.0.1:8000", "sub": "123", "github_login": "renamed-user", "method": "POST", "request_uri_sha256": "b8eGQnLmhYhLCqNleRxy349HRmh6qyswkfd3HNKColQ", "iat": now.Unix(), "exp": now.Add(30 * time.Second).Unix(), "jti": "unique-assertion"}
 	}
-	for _, name := range []string{"valid", "valid https", "altered signature", "wrong key", "wrong issuer", "wrong audience", "https audience on http", "http audience on https", "method", "path", "query order", "raw target mismatch", "host", "duplicate assertion", "duplicate user", "wrong user", "wrong id", "identity trailer", "expired", "future", "missing iat", "missing exp", "long lifetime", "zero lifetime", "wrong algorithm", "wrong type", "bad subject", "bad login", "missing request uri", "missing issuer option", "missing audience option"} {
+	for _, name := range []string{"valid", "valid https", "altered signature", "wrong key", "wrong issuer", "wrong audience", "expired wrong key", "expired wrong issuer", "expired wrong audience", "expired long lifetime", "expired wrong method", "expired wrong target", "expired wrong type", "expired nbf after expiry", "expired delayed nbf", "future nbf", "https audience on http", "http audience on https", "method", "path", "query order", "raw target mismatch", "host", "duplicate assertion", "duplicate user", "wrong user", "wrong id", "identity trailer", "expired", "future", "missing iat", "missing exp", "long lifetime", "zero lifetime", "wrong algorithm", "wrong type", "bad subject", "bad login", "missing request uri", "missing issuer option", "missing audience option"} {
 		t.Run(name, func(t *testing.T) {
 			r := httptest.NewRequestWithContext(t.Context(), "POST", "/mcp%2Fone?a=1&a=2", nil)
 			r.Host = "127.0.0.1:8000"
@@ -37,14 +37,14 @@ func TestVerifyRequest(t *testing.T) {
 			var signingKey any = private
 			typ := "otgo-identity+jwt"
 			switch name {
-			case "wrong key":
+			case "wrong key", "expired wrong key":
 				key, _, err = ed25519.GenerateKey(rand.Reader)
 				if err != nil {
 					t.Fatal(err)
 				}
-			case "wrong issuer":
+			case "wrong issuer", "expired wrong issuer":
 				c["iss"] = "https://other.test"
-			case "wrong audience":
+			case "wrong audience", "expired wrong audience":
 				c["aud"] = "http://127.0.0.1:8001"
 			case "valid https":
 				c["aud"] = "https://127.0.0.1:8000"
@@ -55,9 +55,9 @@ func TestVerifyRequest(t *testing.T) {
 				opts.Audience = "https://127.0.0.1:8000"
 			case "http audience on https":
 				r.TLS = &tls.ConnectionState{HandshakeComplete: true}
-			case "method":
+			case "method", "expired wrong method":
 				r.Method = "GET"
-			case "path":
+			case "path", "expired wrong target":
 				r.URL.Path = "/other"
 				r.URL.RawPath = ""
 			case "raw target mismatch":
@@ -83,7 +83,7 @@ func TestVerifyRequest(t *testing.T) {
 			case "wrong algorithm":
 				method = jwt.SigningMethodHS256
 				signingKey = []byte(public)
-			case "wrong type":
+			case "wrong type", "expired wrong type":
 				typ = "JWT"
 			case "bad subject":
 				c["sub"] = "-1"
@@ -95,6 +95,25 @@ func TestVerifyRequest(t *testing.T) {
 				opts.Issuer = ""
 			case "missing audience option":
 				opts.Audience = ""
+			}
+			if strings.HasPrefix(name, "expired") {
+				c["iat"] = now.Add(-time.Minute).Unix()
+				c["exp"] = now.Add(-30 * time.Second).Unix()
+			}
+			if name == "expired long lifetime" {
+				c["iat"] = now.Add(-time.Hour).Unix()
+			}
+			if name == "expired nbf after expiry" {
+				c["nbf"] = now.Add(-20 * time.Second).Unix()
+			}
+			if name == "expired delayed nbf" {
+				c["nbf"] = now.Add(-40 * time.Second).Unix()
+			}
+			if name == "expired wrong target" {
+				r.RequestURI = r.URL.RequestURI()
+			}
+			if name == "future nbf" {
+				c["nbf"] = now.Add(10 * time.Second).Unix()
 			}
 			token := jwt.NewWithClaims(method, c)
 			token.Header["typ"] = typ
@@ -132,6 +151,19 @@ func TestVerifyRequest(t *testing.T) {
 				}
 			} else if err == nil {
 				t.Fatalf("accepted %s: %+v", name, got)
+			}
+
+			inspected, inspectErr := InspectRequest(r, key, opts)
+			wantInspection := name == "valid" || name == "valid https" || name == "expired" || name == "expired delayed nbf"
+			if (inspectErr == nil) != wantInspection {
+				t.Fatalf("inspection accepted=%v want=%v: %v", inspectErr == nil, wantInspection, inspectErr)
+			}
+			wantExpiry := now.Add(30 * time.Second)
+			if name == "expired" || name == "expired delayed nbf" {
+				wantExpiry = now.Add(-30 * time.Second)
+			}
+			if inspectErr == nil && (inspected.ValidNow != (name != "expired" && name != "expired delayed nbf") || inspected.Identity.ID != "123" || inspected.Identity.Login != "renamed-user" || !inspected.Identity.ExpiresAt.Equal(wantExpiry)) {
+				t.Fatalf("wrong inspection result: %+v", inspected)
 			}
 		})
 	}

@@ -21,6 +21,7 @@ func FuzzVerifyRequest(f *testing.F) {
 	}
 	f.Add("POST", "/mcp%2Fstream?a=1&a=2", "127.0.0.1:8000", "valid")
 	f.Add("GET", "/other", "other.test", "e30.e30.fake")
+	f.Add("POST", "/mcp%2Fstream?a=1&a=2", "127.0.0.1:8000", "expired")
 	f.Fuzz(func(t *testing.T, method, uri, host, assertion string) {
 		if len(uri) > 8192 || len(method) > 128 || len(host) > 512 {
 			return
@@ -30,10 +31,13 @@ func FuzzVerifyRequest(f *testing.F) {
 			return
 		}
 		wireAssertion := assertion
-		if assertion == "valid" {
+		if assertion == "valid" || assertion == "expired" {
 			// Sign inside each worker. The stable marker survives worker restarts;
 			// fresh timestamps keep the positive control live after 30 seconds.
 			fresh := time.Now().Truncate(time.Second)
+			if assertion == "expired" {
+				fresh = fresh.Add(-time.Minute)
+			}
 			refreshed := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{"iss": "https://demo.test", "aud": "http://127.0.0.1:8000", "sub": "123", "github_login": "fixture-user", "method": "POST", "request_uri_sha256": requestTargetHash("/mcp%2Fstream?a=1&a=2"), "iat": fresh.Unix(), "exp": fresh.Add(30 * time.Second).Unix(), "jti": "fuzz-fixture"})
 			refreshed.Header["typ"] = "otgo-identity+jwt"
 			wireAssertion, err = refreshed.SignedString(private)
@@ -49,6 +53,15 @@ func FuzzVerifyRequest(f *testing.F) {
 		}
 		if err == nil && (user.ID != "123" || user.Login != "fixture-user") {
 			t.Fatalf("wrong identity: %+v", user)
+		}
+
+		inspected, inspectErr := InspectRequest(r, public, VerifyOptions{Issuer: "https://demo.test", Audience: "http://127.0.0.1:8000"})
+		wantInspection := (assertion == "valid" || assertion == "expired") && method == "POST" && uri == "/mcp%2Fstream?a=1&a=2" && strings.EqualFold(host, "127.0.0.1:8000")
+		if (inspectErr == nil) != wantInspection {
+			t.Fatalf("inspection binding: expected valid=%v, error=%v", wantInspection, inspectErr)
+		}
+		if inspectErr == nil && (inspected.ValidNow != (assertion == "valid") || inspected.Identity.ID != "123" || inspected.Identity.Login != "fixture-user") {
+			t.Fatalf("wrong inspected identity: %+v", inspected)
 		}
 
 	})

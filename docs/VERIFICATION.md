@@ -1,5 +1,34 @@
 # Local verification record
 
+## v0.14.1 preparation — 2026-10-16
+
+The new offline `auth verify` command checks the selected profile's pinned key
+and the same signed request fields as backend verification. Expired assertions
+report their signed timestamps and `ValidNow: false`; `--require-current` rejects
+them. Backend `identity.VerifyRequest` continues to reject expired assertions.
+The separate diagnostic `identity.InspectRequest` does not authorize access.
+
+| Check | Result |
+| --- | --- |
+| Test-first CLI coverage | Valid assertion tests failed with `unknown auth command` before implementation; the expiry change first failed on expired acceptance and missing current-validity reporting, then passed |
+| `make check build-example` | Full suite, vet, formatting, golangci-lint **0 issues**, CLI and example builds passed |
+| `go test -race ./... -count=1` | All packages passed |
+| CLI and verifier regressions | Current/expired assertions, strict expiry, wrong signatures/keys/issuer/audience/method/escaped target/query, future issuance and not-before, invalid lifetimes, forged companion headers, HTTP/HTTPS, text/JSON, bounded stdin and read errors passed |
+| Stored keys | Missing/unpinned/corrupt/unsafe/foreign/mismatched keys rejected; verification leaves profile config/key bytes unchanged and does not create a missing key |
+| Signed identity/inspection fuzz | 45 seconds, two workers, **2,888,506 executions**, passed with current and expired positive controls and independent request mutations |
+| Vulnerabilities | `govulncheck` v1.9.0: no vulnerabilities found |
+| Release tooling and docs | All 18 Python release-tool tests passed; tracked Markdown relative file links and `git diff --check` passed |
+| Test mutation controls | Temporary Go overlays that misreported expired text or disabled strict expiry each caused the intended regression test to fail; checkout files were unchanged |
+| Independent reviews | Claude and Amp/Oracle found no security blockers; review follow-ups added expired text/strict-error checks, accurate issued-at labeling for later not-before claims, stale-key-state preservation and a signed-target binding regression |
+| Actual captured assertion | The rebuilt executable verified the user's previously captured assertion against the existing local profile, reported expiry in text and JSON, and rejected strict expiry, a changed method and a forged username |
+
+The captured assertion and private profile material are not stored in the repo.
+The command made no service requests, created no public tunnel and did not change
+the running proxy. This patch's live check is cryptographic verification of an
+existing capture, not a new GitHub authorization/browser session. Earlier hosted
+transport and authentication results retain their original release scope below.
+
+
 ## v0.14.0 publication — 2026-10-16
 
 The annotated [v0.14.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.14.0)
