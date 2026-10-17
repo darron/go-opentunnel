@@ -6,7 +6,23 @@ tunnel, or `listener.go` for direct HTTP embedding. `cmd/otgo` and `examples/web
 The module is `github.com/darron/go-opentunnel`, requires Go 1.26 or newer, and
 is MIT licensed. The core client uses `github.com/coder/websocket v1.8.15`.
 The optional `metrics` adapter and CLI use the official Prometheus Go client;
-the root package has no Prometheus imports.
+the root package has no Prometheus imports. Optional `identity/` uses golang-jwt
+with standard-library Ed25519. CLI QR encoding uses go-qrcode and terminal
+recognition uses x/term; gozxing independently decodes rendered QR output in tests.
+
+## Protected proxy identity
+
+`internal/authproxy` owns password/GitHub login, the default-deny proxy, sessions,
+machine tokens and private profile files. `identity_key.go` stores a separate
+per-profile Ed25519 seed and pins its public fingerprint in auth config.
+`identity_transport.go` signs only GitHub browser requests, after URL rewriting
+and hop-header removal. `identity/` exposes the pinned-key backend verifier;
+it has no dependency on auth storage or the tunnel client. See the
+[signed-identity contract](AUTH_PROXY.md#signed-backend-identity).
+
+`cmd/otgo/qr.go` renders the successful proxy announcement. It encodes only the
+public URL, emits a white quiet zone on dark terminals, and suppresses artwork
+for JSON. `auth public-key` exports public PEM without network access.
 
 ## Lifecycle and persistence
 

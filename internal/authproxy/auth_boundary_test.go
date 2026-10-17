@@ -27,7 +27,7 @@ func TestBothAuthModesDenyAnonymousBackendAccess(t *testing.T) {
 			if mode == "github" {
 				cfg.GitHub = GitHubConfig{ClientID: "test-client", ClientSecret: "test-secret", Users: []GitHubAccount{{ID: 123, Login: "allowed"}}}
 			}
-			h, err := NewHandler(Options{Config: cfg})
+			h, err := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -158,12 +158,12 @@ func TestBothAuthModesPreventProtectedResponseCaching(t *testing.T) {
 			if mode == "github" {
 				cfg.GitHub = GitHubConfig{ClientID: "test-client", ClientSecret: "test-secret", Users: []GitHubAccount{{ID: 123, Login: "allowed"}}}
 			}
-			h, err := NewHandler(Options{Config: cfg})
+			h, err := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg)})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer func() { _ = h.Close() }()
-			secret, err := h.sessions.Create(Principal{ID: "123", Mechanism: mode}, time.Hour)
+			secret, err := h.sessions.Create(Principal{ID: "123", Mechanism: mode, GitHubLogin: "allowed"}, time.Hour)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -203,7 +203,7 @@ func TestGitHubCallbackFailuresRemainBehindGate(t *testing.T) {
 			defer backend.Close()
 			cfg := fixtureConfig()
 			cfg.Upstream, cfg.Mode, cfg.GitHub = backend.URL, "github", g.config
-			h, err := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: g})
+			h, err := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg), Sessions: sessions, BrowserAuthenticator: g})
 			if err != nil {
 				t.Fatal(err)
 			}

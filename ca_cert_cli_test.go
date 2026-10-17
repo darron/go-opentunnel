@@ -71,19 +71,81 @@ func TestCACertCLIAuthInitAndSavedProxyRestart(t *testing.T) {
 		t.Fatal("missing machine token")
 	}
 	for attempt := int32(0); attempt < 2; attempt++ {
+		if attempt == 1 {
+			// No provider requests are needed for machine-token access. Exercise
+			// GitHub-mode startup/key creation with the same saved boundary.
+			var configFields map[string]any
+			if err := json.Unmarshal(raw, &configFields); err != nil {
+				t.Fatal(err)
+			}
+			configFields["mode"] = "github"
+			configFields["password"] = map[string]any{}
+			configFields["github"] = map[string]any{"client_id": "fixture-client", "client_secret": "fixture-secret", "users": []map[string]any{{"id": 123, "login": "allowed"}}}
+			encoded, err := json.Marshal(configFields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// #nosec G703 -- Replace only this test's protected config file.
+			if err := os.WriteFile(config, encoded, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
 		func() {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			// No CA flag or variable: startup must use the saved auth config.
+			proxyFlags := []string{"proxy", "--qr=always"}
+			if attempt == 1 {
+				proxyFlags = append(proxyFlags, "--json")
+			}
 			// #nosec G204 -- Only the fixture CLI and test-owned configuration.
-			command := exec.CommandContext(ctx, binary, append([]string{"proxy", "--json"}, flags...)...)
+			command := exec.CommandContext(ctx, binary, append(proxyFlags, flags...)...)
 			command.Env = environment
-			command.Stdout, command.Stderr = io.Discard, io.Discard
+			var output bytes.Buffer
+			command.Stdout, command.Stderr = &output, io.Discard
 			if err := command.Start(); err != nil {
 				t.Fatal(err)
 			}
-			defer func() { cancel(); _ = command.Wait() }()
+			defer func() {
+				cancel()
+				_ = command.Wait()
+				text := output.String()
+				if strings.Contains(text, token.Token) || strings.Contains(text, "test-password-for-fixture") || strings.Contains(text, "fixture-secret") {
+					t.Error("secret in startup output")
+				}
+				if attempt == 0 {
+					if !strings.Contains(text, "protected https://demo.test") || !strings.Contains(text, "\x1b[30;107m") {
+						t.Error("missing startup QR")
+					}
+				} else {
+					if strings.Contains(text, "\x1b[") {
+						t.Error("QR contaminated JSON")
+					}
+					scanner := bufio.NewScanner(strings.NewReader(text))
+					announced := false
+					for scanner.Scan() {
+						var record map[string]any
+						if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+							t.Error(err)
+						}
+						if record["Type"] == "proxy" {
+							announced = true
+						}
+					}
+					if !announced {
+						t.Error("missing JSON proxy announcement")
+					}
+				}
+			}()
 			relay := f.next(t)
+			if attempt == 1 {
+				// Export must work offline while this profile's proxy lock is held.
+				exported := run("auth", "public-key", "--json")
+				var keyMetadata struct{ PublicKey, KeyID string }
+				if err := json.Unmarshal(exported, &keyMetadata); err != nil || !strings.Contains(keyMetadata.PublicKey, "BEGIN PUBLIC KEY") || len(keyMetadata.KeyID) != 64 {
+					t.Fatalf("live key export: %v", err)
+				}
+			}
 			for index, credential := range []string{"", token.Token} {
 				visitor := relay.public(t, uint32(index+1), "demo.test")
 				authorization := ""

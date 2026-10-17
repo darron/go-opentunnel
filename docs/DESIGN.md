@@ -9,6 +9,9 @@ The client uses Go's HTTP, P-256, X.509, TLS, and TCP implementations plus one
 WebSocket dependency. Applications need no Node, Bun, Rust, or background process.
 `otgo` is a consumer of the package. Its optional local metrics listener uses
 the official Prometheus client; the root library does not import Prometheus.
+The optional `identity` subpackage verifies otgo's signed GitHub identity at a
+backend using a pinned public key. It does not change the OpenTunnel protocol;
+see [backend verification](AUTH_PROXY.md#signed-backend-identity).
 
 ## Compatibility baseline
 

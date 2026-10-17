@@ -154,7 +154,7 @@ func WithMutationLock(path string, fn func() error) error { return withFileLock(
 // Reset removes only the known credential files; lock files stay in place.
 func Reset(paths Paths) error {
 	return WithMutationLock(paths.AuthConfig, func() error {
-		for _, path := range []string{paths.AuthConfig, paths.TokenFile} {
+		for _, path := range []string{paths.AuthConfig, paths.TokenFile, IdentityKeyPath(paths)} {
 			if e := withFileLock(path, func() error {
 				if _, e := checkPrivateFile(path); os.IsNotExist(e) {
 					return nil

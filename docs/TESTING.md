@@ -46,11 +46,13 @@ These commands do not create a public tunnel.
    go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
    ```
 
-   Sustained fuzzing runs four protocol/routing targets plus the anonymous auth
-   boundary for 45 seconds each, with two workers. Override `FUZZ_TIME` and
+   Sustained fuzzing runs four protocol/routing targets, the anonymous auth boundary
+   and signed identity verification for 45 seconds each, with two workers. Override `FUZZ_TIME` and
    `FUZZ_PROCS` for a longer bounded run. The auth property is zero backend
    requests without issued credentials; it does not replace OAuth provider,
-   successful-login, TLS, or machine-token lifecycle tests.
+   successful-login, TLS, or machine-token lifecycle tests. Signed-identity fuzzing
+   varies the assertion and routing fields independently; changed fields cannot
+   verify against the pinned key.
 
 Local fixtures use a fake API/relay with real WebSockets, TLS handshakes, and
 generated test certificates. They cover request encoding, redaction,
@@ -66,6 +68,29 @@ for trust boundaries and tested limits. Earlier review decisions are in the
 CI repeats the full suite on Go 1.26 for Linux and macOS. A separate current-Go
 job runs the suite and `govulncheck`; a bounded eight-minute fuzz job saves any
 new crash input for 14 days. These jobs do not create public tunnels.
+
+## Check QR codes and signed GitHub identity
+
+```sh
+go test -race -count=1 ./identity
+go test -race -count=1 -run 'Test(GitHubIdentity|NonGitHubCredentials|SignedIdentities|IdentityKey)' ./internal/authproxy
+go test -count=1 -run 'Test(ProxyAnnouncementQRCode|QRValidation|AuthPublicKey)' ./cmd/otgo
+go test -race -count=1 -run '^TestCACertCLIAuthInitAndSavedProxyRestart$' .
+```
+
+The OAuth fixture obtains an actual local session from the callback and verifies
+its signed identity at a real HTTP backend. It checks username renames, forged
+headers, hop-header nominations, late chunked trailers, uploads, WebSockets and
+concurrent users. Password and machine-token requests never assert a GitHub user.
+Verifier tests cover changed signatures, keys, algorithms, routing fields, headers,
+issuer/audience and validity dates. Key tests check persistence, concurrent access,
+missing/corrupt/foreign keys, permissions and symlinks.
+
+A separate QR implementation decodes pixels reconstructed from the terminal
+output; success requires the exact public URL. CLI subprocess fixtures check QR
+startup, JSON isolation, offline key export while running, restarts, visitor TLS,
+anonymous denial and machine access. These local checks do not create a GitHub App
+or prove live provider behavior.
 
 ## Check setup feedback and transient API retries
 
@@ -412,3 +437,16 @@ This runs on Linux in CI. Ordinary `go test` skips only this optional test unles
 `OTGO_UPSTREAM_WEBSOCKET_FIXTURE` names the built adapter. It is a test of the
 actual upstream codec, not the full Rust server, database, ACME service, or
 hosted deployment version. Hosted behavior is checked separately.
+
+
+To check automatic terminal detection interactively, compile and run the test
+binary directly from a terminal (the normal `go test` runner pipes its output):
+
+```sh
+go test -c -o /tmp/otgo.test ./cmd/otgo
+/tmp/otgo.test -test.run '^TestQRInteractiveTerminal$' -test.v
+```
+
+It checks positive TTY detection, automatic QR output and `TERM=dumb`. It skips
+when no terminal is attached. The regular QR test independently decodes the
+rendered cells and covers JSON, forced output and non-terminal behavior.

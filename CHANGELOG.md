@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v0.14.0 — Phone access and signed GitHub identity — 2026-10-16
+
+- Show a scannable public URL QR code after protected proxy startup in interactive
+  terminals. Add `--qr=auto|always|never`; keep JSON output free of terminal art.
+- Forward verified GitHub usernames and numeric IDs to the backend. Strip forged
+  identity headers and trailers; password and machine-token requests carry no
+  GitHub identity.
+- Add per-profile Ed25519-signed identity assertions bound to the public origin,
+  backend, HTTP method and exact path/query, with at most 30 seconds of validity.
+  Add offline `auth public-key` export and an optional Go `identity` verifier.
+  Detect missing, changed or unsafe stored keys. Request bodies and one-time
+  replay prevention are outside this assertion's scope.
+- Profiles that create a signing key now save `identity_key_id`. Older CLIs reject this new field;
+  rolling back requires restoring the protected pre-upgrade auth config.
+
+[Compare v0.13.0 to v0.14.0](https://github.com/darron/go-opentunnel/compare/v0.13.0...v0.14.0)
+
 ## v0.13.0 — Custom CA trust and upstream compatibility — 2026-10-16
 
 - Add `ClientOptions.CACertFile` and `NewHTTPClientWithCACert` for private or

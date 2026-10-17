@@ -90,7 +90,7 @@ func (p *githubProvider) user(ctx context.Context, token string) (GitHubAccount,
 	if e := p.request(ctx, "GET", p.endpoints.API+"/user", nil, token, &account); e != nil {
 		return account, e
 	}
-	if account.ID <= 0 || account.Login == "" || len(account.Login) > 39 {
+	if account.ID <= 0 || !validGitHubLogin(account.Login) {
 		return GitHubAccount{}, errors.New("invalid GitHub identity")
 	}
 	return account, nil
@@ -248,7 +248,7 @@ func (g *GitHubBrowserAuthenticator) callback(w http.ResponseWriter, r *http.Req
 		http.Error(w, "Account is not allowed", http.StatusForbidden)
 		return
 	}
-	secret, e := g.sessions.Create(Principal{ID: strconv.FormatInt(account.ID, 10), Mechanism: "github"}, sessionLifetime)
+	secret, e := g.sessions.Create(Principal{ID: strconv.FormatInt(account.ID, 10), GitHubLogin: account.Login, Mechanism: "github"}, sessionLifetime)
 	if e != nil {
 		http.Error(w, "Login service busy", http.StatusServiceUnavailable)
 		return

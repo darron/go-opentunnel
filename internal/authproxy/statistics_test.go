@@ -119,7 +119,7 @@ func TestStatisticsRealPasswordAndGitHubLogin(t *testing.T) {
 	cfg := fixtureConfig()
 	cfg.Mode = "github"
 	cfg.GitHub = GitHubConfig{ClientID: "client-id", ClientSecret: "client-secret", Users: []GitHubAccount{{ID: 123, Login: "allowed"}}}
-	gh, e := NewHandler(Options{Config: cfg, Sessions: s, BrowserAuthenticator: g})
+	gh, e := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg), Sessions: s, BrowserAuthenticator: g})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -211,12 +211,12 @@ func TestStatisticsReusedBrowserAuthenticatorsRemainPerHandler(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
-			first, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+			first, e := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg), Sessions: sessions, BrowserAuthenticator: browser})
 			if e != nil {
 				t.Fatal(e)
 			}
 			defer func() { _ = first.Close() }()
-			second, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+			second, e := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg), Sessions: sessions, BrowserAuthenticator: browser})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -261,7 +261,7 @@ func TestStatisticsConcurrentConstructionAndReusedLogin(t *testing.T) {
 				}
 				method, path = "GET", "/__otgo/github/callback"
 			}
-			first, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+			first, e := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg), Sessions: sessions, BrowserAuthenticator: browser})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -279,7 +279,7 @@ func TestStatisticsConcurrentConstructionAndReusedLogin(t *testing.T) {
 			others := make([]*Handler, 0, count)
 			close(start)
 			for range count {
-				h, e := NewHandler(Options{Config: cfg, Sessions: sessions, BrowserAuthenticator: browser})
+				h, e := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg), Sessions: sessions, BrowserAuthenticator: browser})
 				if e != nil {
 					t.Fatal(e)
 				}

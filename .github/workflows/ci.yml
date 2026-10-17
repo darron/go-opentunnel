@@ -89,7 +89,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: stable
-      - name: Fuzz protocol parsers, routing and anonymous authentication boundary
+      - name: Fuzz protocol parsers, routing and authentication boundaries
         run: make fuzz-sustained
       # actions/upload-artifact v4.6.2. Fuzz crashes are written by Go under
       # testdata/fuzz and retained even when the job fails.
@@ -100,5 +100,6 @@ jobs:
           path: |
             testdata/fuzz
             internal/authproxy/testdata/fuzz
+            identity/testdata/fuzz
           if-no-files-found: ignore
           retention-days: 14

@@ -8,9 +8,10 @@ import (
 )
 
 type Principal struct {
-	ID        string    `json:"id"`
-	Mechanism string    `json:"mechanism"`
-	Expires   time.Time `json:"expires"`
+	ID          string    `json:"id"`
+	GitHubLogin string    `json:"github_login,omitempty"`
+	Mechanism   string    `json:"mechanism"`
+	Expires     time.Time `json:"expires"`
 }
 
 var errUnauthorized = errors.New("invalid or expired credential")

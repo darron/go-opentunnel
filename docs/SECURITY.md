@@ -41,6 +41,15 @@ be crowded out by a login flood. These availability limits do not grant access
 to the backend. Connection floods can still exhaust the outer transport limit;
 idle HTTP connections close after 30 seconds. The operator guide specifies lifetimes and MCP compatibility limits.
 
+GitHub requests carry a per-profile Ed25519-signed identity assertion. The
+[backend verification guide](AUTH_PROXY.md#signed-backend-identity) explains
+key pinning and exact request checks. Header stripping includes identity trailers;
+password and machine-token requests carry no GitHub identity. A signature covers
+identity and request routing fields, not the body. It can be replayed for the same
+fields for up to 30 seconds, including after logout. Keep the backend hop on
+loopback or HTTPS, and verify before trusting identity. The signing key is
+separate from the tunnel TLS key; same-account compromise can steal either.
+
 The setup wizard uses a one-use loopback capability and a browser-bound cookie;
 all its routes use `/__otgo/github/setup`. Cookie-authenticated foreign
 subresources are rejected using browser fetch metadata; normal top-level GET

@@ -1,5 +1,49 @@
 # Local verification record
 
+## v0.14.0 preparation — 2026-10-16
+
+Go 1.27.2 on macOS arm64; minimum supported Go remains 1.26. The core client
+API and OpenTunnel wire protocol are unchanged. QR rendering is CLI-only; the
+new optional `identity` package verifies backend assertions with pinned keys.
+
+| Check | Result |
+| --- | --- |
+| `make check build-example` | Full tests, vet, formatting, golangci-lint **0 issues**, CLI and example builds passed after review fixes |
+| `go test -race ./... -count=1` | Full race suite passed after the request-target and key-scope corrections |
+| GitHub identity integration | Fixture OAuth callback, authenticated session, actual backend verification, forged/duplicate/case-varied headers, Connection nominations, late trailers, signed WebSocket admission and concurrent user isolation passed |
+| Credential isolation | Password and machine-token requests carry no GitHub identity; machine-token precedence also tested with a valid GitHub session cookie |
+| Request binding | Wrong key/issuer/audience/Host/TLS scheme/method/path/query, expired/future assertions, duplicate headers and unsupported algorithms rejected; an 8 KiB query verifies without growing the JWT |
+| Raw HTTP parser regression | A signature for `/a%23b` admits that target but rejects `/a#b` and absolute-form aliases parsed by Go's real HTTP parser |
+| Signing-key lifecycle | Stable offline export, running-proxy export, fingerprint checks, missing/corrupt/unsafe keys, changed backend/stale export metadata, reset and token-file collision checks passed |
+| Terminal output | Independently decoded rendered QR cells match only the public HTTPS URL; JSON remains clean even with forced QR; a compiled test binary under a real PTY passed automatic detection and `TERM=dumb` suppression |
+| Upstream compatibility | Exact pinned v0.5.2 WebSocket codec passed under the Go race detector; commit `9f451413341c502c40c6a55e51cb5ee0a5b60cb1`, source SHA-256 `c55cd51cee51926091202b43a7a7c4cb7dc24e7f1211a377a879610e813025f1` |
+| Sustained fuzzing | All six 45-second targets passed, approximately 9.4 million executions combined; the valid identity seed is refreshed so expiry cannot weaken request-binding coverage |
+| Tooling | `govulncheck` found no vulnerabilities; all 18 Python release-tool tests, Actionlint and diff checks passed |
+| API/docs | Go documentation renders, compiling examples pass, and 202 local Markdown file links resolve |
+
+Review fixes were reproduced with failing regressions before implementation:
+require a GitHub signing key, bind stored keys to the backend, reject stale
+export metadata and transport scheme mismatches, and keep token files separate
+from signing keys. Review also exposed long-URL assertion inflation and raw
+request-target aliasing. Assertions now carry a fixed-size SHA-256 target digest;
+the verifier checks the original server request target before hashing it.
+
+Claude's focused confirmation recommended shipping after green gates. Amp
+rechecked the corrected code with Oracle and reported no remaining P0/P1/P2
+finding or launch blocker. An additional security pass found no remaining
+critical or important issue. Review transcripts remained outside the repository.
+The suggested positive terminal-detection check was added and passed under a PTY.
+The full hosted smoke test also passed again after the fixes, including cleanup.
+
+The public assertion proves profile testimony about a GitHub login. Bodies,
+one-time replay prevention and continuous stream-message identity remain outside
+its scope; validity is at most 30 seconds and clocks must be synchronized.
+An HTTPS audience requires TLS at the verifier. New pinned-key config fields
+require a protected pre-upgrade config backup for rollback to an older CLI.
+See [signed identity](AUTH_PROXY.md#signed-backend-identity) for the full contract
+and [live results](LIVE_TESTING.md#v0140-qr-and-identity-regression-check--2026-10-16)
+for hosted checks, cleanup and limits.
+
 ## v0.13.0 publication — 2026-10-16
 
 The annotated [v0.13.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.13.0)

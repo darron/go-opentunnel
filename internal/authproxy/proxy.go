@@ -3,6 +3,7 @@ package authproxy
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"io"
 	"log"
@@ -20,6 +21,7 @@ type Options struct {
 	TokenStore           *TokenStore
 	Sessions             *Sessions
 	BrowserAuthenticator BrowserAuthenticator
+	IdentityKey          ed25519.PrivateKey
 }
 type Handler struct{ *handlerState }
 
@@ -40,6 +42,7 @@ type handlerState struct {
 	wg        sync.WaitGroup
 }
 type connContextKey struct{}
+type principalContextKey struct{}
 
 // WithClientConnection lets the HTTP server abort a blocked client write or a
 // hijacked socket when its credential expires. The value must come from ConnContext.
@@ -112,6 +115,9 @@ func (w *leaseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return c, r, nil
 }
 func NewHandler(o Options) (*Handler, error) {
+	if (o.Config.Mode == "github" || len(o.IdentityKey) != 0) && len(o.IdentityKey) != ed25519.PrivateKeySize {
+		return nil, errors.New("invalid identity signing key")
+	}
 	if e := validateConfig(o.Config); e != nil {
 		return nil, e
 	}
@@ -152,13 +158,22 @@ func NewHandler(o Options) (*Handler, error) {
 	// client cancellation, credential lifetime and handler shutdown instead.
 	h.transport.ResponseHeaderTimeout = 0
 	h.transport.MaxConnsPerHost = 256
-	h.proxy = &httputil.ReverseProxy{Transport: h.transport, FlushInterval: -1, ErrorLog: log.New(io.Discard, "", 0), ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
+	var transport http.RoundTripper = h.transport
+	if o.Config.Mode == "github" && len(o.IdentityKey) != 0 {
+		transport = identityTransport{next: h.transport, key: append(ed25519.PrivateKey(nil), o.IdentityKey...), issuer: h.origin, audience: upstream.Scheme + "://" + upstream.Host}
+	}
+	h.proxy = &httputil.ReverseProxy{Transport: transport, FlushInterval: -1, ErrorLog: log.New(io.Discard, "", 0), ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
 		h.stats.backendErrors.Add(1)
 		http.Error(w, "Upstream unavailable", http.StatusBadGateway)
 	}, Rewrite: func(p *httputil.ProxyRequest) {
 		p.SetURL(upstream)
 		p.Out.Host = upstream.Host
 		stripRequestCredentials(p.Out)
+		principal, _ := p.In.Context().Value(principalContextKey{}).(Principal)
+		if h.config.Mode == "github" && principal.Mechanism == "github" && validGitHubLogin(principal.GitHubLogin) {
+			p.Out.Header.Set("X-GitHub-User", principal.GitHubLogin)
+			p.Out.Header.Set("X-GitHub-ID", principal.ID)
+		}
 		if p.In.Header.Get("Origin") == h.origin {
 			p.Out.Header.Set("Origin", upstream.Scheme+"://"+upstream.Host)
 		}
@@ -202,9 +217,15 @@ func NewHandler(o Options) (*Handler, error) {
 }
 func stripRequestCredentials(r *http.Request) {
 	for key := range r.Header {
-		k := strings.ToLower(key)
-		if k == "forwarded" || k == "x-real-ip" || k == "remote-user" || k == "x-remote-user" || k == "cf-connecting-ip" || k == "true-client-ip" || k == "x-client-ip" || strings.HasPrefix(k, "x-forwarded-") || strings.HasPrefix(k, "x-auth-") || strings.HasPrefix(k, "x-authenticated-") || strings.HasPrefix(k, "x-otgo-") || strings.HasPrefix(k, "x-user") || strings.HasPrefix(k, "x-github-") || strings.HasPrefix(k, "x-goog-authenticated-") || strings.HasPrefix(k, "cf-access-") {
-			r.Header.Del(key)
+		if untrustedIdentityHeader(key) {
+			delete(r.Header, key)
+		}
+	}
+	// Trailer is copied by ReverseProxy before the body is read. Remove names
+	// here so a later body EOF cannot introduce a second identity at the backend.
+	for key := range r.Trailer {
+		if untrustedIdentityHeader(key) || strings.EqualFold(key, "Authorization") || strings.EqualFold(key, "Cookie") {
+			delete(r.Trailer, key)
 		}
 	}
 	fields := strings.Fields(r.Header.Get("Authorization"))
@@ -218,6 +239,11 @@ func stripRequestCredentials(r *http.Request) {
 			r.Header.Add("Cookie", line)
 		}
 	}
+}
+
+func untrustedIdentityHeader(key string) bool {
+	k := strings.ToLower(key)
+	return k == "forwarded" || k == "x-real-ip" || k == "remote-user" || k == "x-remote-user" || k == "cf-connecting-ip" || k == "true-client-ip" || k == "x-client-ip" || strings.HasPrefix(k, "x-forwarded-") || strings.HasPrefix(k, "x-auth-") || strings.HasPrefix(k, "x-authenticated-") || strings.HasPrefix(k, "x-otgo-") || strings.HasPrefix(k, "x-user") || strings.HasPrefix(k, "x-github-") || strings.HasPrefix(k, "x-goog-authenticated-") || strings.HasPrefix(k, "cf-access-")
 }
 
 func stripGateCookies(line string) string {
@@ -305,6 +331,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	_ = controller.SetReadDeadline(time.Time{})
 	h.stats.request("admitted")
+	r = r.WithContext(context.WithValue(r.Context(), principalContextKey{}, c.principal))
 	h.proxy.ServeHTTP(&leaseWriter{ResponseWriter: w, lease: lease}, r)
 }
 func (h *Handler) watch() {

@@ -39,6 +39,7 @@ type GitHubConfig struct {
 	AppURL       string          `json:"app_url,omitempty"`
 }
 type Config struct {
+	IdentityKeyID string           `json:"identity_key_id,omitempty"`
 	CACertFile    string           `json:"ca_cert,omitempty"`
 	MetricsListen string           `json:"metrics_listen,omitempty"`
 	Version       int              `json:"version"`
@@ -51,6 +52,7 @@ type Config struct {
 type diskPassword PasswordVerifier
 type diskGitHub GitHubConfig
 type diskConfig struct {
+	IdentityKeyID string       `json:"identity_key_id,omitempty"`
 	CACertFile    string       `json:"ca_cert,omitempty"`
 	MetricsListen string       `json:"metrics_listen,omitempty"`
 	Version       int          `json:"version"`
@@ -62,10 +64,10 @@ type diskConfig struct {
 }
 
 func toDisk(c Config) diskConfig {
-	return diskConfig{c.CACertFile, c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, diskPassword(c.Password), diskGitHub(c.GitHub)}
+	return diskConfig{c.IdentityKeyID, c.CACertFile, c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, diskPassword(c.Password), diskGitHub(c.GitHub)}
 }
 func fromDisk(c diskConfig) Config {
-	return Config{c.CACertFile, c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, PasswordVerifier(c.Password), GitHubConfig(c.GitHub)}
+	return Config{c.IdentityKeyID, c.CACertFile, c.MetricsListen, c.Version, c.Binding, c.Upstream, c.Mode, PasswordVerifier(c.Password), GitHubConfig(c.GitHub)}
 }
 func (g GitHubConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -141,8 +143,8 @@ func ResolvePaths(profile, tunnelRoot, authConfig, tokenFile string) (Paths, err
 		}
 		*p = v
 	}
-	if authConfig == tokenFile {
-		return Paths{}, errors.New("auth config and token registry must be separate files")
+	if authConfig == tokenFile || authConfig+".identity.json" == tokenFile {
+		return Paths{}, errors.New("auth config, identity key and token registry must be separate files")
 	}
 	return Paths{authConfig, tokenFile, tunnelRoot}, nil
 }

@@ -10,6 +10,7 @@ commands and the shortest working examples.
 | Protect an app with password or GitHub login | [Auth proxy](AUTH_PROXY.md) |
 | Use the otgo mark or check icon attribution | [Artwork](BRAND.md) |
 | Set up saved profiles or run multiple backends | [Profiles and persistence](AUTH_PROXY.md#profiles-and-persistence) |
+| Verify the GitHub user at your backend | [Signed identity](AUTH_PROXY.md#signed-backend-identity) |
 | Give a machine client or MCP endpoint access | [Machine clients and MCP](AUTH_PROXY.md#machine-clients-and-mcp) |
 | Install or update the CLI; maintain release automation | [Homebrew](HOMEBREW.md) |
 | Download verified binaries or publish a release | [Release binaries](RELEASES.md) |

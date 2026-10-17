@@ -2,10 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/ed25519"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -66,6 +65,8 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result
 	a.bind(fs)
 	var runtime runtimeFlags
 	runtime.bind(fs)
+	var qrMode string
+	fs.StringVar(&qrMode, "qr", "auto", "terminal URL QR code: auto, always or never (suppressed with --json)")
 	var timeout time.Duration
 	fs.DurationVar(&timeout, "timeout", 0, "overall proxy lifetime (0 runs until cancelled)")
 	if e := parseAuthFlags(fs, args, &a); e != nil {
@@ -73,6 +74,9 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result
 			return nil
 		}
 		return e
+	}
+	if qrMode != "auto" && qrMode != "always" && qrMode != "never" {
+		return errors.New("qr must be auto, always or never")
 	}
 	if timeout < 0 {
 		return errors.New("timeout must not be negative")
@@ -136,6 +140,13 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result
 			return e
 		}
 		cfg = current
+		var identityKey ed25519.PrivateKey
+		if cfg.Mode == "github" {
+			identityKey, e = authproxy.EnsureIdentityKey(paths, cfg)
+			if e != nil {
+				return e
+			}
+		}
 		caCertFile, e := a.effectiveCACert(cfg.CACertFile)
 		if e != nil {
 			return e
@@ -145,7 +156,7 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result
 			return e
 		}
 		defer func() { _ = client.Close() }()
-		h, e := authproxy.NewHandler(authproxy.Options{Config: cfg, TokenStore: authproxy.NewTokenStore(paths.TokenFile, cfg)})
+		h, e := authproxy.NewHandler(authproxy.Options{Config: cfg, TokenStore: authproxy.NewTokenStore(paths.TokenFile, cfg), IdentityKey: identityKey})
 		if e != nil {
 			return e
 		}
@@ -173,11 +184,7 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result
 		go func() { served <- server.Serve(listener); close(served) }()
 		defer func() { _ = listener.Close(); _ = server.Close(); _ = h.Close(); <-served }()
 		write := &lockedWriter{w: out}
-		if a.json {
-			e = json.NewEncoder(write).Encode(struct{ Type, Profile, Hostname, Upstream, Mode string }{"proxy", a.profile, cfg.Binding.Hostname, cfg.Upstream, cfg.Mode})
-		} else {
-			_, e = fmt.Fprintf(write, "protected https://%s -> %s (profile=%s, auth=%s)\n", terminalText(cfg.Binding.Hostname), terminalText(cfg.Upstream), a.profile, cfg.Mode)
-		}
+		e = writeProxyAnnouncement(write, a.json, a.profile, cfg, qrMode, qrTerminal(out))
 		if e != nil {
 			return e
 		}

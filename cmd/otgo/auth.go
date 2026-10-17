@@ -68,7 +68,7 @@ func parseAuthFlags(fs *flag.FlagSet, args []string, a *authFlags) error {
 }
 func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Writer) (result error) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "help" {
-		_, e := io.WriteString(out, "Usage: otgo auth <init|github|paths|reset|token create|token list|token reset|token revoke> [flags]\n")
+		_, e := io.WriteString(out, "Usage: otgo auth <init|github|public-key|paths|reset|token create|token list|token reset|token revoke> [flags]\n")
 		return e
 	}
 	name := args[0]
@@ -81,7 +81,7 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		args = args[1:]
 	}
 	switch name {
-	case "init", "github", "paths", "reset", "token create", "token list", "token reset", "token revoke":
+	case "init", "github", "public-key", "paths", "reset", "token create", "token list", "token reset", "token revoke":
 	default:
 		return errors.New("unknown auth command")
 	}
@@ -134,8 +134,11 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 		if a.json {
 			return json.NewEncoder(out).Encode(paths)
 		}
-		_, e = fmt.Fprintf(out, "auth config: %s\ntoken registry: %s\ntunnel root: %s\n", terminalText(paths.AuthConfig), terminalText(paths.TokenFile), terminalText(paths.TunnelRoot))
+		_, e = fmt.Fprintf(out, "auth config: %s\nidentity signing key: %s\ntoken registry: %s\ntunnel root: %s\n", terminalText(paths.AuthConfig), terminalText(authproxy.IdentityKeyPath(paths)), terminalText(paths.TokenFile), terminalText(paths.TunnelRoot))
 		return e
+	}
+	if name == "public-key" {
+		return runAuthPublicKey(ctx, a, paths, out)
 	}
 	if name == "github" {
 		if len(users) == 0 {
@@ -301,6 +304,9 @@ func runAuth(ctx context.Context, args []string, in io.Reader, out, errout io.Wr
 				// A missing config can leave an older backend's token registry.
 				// Every initialization establishes a new authorization boundary.
 				if e := authproxy.ResetTokens(paths.TokenFile); e != nil {
+					return e
+				}
+				if e := authproxy.ResetIdentityKey(paths); e != nil {
 					return e
 				}
 				if e := authproxy.SaveConfig(paths.AuthConfig, cfg); e != nil {

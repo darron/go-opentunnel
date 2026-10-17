@@ -34,7 +34,9 @@ go get github.com/darron/go-opentunnel
 Source compatibility starts at Go 1.26. Build production binaries with the latest
 patched release of a [supported Go version](https://go.dev/doc/devel/release#policy).
 The core client uses `github.com/coder/websocket`. The optional metrics adapter
-and otgo use the official Prometheus Go client. Licensed under [MIT](LICENSE).
+and otgo use the official Prometheus Go client. The optional identity verifier
+uses golang-jwt; otgo also uses a QR encoder and terminal detection. These do not
+add dependencies to the core client import. Licensed under [MIT](LICENSE).
 See the [changelog](CHANGELOG.md) for release highlights and the
 [Homebrew guide](docs/HOMEBREW.md) for binary installation and updates.
 
@@ -58,7 +60,10 @@ For private API/relay certificates, use `ClientOptions.CACertFile` or
    otgo proxy --profile inbox
    ```
 
-3. Open the printed HTTPS URL and sign in.
+3. Open the printed HTTPS URL or scan the terminal QR code on your phone, then sign in.
+
+The QR code appears in interactive terminals. Use `--qr=never` to hide it or
+`--qr=always` to force it; `--json` always keeps output machine-readable.
 
 Every backend path requires authentication, including assets, HTTP MCP, SSE and
 WebSockets. **Use `proxy` for protection:** the diagnostic `connect` and `listen`
@@ -91,6 +96,14 @@ Setup tries to open your default browser; the printed link is a fallback. Use
 your profile and a copyable proxy command. It requests no repository
 permissions. Repeat `--allow-user` to approve more accounts. GitHub login replaces
 password login. Existing OAuth/GitHub Apps are also supported.
+
+The backend receives the verified username and numeric ID in `X-GitHub-User` and
+`X-GitHub-ID`, plus a signed `X-Otgo-Identity` assertion. Export the profile's public
+key with `otgo auth public-key --profile inbox` and use the optional
+[`identity` package](https://pkg.go.dev/github.com/darron/go-opentunnel/identity)
+to verify requests. See [signed backend identity](docs/AUTH_PROXY.md#signed-backend-identity)
+for the trust boundary and an example. Password and machine-token requests do not
+carry GitHub identity.
 
 ### Machine clients and MCP
 

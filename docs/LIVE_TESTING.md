@@ -1,5 +1,29 @@
 # Public-service validation
 
+## v0.14.0 QR and identity regression check — 2026-10-16
+
+The rebuilt v0.14.0 CLI passed `scripts/auth_smoke.py` against the hosted
+service using fresh private temporary state. Anonymous methods, paths, MCP and
+discovery were denied with zero backend hits. Password and machine-token access,
+CSRF/origin checks, secure cookies, credential/header stripping, cache controls,
+eight concurrent 2 MiB uploads, corruption handling, restart, logout and two
+profiles with different backends passed. Revocation closed active SSE and
+WebSocket streams in **0.199 seconds** on the first run and **0.279 seconds**
+on the final rebuilt rerun; cross-profile credentials were denied.
+
+All owned processes stopped and local credentials were removed. Authenticated
+API 404 confirmed deletion of both temporary tunnels. Existing profiles and
+running proxies were untouched. No new GitHub App or authorization grant was
+created. GitHub callback-to-session-to-backend identity, signed WebSocket
+admission, trailer attacks and public-key export are covered by local integration
+tests with a fixture provider and real HTTP/TLS transports.
+
+The compiled example app separately passed local root, request metadata,
+incremental streaming and real WebSocket echo checks, then exited cleanly on
+SIGINT. QR output was independently decoded from rendered terminal cells and
+matched only the public HTTPS URL. These checks do not claim a new live GitHub
+browser authorization or a physical phone scan.
+
 ## v0.13.0 custom CA and hosted regression check — 2026-10-16
 
 The rebuilt v0.13.0 CLI passed `scripts/auth_smoke.py` against the hosted service

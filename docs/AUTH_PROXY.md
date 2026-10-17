@@ -2,7 +2,8 @@
 
 `otgo proxy` protects every backend path and method, including assets, HTTP MCP,
 SSE and WebSockets. No backend route inventory is needed. Authentication belongs
-to the CLI; the Go library keeps its existing API.
+to the CLI. The core tunnel API is unchanged; the optional `identity` package
+lets a Go backend verify GitHub identity assertions.
 
 ## Password setup
 
@@ -26,7 +27,12 @@ to the CLI; the Go library keeps its existing API.
    otgo proxy --profile inbox
    ```
 
-3. Open the printed HTTPS URL and sign in.
+3. Open the printed HTTPS URL or scan the QR code in your terminal, then sign in.
+
+The QR contains only the public HTTPS URL; authentication is still required.
+`--qr=auto` is the default and shows it only on an interactive terminal (unless
+`TERM=dumb`). Use `--qr=always` to force it or `--qr=never` to hide it. JSON output
+never includes terminal artwork, even with `--qr=always`.
 
 Browser sessions last eight hours and end on restart. Sign out at
 `/__otgo/logout`. A shared password grants whole-backend access without
@@ -44,11 +50,12 @@ A profile is a name for one saved tunnel, backend and auth configuration.
 Use a different profile for each backend. They can run concurrently on one
 machine; a second proxy for the same profile is refused. Stop that profile's
 proxy before setup, replacement or `auth reset`. Machine-token commands,
-including `auth token reset`, work while it runs.
+including `auth token reset`, and `auth public-key` work while it runs.
 
 | Item | Default path |
 | --- | --- |
 | Auth configuration | `$XDG_CONFIG_HOME/otgo/PROFILE/auth.json`, otherwise `~/.config/otgo/PROFILE/auth.json` |
+| Identity signing key | Beside the auth config: `auth.json.identity.json` |
 | Machine token hashes | `$XDG_DATA_HOME/otgo/PROFILE/tokens.json`, otherwise `~/.local/share/otgo/PROFILE/tokens.json` |
 | Tunnel identity/key/certificate | `$XDG_DATA_HOME/opentunnel/PROFILE/`, otherwise `~/.local/share/opentunnel/PROFILE/` |
 
@@ -99,8 +106,10 @@ by the inventory. The password cannot be recovered from its saved verifier.
 | Remove local auth settings, retaining the tunnel and GitHub App | `otgo auth reset --profile inbox` |
 | Delete the tunnel | `otgo remove --profile inbox` |
 
-Every `auth init` revokes machine tokens, including leftover tokens when the auth
-configuration is missing. Lock files remain to prevent simultaneous lock owners.
+Every `auth init` revokes machine tokens and removes the previous identity signing
+key, including leftover state when the auth configuration is missing. After
+replacing setup, export and pin its new public key. `auth reset` also removes the
+signing key. Lock files remain to prevent simultaneous lock owners.
 
 Auth storage is supported on macOS, Linux and BSD platforms with the required
 file/lock APIs. **Windows authentication setup/startup is refused** until private
@@ -166,6 +175,102 @@ For an existing OAuth/GitHub App, register
 `--client-secret-stdin` with the allowlist. Manage/delete wizard-created Apps using
 the printed settings URL. Cancelled/failed registration retains the previous local
 mode. If creation succeeds but storage fails, the command prints a cleanup URL.
+
+## Signed backend identity
+
+For a GitHub browser session, otgo adds:
+
+```http
+X-GitHub-User: darron
+X-GitHub-ID: 123456
+X-Otgo-Identity: eyJ...
+```
+
+The username comes from GitHub's authenticated `/user` response at login; the
+numeric account ID remains stable across renames. Every visitor-supplied
+`X-GitHub-*` and `X-Otgo-*` header or trailer is removed before forwarding.
+Password and machine-token requests receive none of these identity headers,
+even if a GitHub browser cookie accompanies the machine token. Gate credentials
+and GitHub access tokens are never included in the assertion.
+
+A separate local Ed25519 key signs each request. It is created on first GitHub
+proxy startup or public-key export, stored in the profile's protected auth
+directory, and reused across restarts and tunnel certificate renewals. Its public
+fingerprint is pinned in `auth.json` as `identity_key_id`. A missing, corrupt,
+mismatched or unsafe pinned key stops startup/export; restore the original key
+or explicitly reset authentication and pin the replacement. Do not edit this
+fingerprint or copy signing-key files between profiles. Keys also bind to the
+configured backend; changing that boundary requires explicit auth setup and
+pinning the replacement public key. This new config field is
+not understood by older otgo versions. To roll back, stop the proxy and restore
+its pre-upgrade auth config from a protected backup; retain the signing file for
+when you upgrade again. The tunnel's shared key/certificate format is unchanged.
+
+Export the public key locally, then deploy it as trusted backend configuration:
+
+```sh
+otgo auth public-key --profile inbox > otgo-inbox.pub
+otgo auth public-key --profile inbox --json
+```
+
+The first form writes only PKIX `PUBLIC KEY` PEM; JSON also reports `KeyID`,
+`Issuer` and `Audience`. Both work offline while the proxy runs. Use the same
+storage/API flags as that profile. Keep the private signing file private; the
+public PEM can be shared, but its integrity matters. Never trust a key received
+alongside an incoming request.
+
+A Go backend can verify before handling any protected request:
+
+```go
+pemBytes, err := os.ReadFile("otgo-inbox.pub")
+if err != nil { log.Fatal(err) }
+key, err := identity.ParsePublicKey(pemBytes)
+if err != nil { log.Fatal(err) }
+options := identity.VerifyOptions{
+    Issuer:   "https://YOUR-HOST.opentunnel.xyz",
+    Audience: "http://127.0.0.1:57732",
+}
+http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+    user, err := identity.VerifyRequest(r, key, options)
+    if err != nil {
+        http.Error(w, "GitHub sign-in required", http.StatusUnauthorized)
+        return
+    }
+    fmt.Fprintf(w, "Hello %s (GitHub ID %s)", user.Login, user.ID)
+})
+```
+
+Import `github.com/darron/go-opentunnel/identity` alongside the standard packages.
+The [Go example](https://pkg.go.dev/github.com/darron/go-opentunnel/identity#example-VerifyRequest)
+shows the complete imports. Verify before middleware changes the Host, method,
+escaped path or query. Set audience to the exact backend origin without a trailing
+slash. The verifier checks the actual backend Host and TLS connection, rather
+than trusting forwarded scheme headers. An HTTPS audience requires TLS at the
+verifier; a separate TLS terminator followed by plain HTTP will be rejected.
+Configure any intermediate proxy to preserve all signed request fields.
+The verifier rejects missing, duplicate or mismatched identity headers.
+
+The compact JWT uses EdDSA/Ed25519 and `typ: otgo-identity+jwt`. Treat assertions as short-lived credentials; do not log or share them.
+Claims are `iss`
+(public origin), `aud` (backend origin), `sub` (numeric GitHub ID as a string),
+`github_login`, `method`, `request_uri_sha256` (unpadded base64url SHA-256 of the exact escaped path and query), `iat`,
+`exp` and random `jti`. Expiry is at most 30 seconds after issuance, capped at
+session expiry. Keep backend and proxy clocks synchronized. Other languages can
+use JWT libraries with a locally pinned Ed25519 key, but must enforce all these
+checks, including request/header matching and maximum lifetime.
+
+A backend that requires a valid assertion on every route will reject password and
+machine-token requests: neither identifies a GitHub user. Choose the backend's
+route authorization accordingly; otgo's outer gate still protects every route.
+
+The signature proves that the pinned otgo profile issued this identity assertion.
+It does not sign request bodies or provide one-time use: a captured assertion can
+be replayed for the same request fields until expiry. Protect the backend hop
+with loopback or HTTPS. Logout ends the proxy session and its streams; a previously
+captured assertion remains verifiable until expiry. Verification occurs at stream
+or WebSocket admission, not continuously for each message. A compromised profile
+key can forge assertions, and GitHub identity does not replace backend-specific
+authorization.
 
 ## Machine clients and MCP
 

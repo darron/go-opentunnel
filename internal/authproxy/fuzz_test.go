@@ -23,7 +23,7 @@ func FuzzAnonymousBoundary(f *testing.F) {
 		cfg := fixtureConfig()
 		cfg.Upstream, cfg.Mode = backend.URL, mode
 		cfg.GitHub.Users = []GitHubAccount{{ID: 123, Login: "allowed"}}
-		h, err := NewHandler(Options{Config: cfg})
+		h, err := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(f, cfg)})
 		if err != nil {
 			f.Fatal(err)
 		}

@@ -2,6 +2,8 @@ package authproxy
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"io"
 	"net/http"
@@ -40,7 +42,7 @@ func testHandlerForMode(t *testing.T, upstream http.Handler, mode string) (*Hand
 	}
 	s := NewSessions(1024)
 	tokens := NewTokenStore(filepath.Join(secureTempDir(t), "tokens.json"), cfg)
-	h, err := NewHandler(Options{Config: cfg, Sessions: s, TokenStore: tokens})
+	h, err := NewHandler(Options{Config: cfg, IdentityKey: testIdentityKey(t, cfg), Sessions: s, TokenStore: tokens})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,4 +340,16 @@ func TestOwnedFormReferrerPolicy(t *testing.T) {
 			t.Errorf("%s cannot preserve same-origin forms and hide external referrers: %q", path, got)
 		}
 	}
+}
+
+func testIdentityKey(t testing.TB, cfg Config) ed25519.PrivateKey {
+	t.Helper()
+	if cfg.Mode != "github" {
+		return nil
+	}
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return private
 }
