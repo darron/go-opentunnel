@@ -1,5 +1,31 @@
 # Local verification record
 
+## v0.14.0 publication — 2026-10-16
+
+The annotated [v0.14.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.14.0)
+points to `160589d55ab1c1ff3006500e8d7187636f9ab500`. The release notes are on
+GitHub and the dated entry is in [CHANGELOG.md](../CHANGELOG.md).
+
+| Check | Result |
+| --- | --- |
+| [Final-source CI](https://github.com/darron/go-opentunnel/actions/runs/38998172464) | All five jobs passed before tagging: Linux/macOS tests, Linux race suite, pinned upstream codec, lint, current-Go security checks and six sustained fuzz targets |
+| Independent reviews | Claude and Amp/Oracle confirmed the security/correctness fixes and the final fuzz-harness correction; no remaining release blocker |
+| [Binary publication and dispatch](https://github.com/darron/go-opentunnel/actions/runs/38998547974) | Four archives and five checksum files published after native Linux/macOS checks; automatic Homebrew dispatch succeeded |
+| Downloaded assets | Exactly nine files; all combined/individual SHA-256 checks, exact archive contents/license/modes, embedded release SHA, target and CGO metadata passed |
+| Native downloaded CLI | Reports v0.14.0, full release SHA and clean state; general, proxy, profiles and public-key help checks passed |
+| [Tap update](https://github.com/darron/homebrew-tap/actions/runs/38998690661) | Validation and fresh-runner publication passed; commit `57989ccb2e5458c9fd3611a3ebfa502a31129ce5` updated the binary formula to v0.14.0 |
+| Local Homebrew installation | Upgraded 0.13.0 to 0.14.0 from the release archive; `brew test darron/tap/otgo` passed |
+| Installed/released comparison | Byte-for-byte comparison passed; both macOS arm64 executables have SHA-256 `f9afaaa27617ffb421fcc46bf674113f6e57302b212b52c8889b51909b1ca252` |
+| Public Go module | The public module proxy serves v0.14.0 at the exact release commit, including the optional `identity` package |
+
+The installed binary reports
+`otgo 0.14.0 sha=160589d55ab1c1ff3006500e8d7187636f9ab500 clean`.
+Linux arm64 and macOS amd64 binaries were inspected rather than executed locally;
+native Linux amd64 and macOS arm64 checks passed in the release workflow. Both
+Linux executables are statically linked. Existing profiles and running proxies
+were untouched. Hosted checks and their limits are recorded below and in
+[Live testing](LIVE_TESTING.md#v0140-qr-and-identity-regression-check--2026-10-16).
+
 ## v0.14.0 preparation — 2026-10-16
 
 Go 1.27.2 on macOS arm64; minimum supported Go remains 1.26. The core client
