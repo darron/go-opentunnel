@@ -1,5 +1,29 @@
 # Local verification record
 
+## v0.14.2 publication — 2026-10-17
+
+The annotated [v0.14.2 release](https://github.com/darron/go-opentunnel/releases/tag/v0.14.2)
+points to `0de13c2231322629bc4abd93b73661a018fe208f`. Release notes are on GitHub; the dated
+entry is in [CHANGELOG.md](../CHANGELOG.md).
+
+| Check | Result |
+| --- | --- |
+| [Release-source CI](https://github.com/darron/go-opentunnel/actions/runs/39076015892) | All five jobs passed before tagging: Linux/macOS tests, Linux race suite, pinned upstream codec, v2.15.0 lint, current-Go security checks and six sustained fuzz targets |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/39076406993) | All four jobs passed, including native Linux/macOS checks, asset publication and Homebrew dispatch |
+| Downloaded assets | Exactly nine files; all combined/individual SHA-256 checks, exact archive contents/license/modes, target, revision and CGO metadata passed |
+| Native downloaded CLI | Reports v0.14.2, the full release SHA and clean state; general, proxy, profiles, public-key and offline-verifier help checks passed |
+| [Homebrew update](https://github.com/darron/homebrew-tap/actions/runs/39076556341) | Validation and fresh-runner publication passed; formula commit `0d25356010518e9567e029ad4f0b6cef03bb61ac` matches all four archive checksums and the release SHA |
+| Local Homebrew installation | Upgraded 0.14.1 to 0.14.2 from the release archive; `brew test darron/tap/otgo` passed |
+| Installed/released comparison | Byte-for-byte equality passed; both macOS arm64 executables have SHA-256 `9f50a3dd8a45ae915bf4d7d6e68fafc16e25573ded7ec757e034340f219f766b` |
+| Public Go module | Resolves v0.14.2 to the exact release commit and includes the verified-auth example and walkthrough |
+
+The installed binary reports
+`otgo 0.14.2 sha=0de13c2231322629bc4abd93b73661a018fe208f clean`.
+Linux arm64 and macOS amd64 binaries were inspected rather than executed locally;
+native Linux amd64 and macOS arm64 checks passed in the release workflow. Existing
+profiles were unchanged. The local browser fixture results and their scope are
+recorded in the preparation entry below.
+
 ## v0.14.2 preparation — 2026-10-17
 
 CI now pins golangci-lint **v2.15.0**. Its newer errcheck checks receives from
