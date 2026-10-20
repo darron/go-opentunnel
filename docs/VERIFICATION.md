@@ -1,5 +1,27 @@
 # Local verification record
 
+## v0.14.3 publication — 2026-10-20
+
+The [v0.14.3 release](https://github.com/darron/go-opentunnel/releases/tag/v0.14.3)
+points to `ee32736f3c274e759ba09a7cc8713500aa1f96ba`.
+
+| Check | Result |
+| --- | --- |
+| [Release-source CI](https://github.com/darron/go-opentunnel/actions/runs/39497085555) | All five jobs passed before tagging, including Linux race tests, macOS, lint, vulnerability scanning, the pinned upstream codec and six sustained fuzz targets |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/39497935170) | All four jobs passed, including native Linux/macOS execution and Homebrew dispatch |
+| Downloaded archives | All nine assets verified: combined/individual checksums, exact contents/license/modes, target, full source SHA and `CGO_ENABLED=0`; all four binaries report compiler `go1.27.3` |
+| [Homebrew](https://github.com/darron/homebrew-tap/actions/runs/39498241381) | Validation and publication passed; formula commit `ecd721789dbfce4b666a058c398536c1c45025e1` |
+| Local install | Upgraded 0.14.2 to 0.14.3; `brew test darron/tap/otgo` passed; installed binary matches the release byte for byte and reports `go1.27.3` |
+
+The installed macOS arm64 executable has SHA-256
+`0b38269552ba98d0a058d95f60a4e4314e248af2cdf0682508805c6e6b0eb281`.
+Its version is `otgo 0.14.3 sha=ee32736f3c274e759ba09a7cc8713500aa1f96ba clean`.
+Restart existing otgo processes after upgrading. Embedded applications need their
+own rebuild with a patched compiler; the library module cannot replace a running
+application's standard library. No hosted-service or live GitHub login test was
+needed for this compiler/configuration release.
+
+
 ## v0.14.3 preparation — 2026-10-20
 
 Security rebuild for the Go `crypto/x509` mitigation
