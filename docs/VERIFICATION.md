@@ -1,5 +1,29 @@
 # Local verification record
 
+## v0.15.0 publication — 2026-10-20
+
+The [v0.15.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.15.0)
+points to `767ef153377325ed321fdb2d4a2d0691bfde1c54`.
+
+| Check | Result |
+| --- | --- |
+| [Release-source CI](https://github.com/darron/go-opentunnel/actions/runs/39500189016) | All five jobs passed before tagging: Linux/macOS tests, Linux race tests, lint, vulnerability scanning, exact upstream v0.5.4 codec and six sustained fuzz targets |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/39501053201) | All four jobs passed, including native Linux/macOS checks and Homebrew dispatch |
+| Downloaded archives | All nine assets verified: combined/individual checksums, exact contents/license/modes, targets, full source SHA and `CGO_ENABLED=0`; all four binaries report compiler `go1.27.3` |
+| [Homebrew](https://github.com/darron/homebrew-tap/actions/runs/39501389018) | Validation/publication passed; formula commit `8ecacf517de65b51783b0ece95ca1f9a4fdbd5d9` |
+| Local install | Upgraded 0.14.3 to 0.15.0; `brew test darron/tap/otgo` passed; installed binary matches the release byte for byte |
+
+The installed macOS arm64 executable has SHA-256
+`ea5bcfebfa812568273f5edeef89f880eb389278102a1de1badcd7386eb9f104`.
+Its version is `otgo 0.15.0 sha=767ef153377325ed321fdb2d4a2d0691bfde1c54 clean`.
+
+Restart existing otgo processes after upgrading. Embedded applications need their
+own rebuild with patched Go to update their standard library. The adoption and
+test-scope limits are documented in [UPSTREAM_COMPATIBILITY.md](UPSTREAM_COMPATIBILITY.md);
+no hosted service, personal tunnel or live GitHub login was changed or tested
+for this release.
+
+
 ## v0.15.0 preparation — 2026-10-20
 
 Reviewed the canonical OpenTunnel v0.5.2…v0.5.4 changes. The
