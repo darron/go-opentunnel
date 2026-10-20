@@ -50,14 +50,16 @@ func newSession(x *Connection, r Routes) *session {
 		inboundLimit = int64(x.client.options.MaxInboundTotalBytes)
 	}
 	return &session{
-		owner:          x,
-		routes:         r,
-		ctx:            ctx,
-		cancel:         cancel,
-		channels:       make(map[uint32]*channel),
-		queue:          make(chan outbound, 32),
-		controls:       make(chan outbound, 32),
-		readerControls: make(chan outbound, 32),
+		owner:    x,
+		routes:   r,
+		ctx:      ctx,
+		cancel:   cancel,
+		channels: make(map[uint32]*channel),
+		queue:    make(chan outbound, 32),
+		controls: make(chan outbound, 32),
+		// Allow bursts without blocking the reader or using an unbounded queue.
+		// At capacity, reconnect rather than drop required pongs or resets.
+		readerControls: make(chan outbound, 8192),
 		inboundLimit:   inboundLimit,
 	}
 }
@@ -182,7 +184,7 @@ func (s *session) run() error {
 		s.wg.Wait()
 		s.workers.Wait()
 	}()
-	ws.SetReadLimit(1024 * 1024)
+	ws.SetReadLimit(maxAttachMessage)
 	if ws.Subprotocol() != "opentunnel" {
 		return errors.New("opentunnel: server did not negotiate opentunnel protocol")
 	}
@@ -219,6 +221,7 @@ func (s *session) run() error {
 		}
 	}
 	cancel()
+	ws.SetReadLimit(maxDataPayload + 4)
 	s.attachedAt = time.Now()
 	s.attached.Store(true)
 	s.record(Stats{BridgeAttachments: 1, ActiveBridges: 1})
@@ -287,18 +290,25 @@ func (s *session) run() error {
 }
 func (s *session) writer() {
 	for {
+		if s.ctx.Err() != nil {
+			return
+		}
 		var msg outbound
-		// Teardown controls have reserved capacity and strict priority. Relay
-		// replies share the remaining writer fairly with application data.
+		// Teardown keeps reserved capacity. Relay replies and heartbeats also
+		// precede queued data, so backpressure cannot trap them behind uploads.
 		select {
 		case msg = <-s.controls:
 		default:
 			select {
-			case <-s.ctx.Done():
-				return
-			case msg = <-s.controls:
 			case msg = <-s.readerControls:
-			case msg = <-s.queue:
+			default:
+				select {
+				case <-s.ctx.Done():
+					return
+				case msg = <-s.controls:
+				case msg = <-s.readerControls:
+				case msg = <-s.queue:
+				}
 			}
 		}
 		if e := msg.ctx.Err(); e != nil {
@@ -379,8 +389,10 @@ func (s *session) enqueueControl(m controlMessage) {
 	}
 }
 
-// enqueueReaderControl applies bounded backpressure to the bridge reader. Its
-// separate queue cannot consume the capacity reserved for channel teardown.
+// enqueueReaderControl never waits for the writer: the relay may have stopped
+// reading while waiting for us to receive visitor data. Its bounded queue cannot
+// consume teardown capacity; overflow closes the session instead of deadlocking
+// the reader, silently losing required replies, or growing memory without limit.
 func (s *session) enqueueReaderControl(m controlMessage) {
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -390,6 +402,8 @@ func (s *session) enqueueReaderControl(m controlMessage) {
 	select {
 	case <-s.ctx.Done():
 	case s.readerControls <- outbound{ctx: s.ctx, kind: websocket.MessageText, data: b}:
+	default:
+		s.cancel()
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 const DefaultAPI = "https://opentunnel.xyz"
 
 // Version is this module's protocol client version.
-const Version = "0.14.3"
+const Version = "0.15.0"
 
 var (
 	// ErrClosed reports an operation attempted after its Client, Connection, or Listener was closed.
@@ -234,7 +234,7 @@ type ProvisionOptions struct {
 type ConnectOptions struct {
 	// Profile is a lowercase DNS-label storage name; empty selects "default".
 	Profile string
-	// Routes must include at least one valid route-to-backend mapping.
+	// Routes must include 1 to 128 valid route-to-backend mappings per bridge.
 	Routes Routes
 	// RouteOptions enables local forwarding options for configured route names.
 	// Missing entries forward bytes unchanged. Both maps are copied on entry.
@@ -367,7 +367,7 @@ func (e *APIError) Error() string {
 
 func diagnosticAPITag(tag string) string {
 	switch tag {
-	case "InvalidRequestError", "UnauthorizedError", "TunnelNotFoundError", "CertificateNotFoundError", "InvalidHostnameError", "HostnameUnavailableError", "CertificateInProgressError", "ServiceUnavailableError":
+	case "InvalidRequestError", "UnauthorizedError", "TunnelNotFoundError", "CertificateNotFoundError", "InvalidHostnameError", "HostnameUnavailableError", "CertificateInProgressError", "ServiceUnavailableError", "RateLimitedError":
 		return tag
 	default:
 		return "HttpError"
@@ -388,7 +388,7 @@ func (e *AttachError) Error() string {
 
 func diagnosticAttachCode(code string) string {
 	switch code {
-	case "bad_attach", "bad_token", "tunnel_not_bound", "cert_not_ready", "replaced", "upstream_connect_failed", "upstream_io_error", "client_io_error", "idle_timeout", "route_conflict", "invalid_route", "unknown_route", "too_many_connections":
+	case "bad_attach", "bad_token", "tunnel_not_bound", "cert_not_ready", "replaced", "upstream_connect_failed", "upstream_io_error", "client_io_error", "idle_timeout", "route_conflict", "invalid_route", "unknown_route", "too_many_connections", "too_many_routes":
 		return code
 	default:
 		return "unknown"

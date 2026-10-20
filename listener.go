@@ -13,7 +13,8 @@ type ListenOptions struct {
 	// Profile selects stored credentials; empty selects "default".
 	Profile string
 	// Routes contains "@" for the root hostname or lowercase DNS labels.
-	// At least one initial route is required; duplicate names are invalid.
+	// At least one initial route is required, with at most 128 per bridge;
+	// duplicate names are invalid.
 	Routes []string
 	// Lifetime controls the running listener. Nil uses the client's lifetime.
 	Lifetime context.Context
@@ -116,9 +117,9 @@ func (l *Listener) Err() error { return l.connection.Err() }
 
 // SetRoutes changes accepted SNI names. Name changes reattach asynchronously and
 // abort existing channels. An empty list pauses attachment until routes are added.
-// Invalid or duplicate names return ErrInvalid; overlapping names on this
-// client's same-profile connections return ErrRouteInUse. Names are copied;
-// do not mutate the input slice concurrently with this call.
+// Invalid or duplicate names, or more than 128 names, return ErrInvalid.
+// Overlapping names on this client's same-profile connections return ErrRouteInUse.
+// Names are copied; do not mutate the input slice concurrently with this call.
 func (l *Listener) SetRoutes(names []string) error {
 	routes, err := listenerRoutes(names)
 	if err != nil {
@@ -127,6 +128,9 @@ func (l *Listener) SetRoutes(names []string) error {
 	return l.connection.setRoutes(routes)
 }
 func listenerRoutes(names []string) (Routes, error) {
+	if len(names) > maxRoutesPerBridge {
+		return nil, fmt.Errorf("%w: at most %d routes per bridge", ErrInvalid, maxRoutesPerBridge)
+	}
 	routes := make(Routes, len(names))
 	for _, name := range names {
 		if _, ok := routes[name]; ok {

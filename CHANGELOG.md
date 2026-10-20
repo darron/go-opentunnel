@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v0.15.0 — OpenTunnel v0.5.4 compatibility — 2026-10-20
+
+- Keep bridge reads independent of a stalled writer: prioritize pongs, resets and
+  heartbeats over queued data, retain a separate teardown reserve, and reconnect
+  on bounded control-queue overflow instead of blocking or growing without limit.
+- Enforce bridge message limits of 64 KiB before attachment and 32 KiB plus the
+  channel ID afterward. Existing per-channel/session byte budgets remain in place.
+- Reject more than 128 routes per bridge before provisioning or changing a live
+  configuration. Report `too_many_routes` attachment failures without making them
+  fatal; recognize the service's `RateLimitedError` while preserving safe retries
+  and redacted response diagnostics.
+- Pin the real upstream codec test to v0.5.4 and document which upstream changes
+  apply to the client. Add regression coverage for queue overload/priority,
+  message boundaries/recovery, route limits and admission-limit responses.
+- Retain the Go 1.27.3 security compiler pin from v0.14.3. No profile migration,
+  new Go runtime dependency or authentication change is required.
+
+[Compare v0.14.3 to v0.15.0](https://github.com/darron/go-opentunnel/compare/v0.14.3...v0.15.0)
+
 ## v0.14.3 — Go certificate security update — 2026-10-20
 
 - Rebuild all macOS and Linux release binaries with Go 1.27.3, including the

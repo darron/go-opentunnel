@@ -3,6 +3,7 @@ package opentunnel
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"net"
 	"regexp"
 	"sort"
@@ -13,15 +14,25 @@ import (
 var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 var targetLabel = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
+const (
+	maxRoutesPerBridge = 128
+	maxDataPayload     = 32 * 1024
+	maxAttachMessage   = 64 * 1024
+)
+
 func validRoute(value string) bool   { return value == "@" || dnsLabel.MatchString(value) }
 func validProfile(value string) bool { return dnsLabel.MatchString(value) }
 
 // ValidateRoutes checks route names and host:port targets, returning ErrInvalid
-// for an invalid entry. Targets use a DNS hostname or literal IP and a numeric
-// port from 1 to 65535; URLs and Unix sockets are not accepted.
+// for an invalid entry or more than 128 routes per bridge. Targets use a DNS
+// hostname or literal IP and a numeric port from 1 to 65535; URLs and Unix sockets
+// are not accepted.
 // Nil and empty maps are valid here, although Client.Connect requires an initial
 // route. Validation does not resolve names, dial targets or authorize access.
 func ValidateRoutes(routes Routes) error {
+	if len(routes) > maxRoutesPerBridge {
+		return fmt.Errorf("%w: at most %d routes per bridge", ErrInvalid, maxRoutesPerBridge)
+	}
 	for name, target := range routes {
 		if !validRoute(name) || !validTarget(target) {
 			return ErrInvalid

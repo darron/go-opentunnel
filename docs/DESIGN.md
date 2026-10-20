@@ -15,8 +15,10 @@ see [backend verification](AUTH_PROXY.md#signed-backend-identity).
 
 ## Compatibility baseline
 
-Inspected upstream v0.5.0 commit: `bb81367416c78834e09bca569267cbbae50781fb`.
-Core vectors retain their original source pin; see [provenance](../testdata/vectors/PROVENANCE.md).
+Current client compatibility review: upstream v0.5.4 commit
+`8e6f7ed6da49d524b46ff27d6704879725c40300`. See the
+[upstream review](UPSTREAM_COMPATIBILITY.md) for adopted changes and test scope.
+Core vectors retain their original v0.5.0 source pin; see [provenance](../testdata/vectors/PROVENANCE.md).
 The later server changes through `4b066b2ed40a4e0c325e60c68061599f2151d897`
 add retry diagnostics, observability and transport cleanup without changing the
 client wire protocol. [Observability](OBSERVABILITY.md) explains the client
@@ -106,7 +108,7 @@ When it is nil, stop the tunnel with `Connection.Close` or `Client.Close`.
 Cancelling an explicit lifetime closes `Done` and records the cancellation in
 `Err`.
 
-Initial routes must be nonempty. Once connected, `SetRoutes` can clear them;
+Each bridge accepts at most 128 routes. Initial routes must be nonempty. Once connected, `SetRoutes` can clear them;
 state becomes `waiting-routes` until routes are added.
 
 A client supports multiple profiles and sessions. It may run multiple
@@ -351,11 +353,15 @@ are enforced before allocating channel TLS state. Duplicate IDs abort the
 existing channel rather than silently replacing it.
 
 A single writer uses a 32-message data queue of at most 32 KiB payloads,
-approximately 1 MiB, with separate 32-message reader-reply and teardown-control
-queues. Reader replies wait for their own capacity or session cancellation, so
-healthy bursts apply backpressure. Teardown controls have reserved capacity and
-writer priority; exhausting that reserve cancels rather than dropping controls.
-Heartbeat pings are coalesced and skipped when reader capacity is busy. Logical
+approximately 1 MiB. Reader replies have a separate 8,192-message queue to absorb
+bursts; teardown has a reserved 32-message queue. Neither admission path blocks
+the bridge reader. Overflow closes the session so it can reconnect, rather than
+dropping required replies or allocating an unbounded backlog. Teardown has first
+priority, then reader replies and heartbeats, then queued application data.
+An already-started physical write still finishes or hits its transport timeout.
+Heartbeat pings are coalesced and skipped when reader capacity is busy.
+WebSocket messages are limited to 64 KiB before attachment and 32 KiB plus the
+four-byte channel ID afterward. Logical
 sends have channel cancellation and a finite timeout
 that includes queue admission. Physical WebSocket writes use session cancellation
 and the transport timeout, so canceling one channel does not close the shared

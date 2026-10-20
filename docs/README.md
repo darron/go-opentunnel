@@ -37,6 +37,7 @@ commands and the shortest working examples.
 | [Security and test audit](SECURITY_AUDIT.md) | v0.7.0 hardening, meaningful test checks and compatibility evidence |
 | [Auth security review](AUTH_SECURITY_REVIEW.md) | v0.4.0 password/GitHub findings, fixes and remaining limits |
 | [Verification](VERIFICATION.md) | Dated local checks, CI, release and Homebrew results |
+| [Upstream compatibility](UPSTREAM_COMPATIBILITY.md) | Adopted changes, existing protections and server-only changes |
 | [Live testing](LIVE_TESTING.md) | Dated public-service and browser observations |
 | [Historical reviews](archive/README.md) | Earlier findings and their dispositions |
 

@@ -193,8 +193,9 @@ func (x *Connection) Close() error { x.closeRequested.Store(true); x.cancel(); <
 // SetRoutes clears forwarding options and updates targets for new channels.
 // Name changes reattach asynchronously and close existing channels when the
 // session changes.
-// An empty map pauses attachment. Invalid routes return ErrInvalid; overlapping
-// names on this client's same-profile connections return ErrRouteInUse. The input
+// An empty map pauses attachment. Invalid routes or more than 128 routes return
+// ErrInvalid; overlapping names on this client's same-profile connections return
+// ErrRouteInUse. The input
 // map is copied; do not mutate it concurrently with this call.
 func (x *Connection) SetRoutes(routes Routes) error {
 	return x.SetRoutesWithOptions(routes, nil)

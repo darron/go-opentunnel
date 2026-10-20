@@ -446,8 +446,8 @@ independently verified visitor TLS, CLI flag/environment precedence, saved confi
 and copyable launch commands. No fixture contains a working production key.
 
 The optional compatibility runner requires Rust/Cargo and network access. It
-builds the exact upstream v0.5.2 `websocket.rs` from commit
-`9f451413341c502c40c6a55e51cb5ee0a5b60cb1`, verifies its SHA-256, and connects
+builds the exact upstream v0.5.4 `websocket.rs` from commit
+`8e6f7ed6da49d524b46ff27d6704879725c40300`, verifies its SHA-256, and connects
 our real Go WebSocket client to its Reader/Writer. Text and binary messages span
 0, 1, 125, 126, 32772, 65535, 65536 and 1 MiB; a ping crosses each partial message.
 Four-byte channel IDs and clean close handshakes are checked. Cargo dependencies
@@ -470,3 +470,21 @@ go test -c -o /tmp/otgo.test ./cmd/otgo
 It checks positive TTY detection, automatic QR output and `TERM=dumb`. It skips
 when no terminal is attached. The regular QR test independently decodes the
 rendered cells and covers JSON, forced output and non-terminal behavior.
+
+## Upstream limits and bridge backpressure
+
+```sh
+go test -race -count=1 -run 'Test(ReaderControl|WriterPrioritizes|LiveRelayControlBursts|LiveRejectedOpenBurst|AttachMessageLimit|BridgeMessageLimit|RouteLimit|OversizedRouteUpdate|TooManyRoutes|AdmissionLimit)' .
+```
+
+These tests exercise real WebSocket writer ordering and message boundaries,
+reconnection after an oversized frame, nonblocking control-queue exhaustion,
+5,000-message valid bursts, and reserved teardown capacity. They also check that
+129-route configurations cannot provision tunnels or replace a valid route set,
+and that temporary server limits retain useful diagnostics and recover.
+HTTP admission fixtures check seven total attempts for 429/503 responses with
+`Retry-After: 0`, preserving recognized tags without copying private response text.
+The codec adapter uses a larger test-only read limit to check framing boundaries;
+tunnel-session limits are tested separately by `TestAttachMessageLimitAndRecovery`
+and `TestBridgeMessageLimitAndRecovery`.
+See the [upstream review](UPSTREAM_COMPATIBILITY.md) for applicability.

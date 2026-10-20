@@ -1,5 +1,41 @@
 # Local verification record
 
+## v0.15.0 preparation — 2026-10-20
+
+Reviewed the canonical OpenTunnel v0.5.2…v0.5.4 changes. The
+[adoption record](UPSTREAM_COMPATIBILITY.md) separates client work from server-only
+changes. No public tunnel, personal profile or GitHub App was changed by these checks.
+
+| Check | Result |
+| --- | --- |
+| Compiler | Go 1.27.3; release/CI pins retained from v0.14.3 |
+| `make check build-example` | Full tests, vet, formatting, golangci-lint v2.15.0 and CLI/example builds passed |
+| Complete lint output | `golangci-lint run --max-same-issues 0 --max-issues-per-linter 0 ./...`: 0 issues |
+| Release tooling | All 18 Python tests, `actionlint` and `git diff --check` passed |
+| Vulnerability scan | `govulncheck` v1.9.0 found no vulnerabilities |
+| Native CLI | Built binary reports v0.15.0 and compiler Go 1.27.3 |
+| Race suite | `go test -race -count=1 ./...`: all packages passed |
+| Upstream codec | Exact v0.5.4 Reader/Writer, commit `8e6f7ed6da49d524b46ff27d6704879725c40300`, SHA-256 `c49e727c9cc9b8d8085d32eb70e99004892a4e7f77031fc803ff881a78b988d1`, passed under the Go race detector |
+| New regression coverage | Real WebSocket priority/overload, exact 64 KiB attach and 32 KiB data boundaries, oversize reconnect, route validation/update preservation, retryable `too_many_routes`, and create/bind 429/503 diagnostics |
+| Existing burst coverage | Race-enabled 5,000-control bursts and failed-handshake/teardown interaction passed without reattachment |
+
+The new tests first exposed the previous blocked reader-control admission, queued
+data overtaking pongs, oversized bridge acceptance, route-limit provisioning and
+loss of the new diagnostic tags. The revised behavior passed the focused race
+checks. An independent security/correctness review found no production blockers.
+It identified a boundary-test loophole: a fallback attachment could hide failure
+to accept the exact-size frame. The corrected test requires a matching pong on
+the first attachment and checks the attempt count; ten race-enabled repetitions
+passed. The oversized branch requires close status 1009 and successful replacement
+attachment. A temporary Go overlay restoring the old 1 MiB attach limit made
+that regression fail with the missing oversize close; the source tree was not
+mutated. Ten race-enabled repetitions of the complete new focused group passed.
+
+The newer Rust codec uses `tokio::time`; the locked test adapter now enables that
+feature. This adds no Go runtime dependency. The codec adapter tests framing;
+it does not exercise the complete hosted server, database or CA. Authentication,
+profile formats and identity assertions are unchanged.
+
 ## v0.14.3 publication — 2026-10-20
 
 The [v0.14.3 release](https://github.com/darron/go-opentunnel/releases/tag/v0.14.3)
