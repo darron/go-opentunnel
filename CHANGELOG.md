@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.14.3 — Go certificate security update — 2026-10-20
+
+- Rebuild all macOS and Linux release binaries with Go 1.27.3, including the
+  `crypto/x509` mitigation for CVE-2026-111943. Certificate chains containing the
+  affected intermediate CA keys are rejected by the patched verifier.
+- Pin CI and release builds to Go 1.27.3 and disable automatic toolchain
+  substitution in workflows. Recommend the same compiler for checkout builds.
+- Preserve the Go 1.26 source-compatibility minimum and existing APIs, profiles
+  and OpenTunnel protocol. Library users must rebuild their applications with
+  Go 1.27.3 or another patched, supported Go release to receive the fix.
+
+[Go security advisory](https://github.com/golang/go/issues/82345) ·
+[Compare v0.14.2 to v0.14.3](https://github.com/darron/go-opentunnel/compare/v0.14.2...v0.14.3)
+
 ## v0.14.2 — Verified-auth webapp example — 2026-10-17
 
 - Add a runnable webapp mode that verifies signed GitHub identity before every

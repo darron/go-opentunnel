@@ -67,7 +67,7 @@ Recorded local results are in [VERIFICATION.md](VERIFICATION.md). Read the
 for trust boundaries and tested limits. Earlier review decisions are in the
 [archive](archive/README.md).
 
-CI repeats the full suite on Go 1.26 for Linux and macOS. A separate current-Go
+CI repeats the full suite on pinned Go 1.27.3 for Linux and macOS. A separate security
 job runs the suite and `govulncheck`; a bounded eight-minute fuzz job saves any
 new crash input for 14 days. These jobs do not create public tunnels.
 

@@ -7,12 +7,19 @@ ordinary `connect` and `listen` do not add login protection.
 
 ## Build toolchain
 
+Release binaries and CI pin **Go 1.27.3**, which includes the `crypto/x509`
+mitigation for [CVE-2026-111943](https://github.com/golang/go/issues/82345).
+Upgrade otgo to v0.14.3 or newer. Library users must rebuild their own applications
+with Go 1.27.3 or another patched, supported release; upgrading the module alone
+does not patch the application's standard library. The `toolchain` directive
+selects Go 1.27.3 for this checkout when automatic toolchain selection is enabled.
+
 Use a patched, supported Go release for production builds. The module's Go 1.26
 minimum is a source-compatibility contract; it does not mean that old toolchains
 have current HTTP/TLS security fixes. Go supports a major release until two newer
 major releases exist; see its [release policy](https://go.dev/doc/devel/release#policy).
 Rebuild embedded applications as well as the CLI when updating Go. CI runs
-`govulncheck` on current Go separately from minimum-version compatibility tests.
+`govulncheck` and the full suite on the pinned security-patched toolchain.
 
 ## CLI authentication
 

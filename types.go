@@ -12,7 +12,7 @@ import (
 const DefaultAPI = "https://opentunnel.xyz"
 
 // Version is this module's protocol client version.
-const Version = "0.14.2"
+const Version = "0.14.3"
 
 var (
 	// ErrClosed reports an operation attempted after its Client, Connection, or Listener was closed.

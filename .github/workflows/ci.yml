@@ -8,6 +8,10 @@ name: CI
 permissions:
   contents: read
 
+# Use the selected compiler, without automatic toolchain substitution.
+env:
+  GOTOOLCHAIN: local
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -22,7 +26,7 @@ jobs:
       # actions/setup-go v7.0.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.3'
       - name: Test
         run: go test ./...
       - name: Vet
@@ -52,7 +56,7 @@ jobs:
       # actions/setup-go v7.0.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.3'
       # golangci/golangci-lint-action v9.3.0
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
         with:
@@ -64,7 +68,7 @@ jobs:
           golangci-lint run ./...
 
   current-go:
-    name: Current Go security checks
+    name: Go security checks
     runs-on: ubuntu-latest
     steps:
       # actions/checkout v7.0.1
@@ -72,8 +76,8 @@ jobs:
       # actions/setup-go v7.0.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: stable
-      - name: Test on the current supported Go release
+          go-version: '1.27.3'
+      - name: Test on the pinned security-patched Go release
         run: go test ./...
       - name: Check for reachable known Go vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
@@ -88,7 +92,7 @@ jobs:
       # actions/setup-go v7.0.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: stable
+          go-version: '1.27.3'
       - name: Fuzz protocol parsers, routing and authentication boundaries
         run: make fuzz-sustained
       # actions/upload-artifact v4.6.2. Fuzz crashes are written by Go under

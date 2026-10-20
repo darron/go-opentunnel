@@ -14,10 +14,10 @@ Download the archive for your machine and its matching `.sha256` file. For
 example, on Apple silicon:
 
 ```sh
-gh release download v0.14.2 --repo darron/go-opentunnel \
-  --pattern 'otgo_0.14.2_darwin_arm64.tar.gz*'
-shasum -a 256 --check otgo_0.14.2_darwin_arm64.tar.gz.sha256
-tar -xzf otgo_0.14.2_darwin_arm64.tar.gz
+gh release download v0.14.3 --repo darron/go-opentunnel \
+  --pattern 'otgo_0.14.3_darwin_arm64.tar.gz*'
+shasum -a 256 --check otgo_0.14.3_darwin_arm64.tar.gz.sha256
+tar -xzf otgo_0.14.3_darwin_arm64.tar.gz
 ./otgo version
 install -m 755 otgo /usr/local/bin/otgo
 ```
@@ -44,7 +44,7 @@ executable from these archives; it does not rebuild the source.
    publication verification record after the jobs pass.
 
 The binary workflow resolves the tag to an immutable commit, verifies that the
-source version matches, and builds only `./cmd/otgo` with current patched Go and
+source version matches, and builds only `./cmd/otgo` with the pinned Go 1.27.3 toolchain and
 `CGO_ENABLED=0`. It embeds the verified revision explicitly. It checks native
 Linux and macOS execution before a fresh runner uploads the archives, individual
 checksums and `SHA256SUMS`. The upload job has `contents: write`; build and smoke
@@ -64,7 +64,7 @@ Run from `main` for an already-published stable release:
 
 ```sh
 gh workflow run release-binaries.yml --repo darron/go-opentunnel \
-  --ref main -f tag=v0.14.2
+  --ref main -f tag=v0.14.3
 ```
 
 The workflow uses its own automation revision but builds the requested release's

@@ -1,5 +1,29 @@
 # Local verification record
 
+## v0.14.3 preparation — 2026-10-20
+
+Security rebuild for the Go `crypto/x509` mitigation
+[CVE-2026-111943](https://github.com/golang/go/issues/82345). CI and release builds
+pin Go 1.27.3 with `GOTOOLCHAIN=local`; release packaging also checks the compiler
+version before building. Checkout builds select Go 1.27.3 through the toolchain
+directive. Source compatibility remains Go 1.26; embedding applications must be
+rebuilt with a patched compiler to receive the standard-library fix.
+
+| Check | Result |
+| --- | --- |
+| Local compiler | `go version go1.27.3 darwin/arm64`; CLI build metadata also reports `go1.27.3` |
+| `make check build-example` | Full tests, vet, formatting, golangci-lint v2.15.0 and CLI/example builds passed |
+| Complete lint output | `golangci-lint run --max-same-issues 0 --max-issues-per-linter 0 ./...`: 0 issues |
+| Race suite | `go test -race ./... -count=1`: all packages passed |
+| Release tooling | All 18 Python tests, `actionlint` and `git diff --check` passed |
+| Vulnerability scan | `govulncheck` v1.9.0 on Go 1.27.3 found no vulnerabilities |
+| CLI/example smoke | Built CLI reports v0.14.3; example help and signed-identity options passed |
+
+These checks use local fixtures. No public tunnel, personal profile or GitHub
+login was created or changed. The release changes the compiler and delivery
+configuration, without changing the client API, authentication or wire protocol.
+
+
 ## v0.14.2 publication — 2026-10-17
 
 The annotated [v0.14.2 release](https://github.com/darron/go-opentunnel/releases/tag/v0.14.2)
