@@ -19,6 +19,17 @@ rebuilt with a patched compiler to receive the standard-library fix.
 | Vulnerability scan | `govulncheck` v1.9.0 on Go 1.27.3 found no vulnerabilities |
 | CLI/example smoke | Built CLI reports v0.14.3; example help and signed-identity options passed |
 
+The first Linux CI race pass exposed a fixture ordering bug in
+`TestLifecycleRenewalSaveCannotResurrectRemovedIdentity`: the test published a new
+certificate before arming its Save barrier. A temporary Go overlay forced that
+schedule and reproduced the exact failure. The barrier is now armed while the
+fixture API lock still prevents refresh from observing the replacement. Runtime
+code and the removal/renewal assertions are unchanged. The corrected test passed
+100 race-enabled repetitions. Removing the production profile lock with another
+temporary overlay made the test fail because Remove completed while Save was
+blocked, confirming that the synchronization fix preserves its regression value.
+The full checks and root-package race suite were rerun after this test-only fix.
+
 These checks use local fixtures. No public tunnel, personal profile or GitHub
 login was created or changed. The release changes the compiler and delivery
 configuration, without changing the client API, authentication or wire protocol.

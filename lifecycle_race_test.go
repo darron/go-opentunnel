@@ -85,13 +85,14 @@ func TestLifecycleRenewalSaveCannotResurrectRemovedIdentity(t *testing.T) {
 	f.api.mu.Lock()
 	cert, err := f.api.authority.issue(f.api.csr, 3)
 	if err == nil {
+		// Arm before publishing: refresh can save as soon as the API lock is released.
+		gate.armed.Store(true)
 		f.api.cert = cert
 	}
 	f.api.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate.armed.Store(true)
 	select {
 	case <-gate.entered:
 	case <-time.After(2 * time.Second):

@@ -9,6 +9,8 @@
   affected intermediate CA keys are rejected by the patched verifier.
 - Pin CI and release builds to Go 1.27.3 and disable automatic toolchain
   substitution in workflows. Recommend the same compiler for checkout builds.
+- Fix a renewal race-test setup ordering that could miss its storage barrier
+  under CI scheduling; the runtime locking behavior is unchanged.
 - Preserve the Go 1.26 source-compatibility minimum and existing APIs, profiles
   and OpenTunnel protocol. Library users must rebuild their applications with
   Go 1.27.3 or another patched, supported Go release to receive the fix.
