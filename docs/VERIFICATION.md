@@ -1,5 +1,27 @@
 # Local verification record
 
+## v0.16.2 publication — 2026-10-23
+
+The [v0.16.2 release](https://github.com/darron/go-opentunnel/releases/tag/v0.16.2)
+points to `c5a7893e532f01602c84f0563871a92512244c1e`.
+
+| Check | Result |
+| --- | --- |
+| [Release-source CI](https://github.com/darron/go-opentunnel/actions/runs/40038238503) | All five jobs passed before tagging: Linux/macOS tests, race, lint, vulnerability scan, exact upstream codec and six sustained fuzz targets |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/40038821423) | All four jobs passed, including macOS smoke checks and Homebrew dispatch |
+| Release downloads | All nine assets passed combined/individual SHA-256, exact archive contents/license/modes and target/revision/CGO checks; all four binaries use Go 1.27.3 |
+| Published module | A fresh temporary consumer downloaded v0.16.2 through the public module proxy with checksum verification, compiled the SDK APIs and passed the invalid-proxy fail-closed/redaction check |
+| Compiled CLI | Downloaded and installed executables passed the real OS lock-contention smoke, then acquired the retained lock after its owner exited |
+| [Homebrew](https://github.com/darron/homebrew-tap/actions/runs/40039000857) | Validation and publication passed; formula commit `a70cd4df275ea5cef09d13c37a63c045e1c3e6ff` |
+| Local installation | Upgraded 0.16.1 to 0.16.2; `brew test darron/tap/otgo` passed; installed executable equals the downloaded release binary byte for byte |
+
+The installed macOS arm64 executable has SHA-256
+`454281683cf7e3ac5a6386c6022cf0c002feea34889f560f4bc8b137830e5433`.
+Its version is `otgo 0.16.2 sha=c5a7893e532f01602c84f0563871a92512244c1e clean`.
+No existing profile was changed. Restart running otgo processes to use the update;
+embedded applications need their own rebuild. Hosted checks and cleanup are
+recorded in [LIVE_TESTING.md](LIVE_TESTING.md#v0162-outbound-proxy-regression-check--2026-10-23).
+
 ## v0.16.2 preparation — 2026-10-23
 
 Reviewed upstream v0.6.1 and added consistent outbound proxy policy and safe
