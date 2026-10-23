@@ -13,8 +13,8 @@ import (
 	"github.com/darron/go-opentunnel"
 )
 
-func listen(ctx context.Context, client *opentunnel.Client, profile string, names []string, asJSON bool, out io.Writer) error {
-	listener, err := client.Listen(ctx, opentunnel.ListenOptions{Profile: profile, Routes: names, Lifetime: ctx})
+func listen(ctx context.Context, client *opentunnel.Client, profile string, names []string, policy opentunnel.RouteConflictPolicy, asJSON bool, out io.Writer) error {
+	listener, err := client.Listen(ctx, opentunnel.ListenOptions{Profile: profile, Routes: names, Lifetime: ctx, OnRouteConflict: policy})
 	if err != nil {
 		return err
 	}

@@ -446,8 +446,8 @@ independently verified visitor TLS, CLI flag/environment precedence, saved confi
 and copyable launch commands. No fixture contains a working production key.
 
 The optional compatibility runner requires Rust/Cargo and network access. It
-builds the exact upstream v0.5.4 `websocket.rs` from commit
-`8e6f7ed6da49d524b46ff27d6704879725c40300`, verifies its SHA-256, and connects
+builds the exact upstream v0.6.0 `websocket.rs` from commit
+`c23b162409425a800245245b445a4230f6346429`, verifies its SHA-256, and connects
 our real Go WebSocket client to its Reader/Writer. Text and binary messages span
 0, 1, 125, 126, 32772, 65535, 65536 and 1 MiB; a ping crosses each partial message.
 Four-byte channel IDs and clean close handshakes are checked. Cargo dependencies
@@ -488,3 +488,22 @@ The codec adapter uses a larger test-only read limit to check framing boundaries
 tunnel-session limits are tested separately by `TestAttachMessageLimitAndRecovery`
 and `TestBridgeMessageLimitAndRecovery`.
 See the [upstream review](UPSTREAM_COMPATIBILITY.md) for applicability.
+
+## SDK startup and profile reuse
+
+```sh
+go test -race -count=10 -run 'Test(PublicURLAndRouteNames|ConnectionURLSnapshots|RouteConflict|InvalidConflict|EventObserver|EnsureProgress|ListenerURLs)' .
+go test -race -count=10 -run 'Test(CommandConflictFailReachesRelay|EnsureCommandProgressAndJSONSilence|RouteConflictFlags)' ./cmd/otgo
+```
+
+Real relay fixtures check retry versus fail on both Connect and Listen, conflict
+on reconnect, cleanup of failed startup claims, and events before startup returns.
+Observer tests check serialized calls, copied route slices, delivery when the
+channel is full, safe Status reads, and shutdown waiting for the final callback.
+URL tests cover updates, independent maps, invalid URL components and DNS lengths.
+CLI relay fixtures verify valid conflict flags reach both connection APIs; an
+ensure command fixture checks progress and JSON output. Ensure tests cover new,
+reused, replaced and failed certificate state, persistence,
+progress order and cancellation. Existing startup/Lifetime cancellation tests
+continue to check Go's separate lifetime contract. These are local fixtures;
+use the [public-service record](LIVE_TESTING.md) for hosted test results.

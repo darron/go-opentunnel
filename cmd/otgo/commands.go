@@ -141,6 +141,16 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 	var proxyProtocols proxyProtocolFlags
 	var listenNames nameFlags
 	var interactive bool
+	policy := opentunnel.RouteConflictRetry
+	if name == "connect" || name == "listen" {
+		fs.Func("on-route-conflict", "retry (default) or fail when relay routes are in use", func(value string) error {
+			if value != string(opentunnel.RouteConflictRetry) && value != string(opentunnel.RouteConflictFail) {
+				return errors.New("on-route-conflict must be retry or fail")
+			}
+			policy = opentunnel.RouteConflictPolicy(value)
+			return nil
+		})
+	}
 	if name == "create" || name == "resume" || name == "ensure" {
 		fs.DurationVar(&timeout, "timeout", defaultProvisionTimeout, "overall provisioning timeout (0 disables it)")
 	}
@@ -253,7 +263,7 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 		case "resume":
 			identity, err = client.Resume(commandCtx, common.profile, options)
 		default:
-			identity, err = client.Ensure(commandCtx, common.profile)
+			identity, err = client.EnsureWithOptions(commandCtx, common.profile, options)
 		}
 		if err := progressErr(); err != nil {
 			return err
@@ -264,9 +274,9 @@ func runNamed(ctx context.Context, name string, args []string, in io.Reader, out
 		return printPointer(write, common.json, identity, nil)
 	}
 	if name == "listen" {
-		return listen(commandCtx, client, common.profile, listenNames, common.json, write)
+		return listen(commandCtx, client, common.profile, listenNames, policy, common.json, write)
 	}
-	return connect(commandCtx, client, common.profile, routes, proxyProtocols, interactive, common.json, in, write, writeErr)
+	return connect(commandCtx, client, common.profile, routes, proxyProtocols, policy, interactive, common.json, in, write, writeErr)
 }
 
 func provisionProgressReporter(errout io.Writer) (func(opentunnel.ProvisionStage), func() error) {
@@ -374,7 +384,7 @@ func parseRoute(value string) (string, string, error) {
 	return name, target, nil
 }
 
-func connect(ctx context.Context, client *opentunnel.Client, profile string, values routeFlags, proxyProtocols proxyProtocolFlags, interactive, asJSON bool, in io.Reader, out, errout io.Writer) error {
+func connect(ctx context.Context, client *opentunnel.Client, profile string, values routeFlags, proxyProtocols proxyProtocolFlags, policy opentunnel.RouteConflictPolicy, interactive, asJSON bool, in io.Reader, out, errout io.Writer) error {
 	routes, err := values.routes()
 	if err != nil {
 		return err
@@ -386,7 +396,7 @@ func connect(ctx context.Context, client *opentunnel.Client, profile string, val
 	if err != nil {
 		return err
 	}
-	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: profile, Routes: routes, RouteOptions: options, Lifetime: ctx})
+	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: profile, Routes: routes, RouteOptions: options, Lifetime: ctx, OnRouteConflict: policy})
 	if err != nil {
 		return err
 	}

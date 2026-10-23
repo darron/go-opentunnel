@@ -15,8 +15,8 @@ see [backend verification](AUTH_PROXY.md#signed-backend-identity).
 
 ## Compatibility baseline
 
-Current client compatibility review: upstream v0.5.4 commit
-`8e6f7ed6da49d524b46ff27d6704879725c40300`. See the
+Current client compatibility review: upstream v0.6.0 commit
+`c23b162409425a800245245b445a4230f6346429`. See the
 [upstream review](UPSTREAM_COMPATIBILITY.md) for adopted changes and test scope.
 Core vectors retain their original v0.5.0 source pin; see [provenance](../testdata/vectors/PROVENANCE.md).
 The later server changes through `4b066b2ed40a4e0c325e60c68061599f2151d897`
@@ -53,7 +53,7 @@ Go methods map directly to the upstream SDK operations.
 | --- | --- |
 | `tunnel.create(options)` | `Client.Create(ctx, profile, provisionOptions)` |
 | `tunnel.resume(options)` | `Client.Resume(ctx, profile, provisionOptions)` |
-| `tunnel.ensure(options)` | `Client.Ensure(ctx, profile)` |
+| `tunnel.ensure(options)` | `Client.Ensure(ctx, profile)` or `EnsureWithOptions(ctx, profile, provisionOptions)` |
 | `tunnel.remove(options)` | `Client.Remove(ctx, profile)` |
 | `dispose()` | `Client.Close()` |
 
@@ -69,10 +69,37 @@ Go methods map directly to the upstream SDK operations.
 
 | TypeScript operation | Go operation |
 | --- | --- |
+| `connection.urls` | `Connection.URLs()` or `Listener.URLs()` |
 | `connection.tunnel` | `Connection.Identity()` |
 | `connection.events` | `Connection.Events()` |
 | `connection.status()` | `Connection.Status()` |
 | `connection.closed` | `Connection.Done()` and `Connection.Err()` |
+
+### Startup observation and conflicts
+
+Set `OnEvent` in `ConnectOptions` or `ListenOptions` to receive events before
+startup returns and throughout the connection's lifetime. Calls are serialized,
+synchronous and independent of the bounded `Events()` channel. Route slices are
+copied for the callback. A slow observer delays package workers; return promptly.
+Do not call `Client.Close`, `Connection.Close` or `Listener.Close` inside it:
+those methods wait for the callback. Cancel a lifetime/startup context instead.
+Read-only snapshots such as `Status()` are safe. `Done()` joins callbacks too.
+
+`OnRouteConflict` accepts zero/`RouteConflictRetry` (retry with backoff) or
+`RouteConflictFail` (stop with `*AttachError`, code `route_conflict`). It applies
+both to initial attachment and later reconnects. Each relay conflict emits
+`route-conflict` with all attempted route names in sorted order; the server does
+not say which name conflicted. In-process overlaps still return `ErrRouteInUse`.
+
+`URLs()` returns a fresh map that follows configured routes immediately, including
+updates awaiting attachment. It is not a readiness check. `RootRoute` is `"@"`;
+`RouteLabelPattern` and `IsValidRouteName` expose the route-name rules. `PublicURL`
+validates the route and DNS hostname, then returns an HTTPS URL without connecting.
+
+`EnsureWithOptions` reports `checking-certificate` for a completed stored identity,
+`saving-identity` if the remote certificate changed, and `ready` on success.
+New provisioning and pending/failed issuance use the existing progress stages.
+`Ensure` retains its original signature and behavior without callbacks.
 
 ### Inputs and results
 

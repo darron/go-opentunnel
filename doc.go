@@ -43,6 +43,11 @@
 // Connections retry transient bridge failures. Use [Connection.Status] or
 // [Listener.Status] for snapshots. Events are bounded and lossy; inspect
 // DroppedEvents in [Status] rather than assuming every transition was delivered.
+// Set OnEvent in [ConnectOptions] or [ListenOptions] to observe startup and running
+// events synchronously; callbacks must return promptly and must not close their
+// owners. Set OnRouteConflict to [RouteConflictFail] for a fatal route conflict;
+// the default retries. [Connection.URLs] and [Listener.URLs] return configured URLs.
+// [PublicURL] builds a URL without connecting; [IsValidRouteName] validates names.
 // Wait for Done before reading the final Err. Resource bounds and timeout
 // defaults are documented in [TransportOptions].
 //
@@ -63,7 +68,8 @@
 // Low-level API responses, including [CreateTunnelResponse], are not redacted.
 //
 // [Client.Get], [Client.Pending] and [Client.Resume] return (nil, nil) when no
-// matching local identity exists. Interrupted provisioning may leave a pending
+// matching local identity exists. Use [Client.EnsureWithOptions] to observe
+// provisioning or certificate checks while reusing an identity. Interrupted provisioning may leave a pending
 // identity that Resume can finish or Remove can delete. If both persistence and
 // remote cleanup fail, use errors.As to inspect [ProvisioningError] and securely
 // recover or delete its Pending identity. Use errors.Is for package sentinel

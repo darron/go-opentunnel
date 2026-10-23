@@ -18,6 +18,11 @@ type ListenOptions struct {
 	Routes []string
 	// Lifetime controls the running listener. Nil uses the client's lifetime.
 	Lifetime context.Context
+	// OnRouteConflict has the same default and behavior as ConnectOptions.OnRouteConflict.
+	OnRouteConflict RouteConflictPolicy
+	// OnEvent observes startup and running events as in ConnectOptions.OnEvent.
+	// It must return promptly and must not synchronously close its owners.
+	OnEvent func(Event)
 }
 
 // Listener accepts locally terminated visitor TLS without a loopback backend.
@@ -47,7 +52,7 @@ func (c *Client) Listen(ctx context.Context, o ListenOptions) (*Listener, error)
 		return nil, fmt.Errorf("%w: at least one initial route is required", ErrInvalid)
 	}
 	l := &Listener{pending: make(chan *tls.Conn, c.options.MaxConnections)}
-	x, err := c.connect(ctx, ConnectOptions{Profile: o.Profile, Routes: routes, Lifetime: o.Lifetime}, l)
+	x, err := c.connect(ctx, ConnectOptions{Profile: o.Profile, Routes: routes, Lifetime: o.Lifetime, OnRouteConflict: o.OnRouteConflict, OnEvent: o.OnEvent}, l)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +109,9 @@ func (l *Listener) Identity() Identity { return l.connection.Identity() }
 // Status returns a snapshot. Routes maps claimed names to empty strings because
 // listener routes have no backend targets.
 func (l *Listener) Status() Status { return l.connection.Status() }
+
+// URLs returns a fresh map of configured route names to HTTPS URLs, as in Connection.URLs.
+func (l *Listener) URLs() map[string]string { return l.connection.URLs() }
 
 // Events returns bounded, lossy lifecycle events. Repeated calls return the same
 // channel; multiple readers divide events. It closes with Done.

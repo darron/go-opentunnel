@@ -36,7 +36,7 @@ func ExampleClient_Connect() {
 
 	// Releasing startup after attachment does not stop the running tunnel.
 	cancelStartup()
-	fmt.Println("https://" + connection.Identity().Hostname)
+	fmt.Println(connection.URLs()[opentunnel.RootRoute])
 	<-connection.Done() // Ctrl-C cancels lifetime and stops the tunnel.
 	if err := connection.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -112,4 +112,16 @@ func ExampleNewMemoryStorage() {
 		fmt.Println(identity.Hostname)
 	}
 	// Output: demo.opentunnel.xyz
+}
+
+func ExamplePublicURL() {
+	url, err := opentunnel.PublicURL("api", "demo.opentunnel.xyz")
+	if err != nil {
+		return
+	}
+	fmt.Println(url)
+	fmt.Println(opentunnel.IsValidRouteName(opentunnel.RootRoute))
+	// Output:
+	// https://api.demo.opentunnel.xyz
+	// true
 }

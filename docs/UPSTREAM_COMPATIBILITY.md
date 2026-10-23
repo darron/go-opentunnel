@@ -1,10 +1,43 @@
 # Upstream compatibility
 
-Reviewed OpenTunnel v0.5.3 and v0.5.4 against our previous v0.5.2 baseline on
-2026-10-20. The current source pin is
-[`8e6f7ed6da49d524b46ff27d6704879725c40300`](https://github.com/anomalyco/opentunnel/tree/8e6f7ed6da49d524b46ff27d6704879725c40300).
-The [upstream comparison](https://github.com/anomalyco/opentunnel/compare/v0.5.2...v0.5.4)
-contains both client and server work.
+Reviewed OpenTunnel v0.5.5 and v0.6.0 against our v0.5.4 baseline on 2026-10-22.
+Current source pin:
+[`c23b162409425a800245245b445a4230f6346429`](https://github.com/anomalyco/opentunnel/tree/c23b162409425a800245245b445a4230f6346429).
+See the [upstream comparison](https://github.com/anomalyco/opentunnel/compare/v0.5.4...v0.6.0).
+
+## Adopted in v0.16.0
+
+| Upstream change | Go client behavior |
+| --- | --- |
+| Opt-in fatal route conflicts | `OnRouteConflict: RouteConflictFail` on Connect/Listen stops with a typed `AttachError` on startup or reconnect. The default still retries. |
+| Startup events | `OnEvent` observes every lifecycle event, including startup. Calls are synchronous and serialized; callbacks receive their own route slice. The existing bounded event channel remains available. |
+| Route-conflict events | `route-conflict` includes all attempted names, sorted; the relay does not identify the conflicting name. |
+| Route helpers and URL snapshots | Export `RootRoute`, `RouteLabelPattern`, `IsValidRouteName` and `PublicURL`; Connection/Listener `URLs()` follows configured route changes. |
+| Ensure progress | Add `EnsureWithOptions` and `checking-certificate`. `otgo ensure` reports progress; `--json` remains machine-readable. |
+| Latest codec pin | Test the exact v0.6.0 Reader/Writer. Its source SHA-256 is unchanged from v0.5.4. |
+
+Go already cancels startup attachment and provisioning and joins owned workers.
+Unlike the TypeScript AbortSignal, Go's startup context stops owning a connection
+after successful return; the optional `Lifetime` context controls it afterward.
+That documented contract is preserved and covered by cancellation tests.
+
+## Already covered or service-only
+
+Upstream v0.5.5 distrusts compromised eMudhra intermediates. Our release binaries
+already use Go 1.27.3, whose `crypto/x509` verifier rejects certificate chains
+containing the eight affected public keys. CI and release packaging retain the
+exact compiler pin and version checks. Embedded applications must also rebuild
+with a patched compiler; updating a module cannot replace their standard library.
+
+The Rust root-bundle/dependency checks do not apply directly: Go uses its verifier
+and platform trust roots, with optional caller-supplied CA additions. We do not
+copy a Rust source/binary grep as proof of Go trust-store behavior. A custom HTTP
+client remains a trusted caller hook; see [custom CAs](CUSTOM_CA.md) and the
+[security model](SECURITY.md#build-toolchain).
+
+Mesh token migration, worker database cleanup/admin export, and Fly rollout
+changes belong to the upstream service. There is no matching client component.
+This update changes no wire format, persistent profile format, or visitor auth.
 
 ## Adopted in v0.15.0
 

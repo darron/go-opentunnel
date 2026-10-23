@@ -189,6 +189,18 @@ For an existing TCP server, use `Client.Connect` with a route such as
 startup. Set `Lifetime` to stop the running tunnel on application shutdown, or
 close it explicitly. `Client.Close` stops its owned connections and joins workers.
 
+For startup feedback, set `OnEvent` on `ConnectOptions` or `ListenOptions`.
+Callbacks run synchronously; keep them brief and use context cancellation rather
+than calling `Close` from them. Set `OnRouteConflict: opentunnel.RouteConflictFail`
+to stop with a typed `*opentunnel.AttachError` when another bridge owns a route;
+the default retries. The diagnostic CLI exposes this as `--on-route-conflict=fail`
+on `connect` and `listen`.
+
+`connection.URLs()` and `listener.URLs()` return copies of the configured route
+URLs. Use `PublicURL(route, hostname)` and `IsValidRouteName` before connecting.
+For provisioning progress on a reused profile, use `Client.EnsureWithOptions`;
+`otgo ensure` prints the same stages to stderr unless `--json` is selected.
+
 The [webapp example](examples/webapp/main.go) demonstrates HTTP, streaming,
 WebSockets and shutdown. Run `go run ./examples/webapp`; use `--forward` for TCP
 forwarding or `--local-only` for a loopback test server.

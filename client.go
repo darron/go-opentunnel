@@ -432,6 +432,13 @@ func (c *Client) Resume(ctx context.Context, profile string, o ProvisionOptions)
 // selects "default". Use Connect to attach an expired identity and trigger the
 // hosted service's ordinary renewal; Ensure does not attach a bridge.
 func (c *Client) Ensure(ctx context.Context, profile string) (*Identity, error) {
+	return c.EnsureWithOptions(ctx, profile, ProvisionOptions{})
+}
+
+// EnsureWithOptions is Ensure with synchronous provisioning progress reporting.
+// A stored identity reports checking-certificate before the API check, then ready
+// on success. Provisioning and recovery report their usual stages.
+func (c *Client) EnsureWithOptions(ctx context.Context, profile string, o ProvisionOptions) (*Identity, error) {
 	ctx, end, e := c.begin(ctx)
 	if e != nil {
 		return nil, e
@@ -446,16 +453,17 @@ func (c *Client) Ensure(ctx context.Context, profile string) (*Identity, error) 
 		return nil, e
 	}
 	defer guard.release()
-	return c.ensure(ctx, p, false, guard)
+	return c.ensure(ctx, p, false, guard, o)
 }
-func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard *profileGuard) (*Identity, error) {
+func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard *profileGuard, o ProvisionOptions) (*Identity, error) {
 	id, e := c.store.Load(ctx, p)
 	if e != nil {
 		return nil, e
 	}
 	if id == nil {
-		return c.create(ctx, p, ProvisionOptions{}, guard)
+		return c.create(ctx, p, o, guard)
 	}
+	progress(o, StageCheckingCertificate)
 	cert, e := c.api.Certificate(ctx, id.ID, id.Token)
 	if e != nil {
 		// A valid local identity can attach during a temporary API outage. Do not
@@ -477,14 +485,14 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard 
 				return id, nil
 			}
 		}
-		pending, err := c.startCertificateRecovery(ctx, p, *id)
+		pending, err := c.startCertificateRecovery(ctx, p, *id, o)
 		if err != nil {
 			if errors.Is(err, ErrCertificateIssuance) {
 				return nil, certificateIssuanceError(cert.State.Reason)
 			}
 			return nil, err
 		}
-		return c.complete(ctx, p, *pending, ProvisionOptions{}, guard, true)
+		return c.complete(ctx, p, *pending, o, guard, true)
 	}
 	replacement := cert.State.Type == "ready" && (cert.State.Certificate != id.Certificate || cert.State.Chain != id.Chain)
 	if replacement {
@@ -504,6 +512,7 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard 
 	}
 	id.CertificateExpiry = validated.Leaf.NotAfter
 	if replacement {
+		progress(o, StageSavingIdentity)
 		if e := c.store.Save(ctx, p, *id); e != nil {
 			return nil, e
 		}
@@ -511,14 +520,16 @@ func (c *Client) ensure(ctx context.Context, p string, allowExpired bool, guard 
 			c.recoveryAfter.Delete(p)
 		}
 	}
+	progress(o, StageReady)
 	return id, nil
 }
 
 // All replacement submissions require the profile lock and share one cooldown.
-func (c *Client) startCertificateRecovery(ctx context.Context, p string, id Identity) (*PendingIdentity, error) {
+func (c *Client) startCertificateRecovery(ctx context.Context, p string, id Identity, o ProvisionOptions) (*PendingIdentity, error) {
 	if time.Now().Before(c.recoveryDeadline(p)) {
 		return nil, certificateIssuanceError("")
 	}
+	progress(o, StageGeneratingCSR)
 	csr, err := requestForExistingKey(id.Hostname, id.PrivateKey)
 	if err != nil {
 		return nil, err
@@ -527,6 +538,7 @@ func (c *Client) startCertificateRecovery(ctx context.Context, p string, id Iden
 	if err := c.store.SavePending(ctx, p, pending); err != nil {
 		return nil, err
 	}
+	progress(o, StageRequestingCertificate)
 	if err := c.submitCertificate(ctx, p, pending); err != nil {
 		return nil, err
 	}

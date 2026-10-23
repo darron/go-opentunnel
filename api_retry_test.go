@@ -361,7 +361,7 @@ func TestClientSavedCertificateFallbackOnlyAfterTransientFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer guard.release()
-			id, err := client.ensure(t.Context(), "default", true, guard)
+			id, err := client.ensure(t.Context(), "default", true, guard, ProvisionOptions{})
 			if (err == nil) != tc.fallback || (id != nil) != tc.fallback {
 				t.Fatalf("id=%v err=%v, fallback wanted=%v", id != nil, err, tc.fallback)
 			}
@@ -405,7 +405,7 @@ func TestClientSavedCertificateFallbackAfterInternalBodyDeadline(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer guard.release()
-			id, err := client.ensure(ctx, "default", true, guard)
+			id, err := client.ensure(ctx, "default", true, guard, ProvisionOptions{})
 			if callerDeadline {
 				if id != nil || !errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("caller deadline bypassed: id=%v err=%v", id != nil, err)

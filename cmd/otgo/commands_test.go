@@ -49,6 +49,45 @@ func TestConnectRejectsMalformedRouteBeforeConnecting(t *testing.T) {
 	}
 }
 
+func TestRouteConflictFlags(t *testing.T) {
+	for _, command := range []string{"connect", "listen"} {
+		var out, errout bytes.Buffer
+		err := run(t.Context(), []string{command, "--on-route-conflict=unknown", "--data-dir", t.TempDir()}, strings.NewReader(""), &out, &errout)
+		if err == nil || !strings.Contains(err.Error(), "must be retry or fail") {
+			t.Fatalf("%s invalid conflict policy: %v", command, err)
+		}
+		out.Reset()
+		errout.Reset()
+		if err := run(t.Context(), []string{command, "--help"}, strings.NewReader(""), &out, &errout); err != nil || !strings.Contains(errout.String(), "on-route-conflict") {
+			t.Fatalf("%s policy missing from help: %v", command, err)
+		}
+	}
+}
+
+func TestEnsureCommandProgressAndJSONSilence(t *testing.T) {
+	previous := http.DefaultTransport
+	transport := &provisionDeadlineTransport{err: errors.New("progress probe finished")}
+	http.DefaultTransport = transport
+	defer func() { http.DefaultTransport = previous }()
+	for _, asJSON := range []bool{false, true} {
+		var out, errout bytes.Buffer
+		args := []string{"ensure", "--data-dir", t.TempDir()}
+		if asJSON {
+			args = append(args, "--json")
+		}
+		err := run(t.Context(), args, strings.NewReader(""), &out, &errout)
+		if !errors.Is(err, transport.err) || out.Len() != 0 {
+			t.Fatalf("ensure probe: %v, stdout=%q", err, out.String())
+		}
+		if asJSON && errout.Len() != 0 {
+			t.Fatalf("JSON progress output: %q", errout.String())
+		}
+		if !asJSON && errout.String() != "creating-tunnel\n" {
+			t.Fatalf("missing ensure progress: %q", errout.String())
+		}
+	}
+}
+
 func TestGetJSONRedactsCredentials(t *testing.T) {
 	dir := t.TempDir()
 	store := opentunnel.NewFileStorage(dir)

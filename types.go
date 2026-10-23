@@ -12,7 +12,7 @@ import (
 const DefaultAPI = "https://opentunnel.xyz"
 
 // Version is this module's protocol client version.
-const Version = "0.15.0"
+const Version = "0.16.0"
 
 var (
 	// ErrClosed reports an operation attempted after its Client, Connection, or Listener was closed.
@@ -216,6 +216,8 @@ const (
 	StageRequestingCertificate ProvisionStage = "requesting-certificate"
 	// StageWaitingCertificate reports certificate status polling.
 	StageWaitingCertificate ProvisionStage = "waiting-certificate"
+	// StageCheckingCertificate reports a stored identity's remote certificate check.
+	StageCheckingCertificate ProvisionStage = "checking-certificate"
 	// StageSavingIdentity reports completed-identity storage.
 	StageSavingIdentity ProvisionStage = "saving-identity"
 	// StageReady reports a completed identity ready for use.
@@ -224,11 +226,21 @@ const (
 
 // ProvisionOptions configures progress reporting. Its zero value disables callbacks.
 type ProvisionOptions struct {
-	// OnProgress runs synchronously during Create or Resume. It must return
-	// promptly and must not reenter operations on the same profile or call
+	// OnProgress runs synchronously during Create, Resume, or EnsureWithOptions.
+	// It must return promptly and must not reenter operations on the same profile or call
 	// Client.Close, which waits for the operation invoking the callback.
 	OnProgress func(ProvisionStage)
 }
+
+// RouteConflictPolicy controls how relay route conflicts are handled.
+type RouteConflictPolicy string
+
+const (
+	// RouteConflictRetry reconnects with backoff until the route is available.
+	RouteConflictRetry RouteConflictPolicy = "retry"
+	// RouteConflictFail stops with an *AttachError whose Code is "route_conflict".
+	RouteConflictFail RouteConflictPolicy = "fail"
+)
 
 // ConnectOptions selects the profile, routes, and lifetime of a connection.
 type ConnectOptions struct {
@@ -242,6 +254,15 @@ type ConnectOptions struct {
 	// Lifetime controls the running connection after startup. Nil leaves lifetime
 	// ownership to Connection.Close and Client.Close. Connect's context bounds startup.
 	Lifetime context.Context
+	// OnRouteConflict defaults to RouteConflictRetry. RouteConflictFail applies
+	// to both startup and later reattachments. Other values return ErrInvalid.
+	OnRouteConflict RouteConflictPolicy
+	// OnEvent observes every lifecycle event, including events before Connect
+	// returns. Calls are synchronous and serialized, independent of the lossy
+	// Events channel. The callback must return promptly and must not call Close
+	// on the client, connection, or listener: Close waits for this callback.
+	// Cancel a context to request shutdown from a callback instead.
+	OnEvent func(Event)
 }
 
 // Event reports a lifecycle transition. Type determines which fields apply;
@@ -251,13 +272,14 @@ type Event struct {
 	// Type is connecting, connected, disconnected, reconnecting, stopped,
 	// connection-opened, connection-closed, certificate-expiring,
 	// certificate-expired, certificate-renewed, certificate-refresh-failed,
-	// or certificate-recovery-started.
+	// certificate-recovery-started, or route-conflict.
 	Type string `json:"type"`
 	// Attempt is the retry count for connecting or reconnecting events.
 	Attempt int `json:"attempt,omitempty"`
 	// Session is the relay session identifier for a connected event.
 	Session string `json:"session,omitempty"`
-	// Routes contains the relay-accepted route names for a connected event.
+	// Routes contains relay-accepted names for connected, or all attempted names
+	// for route-conflict. The relay does not identify which route conflicted.
 	Routes []string `json:"routes,omitempty"`
 	// Reason explains a disconnected event.
 	Reason string `json:"reason,omitempty"`

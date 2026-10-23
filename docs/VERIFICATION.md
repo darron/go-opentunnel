@@ -1,5 +1,38 @@
 # Local verification record
 
+## v0.16.0 preparation — 2026-10-22
+
+Reviewed upstream v0.5.5/v0.6.0 against v0.5.4; the
+[adoption record](UPSTREAM_COMPATIBILITY.md) explains the API additions, existing
+Go 1.27.3 certificate mitigation, and service-only changes left upstream.
+
+| Check | Result |
+| --- | --- |
+| Compiler and dependencies | Go 1.27.3 retained; no new Go runtime dependency |
+| `make check build-example` | Full tests, vet, formatting, golangci-lint v2.15.0 and CLI/example builds passed |
+| Full race suite | `go test -race -count=1 ./...` passed after the review fix |
+| Focused SDK checks | Ten race-enabled repetitions passed: retry/fail startup, reconnect failure, callback isolation/serialization/shutdown, URL validation/snapshots, Ensure progress and cancellation |
+| CLI integration | Real HTTP/WebSocket fixture proves valid `--on-route-conflict=fail` reaches Connect and Listen; `run(ensure)` proves progress reaches stderr and JSON stays silent. Both passed ten race-enabled repetitions |
+| Release tooling | All 18 Python tests, `actionlint`, and `git diff --check` passed |
+| Vulnerability scan | `govulncheck` v1.9.0 found no vulnerabilities |
+| Upstream codec | Exact v0.6.0 Reader/Writer at `c23b162409425a800245245b445a4230f6346429`, SHA-256 `c49e727c9cc9b8d8085d32eb70e99004892a4e7f77031fc803ff881a78b988d1`, passed under the race detector |
+| Hosted tests | Fresh SDK/PROXY and complete auth-proxy smoke tests passed; [scope and cleanup](LIVE_TESTING.md#v0160-sdk-and-auth-regression-check--2026-10-22) |
+
+Independent correctness/security and test review found one progress-contract bug:
+failed-certificate recovery omitted CSR generation and announced submission too
+early. A regression reproduced it; callbacks now bracket the operations in the
+correct order. Exact create/reuse/replacement/recovery sequences are tested.
+The reviewer also identified missing CLI wiring coverage; real relay fixtures and
+an ensure command test now cover it.
+
+Temporary Go overlays deliberately disabled fatal reconnect conflicts and callback
+route-slice copying. The respective tests failed with `conflict did not stop
+reconnect` and `observer mutated buffered event or source routes`. The actual
+source tree was not mutated. Go startup/Lifetime ownership and profile/auth formats
+remain unchanged. Local Go/lint caches used temporary writable directories because
+some host cache entries were inaccessible to the sandbox; CI checks normal runners.
+
+
 ## v0.15.0 publication — 2026-10-20
 
 The [v0.15.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.15.0)

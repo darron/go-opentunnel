@@ -24,6 +24,9 @@ type Connection struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	stopParent      func() bool
+	eventMu         sync.Mutex
+	onEvent         func(Event)
+	onRouteConflict RouteConflictPolicy
 	mu              sync.Mutex
 	identity        Identity
 	cert            *tls.Certificate
@@ -62,6 +65,9 @@ func (c *Client) Connect(ctx context.Context, o ConnectOptions) (*Connection, er
 }
 
 func (c *Client) connect(ctx context.Context, o ConnectOptions, listener *Listener) (*Connection, error) {
+	if o.OnRouteConflict != "" && o.OnRouteConflict != RouteConflictRetry && o.OnRouteConflict != RouteConflictFail {
+		return nil, fmt.Errorf("%w: unknown route conflict policy %q", ErrInvalid, o.OnRouteConflict)
+	}
 	p, e := profileName(o.Profile)
 	if e != nil {
 		return nil, e
@@ -92,7 +98,7 @@ func (c *Client) connect(ctx context.Context, o ConnectOptions, listener *Listen
 		guard.release()
 		return nil, e
 	}
-	id, e := c.ensure(opctx, p, true, guard)
+	id, e := c.ensure(opctx, p, true, guard, ProvisionOptions{})
 	if e != nil {
 		guard.release()
 		return nil, e
@@ -107,7 +113,7 @@ func (c *Client) connect(ctx context.Context, o ConnectOptions, listener *Listen
 		parent = c.ctx
 	}
 	life, cancel := context.WithCancel(parent)
-	x := &Connection{listener: listener, client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), routeOptions: copyRouteOptions(o.RouteOptions), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
+	x := &Connection{onEvent: o.OnEvent, onRouteConflict: o.OnRouteConflict, listener: listener, client: c, profile: p, ctx: life, cancel: cancel, identity: *id, cert: cert, routes: copyRoutes(o.Routes), routeOptions: copyRouteOptions(o.RouteOptions), events: make(chan Event, c.options.EventBuffer), ready: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	x.status = Status{State: "connecting", Hostname: id.Hostname, Routes: copyRoutes(o.Routes)}
 	x.stopParent = context.AfterFunc(c.ctx, cancel)
 	c.mu.Lock()
@@ -185,6 +191,23 @@ func (x *Connection) Status() Status {
 	return s
 }
 
+// URLs returns a fresh map from configured routes to public HTTPS URLs. It
+// follows SetRoutes immediately, including changes still awaiting attachment.
+// Empty routes produce an empty map. This is configuration, not a readiness check.
+func (x *Connection) URLs() map[string]string {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	urls := make(map[string]string, len(x.routes))
+	for route := range x.routes {
+		host := x.identity.Hostname
+		if route != RootRoute {
+			host = route + "." + host
+		}
+		urls[route] = "https://" + host
+	}
+	return urls
+}
+
 // Close stops the connection and joins its workers. It is safe to call repeatedly
 // or concurrently. A normal requested close leaves Err nil; an already recorded
 // terminal error remains available. Stored credentials and the remote tunnel remain.
@@ -255,6 +278,13 @@ func (x *Connection) setRoutesWithOptions(routes Routes, options map[string]Rout
 }
 
 func (x *Connection) emit(e Event) {
+	x.eventMu.Lock()
+	defer x.eventMu.Unlock()
+	if x.onEvent != nil {
+		observed := e
+		observed.Routes = append([]string(nil), e.Routes...)
+		x.onEvent(observed)
+	}
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	select {
@@ -319,9 +349,15 @@ func (x *Connection) run() {
 			continue
 		}
 		var attach *AttachError
-		if errors.As(err, &attach) && (attach.Code == "bad_token" || attach.Code == "cert_not_ready") {
-			terminal = err
-			break
+		if errors.As(err, &attach) {
+			if attach.Code == "route_conflict" {
+				x.emit(Event{Type: "route-conflict", Routes: routeNames(routes)})
+			}
+			if attach.Code == "bad_token" || attach.Code == "cert_not_ready" ||
+				(attach.Code == "route_conflict" && x.onRouteConflict == RouteConflictFail) {
+				terminal = err
+				break
+			}
 		}
 		if s.attached.Load() && time.Since(s.attachedAt) >= x.client.options.BackoffMax {
 			attempt = 0
@@ -534,7 +570,7 @@ func (x *Connection) refreshOnce() error {
 // startCertificateRecovery requires the profile lock. Submit once, then release
 // it; refresh polls on later iterations so stuck issuance cannot block Remove.
 func (x *Connection) startCertificateRecovery(id Identity) error {
-	_, err := x.client.startCertificateRecovery(x.ctx, x.profile, id)
+	_, err := x.client.startCertificateRecovery(x.ctx, x.profile, id, ProvisionOptions{})
 	if err != nil {
 		return err
 	}

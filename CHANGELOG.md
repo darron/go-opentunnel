@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v0.16.0 — OpenTunnel v0.6.0 SDK features — 2026-10-22
+
+- Add opt-in `RouteConflictFail` to Connect and Listen for a typed fatal route
+  conflict on startup or reconnect. Preserve retry as the default; emit sorted
+  attempted route names in `route-conflict` events. The CLI supports
+  `--on-route-conflict=retry|fail` on diagnostic connect/listen commands.
+- Add a synchronous, serialized `OnEvent` observer for startup and running events,
+  independent of the existing lossy channel. Copy callback route slices and join
+  callbacks before shutdown completes.
+- Export route validation and HTTPS URL helpers, plus Connection/Listener `URLs()`
+  snapshots that follow route changes. Add `EnsureWithOptions` certificate-check
+  progress and progress output for `otgo ensure` without changing `Ensure`.
+- Review upstream v0.5.5 certificate distrust and v0.6.0 SDK changes; retain the
+  Go 1.27.3 security compiler already covering the compromised CA keys. Update the
+  exact upstream codec pin and add lifecycle/progress/URL regression tests.
+- No new runtime dependency, profile migration, wire-protocol or auth change.
+
+[Compare v0.15.0 to v0.16.0](https://github.com/darron/go-opentunnel/compare/v0.15.0...v0.16.0)
+
 ## v0.15.0 — OpenTunnel v0.5.4 compatibility — 2026-10-20
 
 - Keep bridge reads independent of a stalled writer: prioritize pongs, resets and

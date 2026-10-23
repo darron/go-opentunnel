@@ -1,5 +1,5 @@
-// proxy-smoke creates one temporary public tunnel, checks PROXY forwarding and
-// deletes it. Run explicitly with go run ./scripts/proxy-smoke.
+// proxy-smoke creates one temporary public tunnel, checks SDK startup/conflicts
+// and PROXY forwarding, then deletes it. Run explicitly with go run ./scripts/proxy-smoke.
 package main
 
 import (
@@ -65,10 +65,22 @@ func run() (result error) {
 		fmt.Println("PASS: temporary identity removed; remote API 404 confirmed")
 	}()
 	provisionCtx, provisionCancel := context.WithTimeout(ctx, 5*time.Minute)
-	identity, err := client.Create(provisionCtx, "proxy-smoke", opentunnel.ProvisionOptions{})
+	var stages []opentunnel.ProvisionStage
+	identity, err := client.EnsureWithOptions(provisionCtx, "proxy-smoke", opentunnel.ProvisionOptions{OnProgress: func(s opentunnel.ProvisionStage) { stages = append(stages, s) }})
 	provisionCancel()
 	if err != nil {
 		return err
+	}
+	if len(stages) == 0 || stages[len(stages)-1] != opentunnel.StageReady {
+		return errors.New("provisioning progress did not report ready")
+	}
+	stages = nil
+	_, err = client.EnsureWithOptions(ctx, "proxy-smoke", opentunnel.ProvisionOptions{OnProgress: func(s opentunnel.ProvisionStage) { stages = append(stages, s) }})
+	if err != nil {
+		return err
+	}
+	if len(stages) != 2 || stages[0] != opentunnel.StageCheckingCertificate || stages[1] != opentunnel.StageReady {
+		return errors.New("reused identity progress did not check certificate then report ready")
 	}
 	backend, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -102,11 +114,42 @@ func run() (result error) {
 		}
 	}()
 	defer func() { _ = backend.Close(); workers.Wait() }()
-	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: "proxy-smoke", Routes: opentunnel.Routes{"@": backend.Addr().String()}, Lifetime: ctx})
+	var startupObserved atomic.Bool
+	connection, err := client.Connect(ctx, opentunnel.ConnectOptions{Profile: "proxy-smoke", Routes: opentunnel.Routes{"@": backend.Addr().String()}, Lifetime: ctx, OnEvent: func(e opentunnel.Event) {
+		if e.Type == "connected" {
+			startupObserved.Store(true)
+		}
+	}})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = connection.Close() }()
+	publicURL, err := opentunnel.PublicURL(opentunnel.RootRoute, identity.Hostname)
+	if err != nil || connection.URLs()[opentunnel.RootRoute] != publicURL || !startupObserved.Load() {
+		return errors.New("URL snapshot or startup observer mismatch")
+	}
+	// A separate Client bypasses in-process route ownership checks and exercises
+	// the hosted relay's conflict response with the same temporary credentials.
+	otherStore := opentunnel.NewMemoryStorage()
+	if err := otherStore.Save(ctx, "proxy-smoke", *identity); err != nil {
+		return err
+	}
+	other, err := opentunnel.NewClient(opentunnel.ClientOptions{Storage: otherStore})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = other.Close() }()
+	conflictCtx, stopConflict := context.WithTimeout(ctx, 30*time.Second)
+	duplicate, err := other.Connect(conflictCtx, opentunnel.ConnectOptions{Profile: "proxy-smoke", Routes: opentunnel.Routes{"@": backend.Addr().String()}, OnRouteConflict: opentunnel.RouteConflictFail})
+	stopConflict()
+	if duplicate != nil {
+		_ = duplicate.Close()
+	}
+	var conflict *opentunnel.AttachError
+	if !errors.As(err, &conflict) || conflict.Code != "route_conflict" {
+		return fmt.Errorf("expected hosted route_conflict, got %w", err)
+	}
+	fmt.Println("PASS: Ensure progress/reuse, URL snapshots, startup observer and hosted fatal route conflict")
 	transport := &http.Transport{DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
 	visitor := &http.Client{Transport: transport, Timeout: 15 * time.Second}

@@ -1,5 +1,29 @@
 # Public-service validation
 
+## v0.16.0 SDK and auth regression check — 2026-10-22
+
+`go run ./scripts/proxy-smoke` passed against the hosted service with a fresh
+in-memory identity. `EnsureWithOptions` reported provisioning readiness and then
+`checking-certificate`/`ready` on reuse. The startup observer saw `connected` before
+Connect returned; `URLs()` matched `PublicURL`. A separate client using the same
+temporary credentials received the expected typed `route_conflict` with fail
+policy while the first connection stayed usable. Public HTTPS forwarding passed
+with plain, PROXY v1 and PROXY v2 backends. Authenticated API 404 confirmed deletion
+of the temporary tunnel.
+
+The rebuilt v0.16.0 CLI also passed `python3 scripts/auth_smoke.py` using isolated
+private state. Every anonymous method/path, MCP and discovery probe was denied
+with zero backend hits. Password, machine tokens, secure cookies, origin/CSRF,
+header stripping, cache controls, eight concurrent 2 MiB uploads, corrupt-registry
+denial, restart/logout and two simultaneous profiles passed. Revocation closed
+SSE and WebSocket streams in 0.243 seconds. All owned processes stopped; local
+credentials were removed and API 404 confirmed both remote deletions.
+
+No personal profile or running proxy was changed. No live GitHub App grant was
+made; GitHub auth is covered by the existing local regression suite. Hosted
+behavior is verified, but the service's deployed source revision is not observable.
+
+
 ## v0.14.0 QR and identity regression check — 2026-10-16
 
 The rebuilt v0.14.0 CLI passed `scripts/auth_smoke.py` against the hosted

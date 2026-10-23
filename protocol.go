@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+var dnsLabel = regexp.MustCompile(RouteLabelPattern)
 var targetLabel = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 const (
@@ -20,7 +20,7 @@ const (
 	maxAttachMessage   = 64 * 1024
 )
 
-func validRoute(value string) bool   { return value == "@" || dnsLabel.MatchString(value) }
+func validRoute(value string) bool   { return IsValidRouteName(value) }
 func validProfile(value string) bool { return dnsLabel.MatchString(value) }
 
 // ValidateRoutes checks route names and host:port targets, returning ErrInvalid
