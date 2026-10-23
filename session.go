@@ -170,6 +170,10 @@ func (s *session) run() error {
 		if s.ctx.Err() != nil {
 			return s.ctx.Err()
 		}
+		var proxy *proxyError
+		if errors.As(safeProxyError(err), &proxy) {
+			return proxy
+		}
 		return errors.New("opentunnel: bridge handshake failed")
 	}
 	s.ws = ws

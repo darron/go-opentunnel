@@ -5,8 +5,8 @@ identities and forward visitor TLS to local services. Start with the
 [embedding example](../README.md#embed-the-client); use this document for API,
 wire, and persistence contracts.
 
-The client uses Go's HTTP, P-256, X.509, TLS, and TCP implementations plus one
-WebSocket dependency. Applications need no Node, Bun, Rust, or background process.
+The client uses Go's HTTP, P-256, X.509, TLS, and TCP implementations, a
+WebSocket dependency and Go’s maintained `x/net/httpproxy` matcher. Applications need no Node, Bun, Rust, or background process.
 `otgo` is a consumer of the package. Its optional local metrics listener uses
 the official Prometheus client; the root library does not import Prometheus.
 The optional `identity` subpackage verifies otgo's signed GitHub identity at a
@@ -15,8 +15,8 @@ see [backend verification](AUTH_PROXY.md#signed-backend-identity).
 
 ## Compatibility baseline
 
-Current client compatibility review: upstream v0.6.0 commit
-`c23b162409425a800245245b445a4230f6346429`. See the
+Current client compatibility review: upstream v0.6.1 commit
+`de890fb77c8c5df6185504e7647d818ead517749`. See the
 [upstream review](UPSTREAM_COMPATIBILITY.md) for adopted changes and test scope.
 Core vectors retain their original v0.5.0 source pin; see [provenance](../testdata/vectors/PROVENANCE.md).
 The later server changes through `4b066b2ed40a4e0c325e60c68061599f2151d897`

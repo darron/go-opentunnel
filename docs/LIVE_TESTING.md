@@ -1,5 +1,32 @@
 # Public-service validation
 
+## v0.16.2 outbound proxy regression check — 2026-10-23
+
+Both hosted smoke suites passed with ALL_PROXY pointing to a temporary local
+HTTP CONNECT proxy requiring Basic authentication. HTTPS_PROXY/HTTP_PROXY were
+unset; NO_PROXY covered loopback backends. The proxy forwarded encrypted TLS and
+permitted only OpenTunnel destinations on port 443. It observed four authenticated
+CONNECTs for the SDK suite and twelve for the CLI auth suite, with zero proxy
+authentication failures.
+
+- `go run ./scripts/proxy-smoke`: fresh in-memory provisioning/reuse progress,
+  startup events and URL helpers, a typed fatal route conflict while the first
+  connection stayed usable, and public HTTPS forwarding through plain/PROXY
+  v1/PROXY v2 backends. Temporary remote deletion was confirmed by API 404.
+- Rebuilt CLI with `python3 scripts/auth_smoke.py`: anonymous methods/routes,
+  MCP and discovery denied with zero backend calls; password/machine auth,
+  cookies, origin/CSRF, header stripping, cache policy, eight concurrent 2 MiB
+  uploads, corrupt-registry denial, restart/logout and two isolated profiles
+  passed. Revocation closed SSE/WebSocket streams in 0.287 seconds. All owned
+  processes stopped, temporary local credentials were removed and API 404
+  confirmed both remote deletions.
+
+No personal profile or running proxy was changed. No live GitHub App grant was
+made; the full local regression suite covers GitHub auth. Local fixtures separately
+verify HTTPS proxies, SOCKS, bypasses, malformed replies and failure recovery.
+The hosted service's deployed source revision is not observable.
+
+
 ## v0.16.0 SDK and auth regression check — 2026-10-22
 
 `go run ./scripts/proxy-smoke` passed against the hosted service with a fresh

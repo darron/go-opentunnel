@@ -173,7 +173,7 @@ func TestCACertFileVerifiesHTTPS(t *testing.T) {
 	}
 }
 
-func newTLSRelay(t *testing.T) (*relayFixture, string) {
+func newTLSRelay(t *testing.T, wrappers ...func(http.Handler) http.Handler) (*relayFixture, string) {
 	t.Helper()
 	f := newRelay(t)
 	outer := newTestAuthority(t)
@@ -189,7 +189,11 @@ func newTLSRelay(t *testing.T) (*relayFixture, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewUnstartedServer(http.HandlerFunc(f.api.serve))
+	handler := http.Handler(http.HandlerFunc(f.api.serve))
+	for _, wrap := range wrappers {
+		handler = wrap(handler)
+	}
+	server := httptest.NewUnstartedServer(handler)
 	server.TLS = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate}}
 	server.StartTLS()
 	t.Cleanup(server.Close)

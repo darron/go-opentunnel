@@ -235,6 +235,12 @@ an explicit flag overrides it, including an empty value to disable metrics.
 Embedded applications can read `Client.Stats()` or register the optional
 [Prometheus adapter](docs/OBSERVABILITY.md) with their own registry.
 
+## Use an outbound proxy
+
+Set `HTTPS_PROXY` for the OpenTunnel API and bridge, or `ALL_PROXY` as a fallback.
+`NO_PROXY` bypasses matching destinations. Both uppercase and lowercase names
+work; settings are captured at startup. See [proxy configuration and diagnostics](docs/OUTBOUND_PROXY.md).
+
 ## Build and validate
 
 `make build` builds only `bin/otgo`. `make build-example` builds the example.

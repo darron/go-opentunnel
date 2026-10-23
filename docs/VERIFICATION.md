@@ -1,5 +1,30 @@
 # Local verification record
 
+## v0.16.2 preparation — 2026-10-23
+
+Reviewed upstream v0.6.1 and added consistent outbound proxy policy and safe
+failure diagnostics. The [adoption record](UPSTREAM_COMPATIBILITY.md) and
+[proxy guide](OUTBOUND_PROXY.md) describe behavior and trust boundaries.
+
+| Check | Result |
+| --- | --- |
+| Real proxy transports | Authenticated HTTP/HTTPS CONNECT and SOCKS5/SOCKS5H carried verified TLS API provisioning/polling, bridge attachment/reconnect and visitor echo bytes; NO_PROXY bypass made zero proxy connections |
+| Failure handling | Invalid selected settings, CONNECT 403/407, malformed CONNECT/SOCKS, SOCKS auth/refusal, untrusted CA/wrong hostname and network deadlines passed; a transient reconnect 503 recovered and delivered bytes |
+| Retry safety | Get/Create/Remove preserve deadline errors after pre-request proxy dial failures; an origin that accepted Create and closed without a response received exactly one request |
+| Ownership and credentials | Explicit transport overrides retained their callback/ownership; proxy credentials were absent at the origin and redacted from ordinary diagnostics |
+| Regression quality | Disabling ALL_PROXY made the real tunnel test fail; disabling redaction exposed the canary and failed; forcing ambiguous proxy errors to retry sent three creates and failed the no-replay assertion |
+| Repetition and review | Focused proxy regressions passed three race-enabled runs; independent review found the pre-request retry gap, confirmed its fix and the added recovery/SOCKS failure tests, and reported no remaining blockers |
+| Full checks | Full Go tests/race suite, vet, formatting, golangci-lint 2.15.0, CLI/example builds and all 18 release-tool tests passed; govulncheck 1.9.0 found no reachable known vulnerabilities |
+| Upstream codec | Exact v0.6.1 Reader/Writer at de890fb77c8c5df6185504e7647d818ead517749 passed its real cross-language WebSocket race test; source SHA-256 remained unchanged |
+| Compiled CLI | Existing real OS lock-contention smoke passed with the retained file after its owner exited |
+| Fuzz smoke | All six sustained-fuzz targets passed with five seconds each; CI runs 45 seconds per target |
+| Hosted SDK and CLI | Both suites passed through authenticated ALL_PROXY; public forwarding, auth boundaries, restart, revocation and multi-profile isolation passed; temporary credentials/processes/tunnels were removed |
+
+Hosted SDK validation passed through an authenticated ALL_PROXY; scope and cleanup
+are recorded in [LIVE_TESTING.md](LIVE_TESTING.md). These checks do not establish
+the hosted service's deployed source revision or exercise a live GitHub grant.
+
+
 ## v0.16.1 publication — 2026-10-23
 
 The [v0.16.1 release](https://github.com/darron/go-opentunnel/releases/tag/v0.16.1)

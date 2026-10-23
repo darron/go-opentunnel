@@ -446,8 +446,8 @@ independently verified visitor TLS, CLI flag/environment precedence, saved confi
 and copyable launch commands. No fixture contains a working production key.
 
 The optional compatibility runner requires Rust/Cargo and network access. It
-builds the exact upstream v0.6.0 `websocket.rs` from commit
-`c23b162409425a800245245b445a4230f6346429`, verifies its SHA-256, and connects
+builds the exact upstream v0.6.1 `websocket.rs` from commit
+`de890fb77c8c5df6185504e7647d818ead517749`, verifies its SHA-256, and connects
 our real Go WebSocket client to its Reader/Writer. Text and binary messages span
 0, 1, 125, 126, 32772, 65535, 65536 and 1 MiB; a ping crosses each partial message.
 Four-byte channel IDs and clean close handshakes are checked. Cargo dependencies
@@ -507,3 +507,20 @@ reused, replaced and failed certificate state, persistence,
 progress order and cancellation. Existing startup/Lifetime cancellation tests
 continue to check Go's separate lifetime contract. These are local fixtures;
 use the [public-service record](LIVE_TESTING.md) for hosted test results.
+
+
+## Outbound proxy compatibility
+
+```sh
+go test -race -count=3 -run 'TestEnvironmentProxy|TestProxy|TestExplicitProxyTransportOverride' .
+```
+
+The fixture uses an unmapped DNS name, an actual authenticated HTTP/HTTPS CONNECT
+proxy and verified relay TLS. It exercises API provisioning/certificate polling,
+bridge attachment/reconnect and visitor echo bytes. Separate SOCKS5/SOCKS5H and
+NO_PROXY paths verify the same delivery. Origin handlers assert that proxy
+credentials are absent. TLS failures, invalid selected settings, raw malformed
+CONNECT responses, 403/407 terminal denials, network deadlines and explicit caller
+transports have dedicated checks. Create/delete pre-request failures may retry;
+a create accepted by the origin and then closed without a response is not replayed.
+See [configuration and scope](OUTBOUND_PROXY.md).

@@ -60,9 +60,18 @@ func retryAPINetwork(err error, repeatable bool) bool {
 	if errors.As(err, &verification) || errors.As(err, &unknown) || errors.As(err, &invalid) || errors.As(err, &hostname) {
 		return false
 	}
+	var proxy *proxyError
+	if errors.As(err, &proxy) {
+		if proxy.permanent {
+			return false
+		}
+		if proxy.cause == nil {
+			return true
+		}
+	}
 	var operation *net.OpError
 	if errors.As(err, &operation) {
-		return repeatable || operation.Op == "dial"
+		return repeatable || operation.Op == "dial" || operation.Op == "proxyconnect"
 	}
 	// Unwrap url.Error first: it implements net.Error even for policy failures.
 	var request *url.Error

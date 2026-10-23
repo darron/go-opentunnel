@@ -1,9 +1,30 @@
 # Upstream compatibility
 
-Reviewed OpenTunnel v0.5.5 and v0.6.0 against our v0.5.4 baseline on 2026-10-22.
+Reviewed OpenTunnel v0.6.1 against v0.6.0 on 2026-10-23.
 Current source pin:
-[`c23b162409425a800245245b445a4230f6346429`](https://github.com/anomalyco/opentunnel/tree/c23b162409425a800245245b445a4230f6346429).
-See the [upstream comparison](https://github.com/anomalyco/opentunnel/compare/v0.5.4...v0.6.0).
+[`de890fb77c8c5df6185504e7647d818ead517749`](https://github.com/anomalyco/opentunnel/tree/de890fb77c8c5df6185504e7647d818ead517749).
+See the [upstream comparison](https://github.com/anomalyco/opentunnel/compare/v0.6.0...v0.6.1).
+
+## Adopted in v0.16.2
+
+- Add `ALL_PROXY`/`all_proxy` fallback for control API and bridge requests while
+  retaining scheme-specific precedence, `NO_PROXY` and explicit Go transports.
+  The API and bridge already shared an HTTP transport; upstream needed to fix a
+  separate Rust/Bun bridge path.
+- Report safe proxy configuration, CONNECT authentication/policy and network
+  diagnostics. Invalid settings and CONNECT 403/407 are terminal; preserve
+  transient retries, cancellation and ambiguous-request safeguards.
+- Pin the exact v0.6.1 Reader/Writer. Its SHA-256 is unchanged from v0.6.0.
+
+Go retains HTTP, HTTPS, SOCKS5 and SOCKS5H proxy support. The upstream Rust/Bun
+restriction to HTTP/HTTPS is an implementation limitation we do not copy. The JS
+SDK's explicit proxy option maps to Go's existing `HTTPClient` transport override;
+no new CLI flag or profile field is needed. Go's maintained `x/net/httpproxy`
+matcher avoids reimplementing domain/IDNA, CIDR and port bypass rules; the standard
+library still owns proxy networking, authentication and TLS. No wire, profile,
+visitor-authentication or certificate-issuance contract changed.
+
+The v0.5.5/v0.6.0 review and adoption remain below.
 
 ## Adopted in v0.16.0
 

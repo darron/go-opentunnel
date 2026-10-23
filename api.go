@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,10 +22,11 @@ const maxAPIResponse = 1 << 20
 // transport/hooks support concurrent use. Construct it with NewAPI; the zero
 // value is not usable.
 type API struct {
-	stats   statistics
-	base    *url.URL
-	client  *http.Client
-	timeout time.Duration
+	stats          statistics
+	base           *url.URL
+	client         *http.Client
+	timeout        time.Duration
+	ownedTransport bool
 }
 
 type cancelReadCloser struct {
@@ -44,7 +46,9 @@ func (r *cancelReadCloser) Close() error {
 // sent across a network in cleartext. Redirects must remain at the initial
 // origin. The supplied client is cloned before its redirect policy is hardened;
 // its Transport, Jar, and redirect hook remain trusted with API credentials.
-// Nil client uses the default HTTP transport. Zero timeout selects 15 seconds;
+// Nil Transport uses a default-transport clone with environment proxies,
+// including ALL_PROXY fallback and NO_PROXY, captured at construction.
+// An explicit Transport overrides that policy. Zero timeout selects 15 seconds;
 // negative timeout is invalid. The timeout covers all retries, backoff and body reads.
 // Transient failures get at most six retries following the OpenTunnel protocol;
 // ambiguous failures of tunnel creation/deletion are never replayed.
@@ -57,13 +61,11 @@ func NewAPI(base string, client *http.Client, timeout time.Duration) (*API, erro
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme == "http" && !isLoopbackHTTPHost(u.Hostname())) {
 		return nil, fmt.Errorf("%w: invalid API base URL", ErrInvalid)
 	}
-	if client == nil {
-		client = &http.Client{}
-	}
+	client, owned := defaultProxyClient(client)
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	return &API{base: u, client: hardenedAPIClient(client, canonicalOrigin(u)), timeout: timeout}, nil
+	return &API{base: u, client: hardenedAPIClient(client, canonicalOrigin(u)), timeout: timeout, ownedTransport: owned}, nil
 }
 
 func isLoopbackHTTPHost(host string) bool {
@@ -109,6 +111,9 @@ func validateAPIRedirect(initial apiOrigin, req *http.Request) error {
 
 func hardenedAPIClient(client *http.Client, initial apiOrigin) *http.Client {
 	clone := *client
+	if _, ok := clone.Transport.(*http.Transport); ok {
+		clone.Transport = &proxyDiagnosticTransport{base: clone.Transport}
+	}
 	original := client.CheckRedirect
 	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if err := validateAPIRedirect(initial, req); err != nil {
@@ -166,6 +171,7 @@ func (a *API) request(ctx context.Context, method, id, suffix, token string, bod
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		resp, e := a.client.Do(req)
+		e = safeProxyError(e)
 		if e != nil {
 			// A response alongside an error means CheckRedirect rejected the redirect.
 			// It must not be retried, even if a caller hook returns a network-like error.
@@ -179,8 +185,12 @@ func (a *API) request(ctx context.Context, method, id, suffix, token string, bod
 			if attempt == apiMaxRetries {
 				return nil, &apiTransientError{err: e}
 			}
-			if e = waitAPIRetry(ctx, apiRetryDelay(attempt, "")); e != nil {
-				return nil, &apiTransientError{err: e}
+			if waitErr := waitAPIRetry(ctx, apiRetryDelay(attempt, "")); waitErr != nil {
+				var proxy *proxyError
+				if errors.As(e, &proxy) {
+					waitErr = errors.Join(proxy, waitErr)
+				}
+				return nil, &apiTransientError{err: waitErr}
 			}
 			continue
 		}

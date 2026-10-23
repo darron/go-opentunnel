@@ -16,19 +16,19 @@ import (
 // value is not usable. User-supplied Storage and HTTP hooks must also support
 // concurrent use. Do not call Close from a provisioning progress callback.
 type Client struct {
-	stats         statistics
-	api           *API
-	store         Storage
-	options       TransportOptions
-	ctx           context.Context
-	cancel        context.CancelFunc
-	mu            sync.Mutex
-	closed        bool
-	connections   map[*Connection]string
-	profiles      sync.Map
-	recoveryAfter sync.Map // profile -> time.Time; writes require the profile lock
-	wg            sync.WaitGroup
-	caHTTPClient  *http.Client // Owns the cloned transport when CACertFile is set.
+	stats           statistics
+	api             *API
+	store           Storage
+	options         TransportOptions
+	ctx             context.Context
+	cancel          context.CancelFunc
+	mu              sync.Mutex
+	closed          bool
+	connections     map[*Connection]string
+	profiles        sync.Map
+	recoveryAfter   sync.Map // profile -> time.Time; writes require the profile lock
+	wg              sync.WaitGroup
+	ownedHTTPClient *http.Client // Owns the default or custom-CA transport clone.
 }
 
 // NewClient creates an owner for provisioning and running tunnels. Zero options
@@ -64,8 +64,8 @@ func NewClient(options ClientOptions) (*Client, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &Client{api: api, store: options.Storage, options: opts, ctx: ctx, cancel: cancel, connections: make(map[*Connection]string)}
-	if options.CACertFile != "" {
-		client.caHTTPClient = options.HTTPClient
+	if options.CACertFile != "" || api.ownedTransport {
+		client.ownedHTTPClient = api.client
 	}
 	return client, nil
 }
@@ -661,8 +661,8 @@ func (c *Client) Close() error {
 		_ = conn.Close()
 	}
 	c.wg.Wait()
-	if c.caHTTPClient != nil {
-		c.caHTTPClient.CloseIdleConnections()
+	if c.ownedHTTPClient != nil {
+		c.ownedHTTPClient.CloseIdleConnections()
 	}
 	return nil
 }

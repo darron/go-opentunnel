@@ -28,9 +28,7 @@ func httpClientWithCACert(client *http.Client, path string) (*http.Client, error
 	if err != nil {
 		return nil, err
 	}
-	if client == nil {
-		client = &http.Client{}
-	}
+	client, _ = defaultProxyClient(client)
 	base := client.Transport
 	if base == nil {
 		base = http.DefaultTransport

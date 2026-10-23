@@ -348,6 +348,11 @@ func (x *Connection) run() {
 			attempt = 0
 			continue
 		}
+		var proxy *proxyError
+		if errors.As(err, &proxy) && proxy.permanent {
+			terminal = err
+			break
+		}
 		var attach *AttachError
 		if errors.As(err, &attach) {
 			if attach.Code == "route_conflict" {

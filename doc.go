@@ -51,6 +51,14 @@
 // Wait for Done before reading the final Err. Resource bounds and timeout
 // defaults are documented in [TransportOptions].
 //
+// # Outbound proxies
+//
+// Default transports capture HTTP_PROXY, HTTPS_PROXY and NO_PROXY at construction,
+// with ALL_PROXY as a fallback when a scheme-specific proxy is unset. Lowercase
+// spellings also work. API calls and bridge connections share that policy.
+// An explicit [ClientOptions].HTTPClient transport remains a trusted override.
+// See the [outbound proxy guide] for bypass rules, credentials and diagnostics.
+//
 // # Statistics
 //
 // [Client.Stats], [Connection.Stats] and [API.Stats] expose concurrent operation
@@ -97,5 +105,6 @@
 // with another trusted certificate. See the [security model] and [auth guide].
 //
 // [security model]: https://github.com/darron/go-opentunnel/blob/main/docs/SECURITY.md
+// [outbound proxy guide]: https://github.com/darron/go-opentunnel/blob/main/docs/OUTBOUND_PROXY.md
 // [auth guide]: https://github.com/darron/go-opentunnel/blob/main/docs/AUTH_PROXY.md
 package opentunnel

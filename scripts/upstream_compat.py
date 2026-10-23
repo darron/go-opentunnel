@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test coder/websocket against the pinned OpenTunnel v0.6.0 server codec.
+"""Test coder/websocket against the pinned OpenTunnel v0.6.1 server codec.
 
 Rust and Cargo are test-only tools. No upstream source or build output is kept
 in the checkout. Run from any directory with python3 scripts/upstream_compat.py.
@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import urllib.request
 
-REVISION = "c23b162409425a800245245b445a4230f6346429"
+REVISION = "de890fb77c8c5df6185504e7647d818ead517749"
 SHA256 = "c49e727c9cc9b8d8085d32eb70e99004892a4e7f77031fc803ff881a78b988d1"
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -30,7 +30,7 @@ def main():
         subprocess.run(["cargo", "build", "--locked", "--manifest-path", str(project / "Cargo.toml")], check=True)
         env = dict(os.environ, OTGO_UPSTREAM_WEBSOCKET_FIXTURE=str(project / "target/debug/otgo-upstream-codec"))
         subprocess.run(["go", "test", "-race", "-count=1", "-run", "^TestUpstreamWebSocketCodec$", "."], cwd=ROOT, env=env, check=True)
-        print(f"PASS: OpenTunnel v0.6.0 codec {REVISION}, SHA-256 {SHA256}")
+        print(f"PASS: OpenTunnel v0.6.1 codec {REVISION}, SHA-256 {SHA256}")
 
 
 if __name__ == "__main__":

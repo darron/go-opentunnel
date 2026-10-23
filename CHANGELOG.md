@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v0.16.2 — Reliable outbound proxy support — 2026-10-23
+
+- Add `ALL_PROXY`/`all_proxy` fallback for the OpenTunnel API and bridge, including
+  reconnects. Keep scheme-specific precedence, uppercase/lowercase variables,
+  `NO_PROXY`, loopback bypasses and explicit HTTP transport overrides.
+- Explain proxy configuration, CONNECT authentication/policy and network failures
+  without exposing proxy credentials or arbitrary response text. Stop on invalid
+  configuration and CONNECT 403/407; retain safe transient retries and deadlines
+  without replaying ambiguous tunnel creation/deletion.
+- Add real HTTP/HTTPS CONNECT and SOCKS5/SOCKS5H regressions for TLS verification,
+  credential isolation, reconnects, delivered bytes, bypasses and caller ownership.
+  Use Go's maintained `x/net/httpproxy` matcher for bypass rules.
+- Review OpenTunnel v0.6.1 and update the exact upstream codec test pin. No wire,
+  saved-profile or visitor-authentication change.
+
+[Compare v0.16.1 to v0.16.2](https://github.com/darron/go-opentunnel/compare/v0.16.1...v0.16.2)
+
 ## v0.16.1 — Clearer storage lock errors — 2026-10-23
 
 - Explain that another otgo process might already be running when a storage lock

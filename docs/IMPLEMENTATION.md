@@ -4,7 +4,8 @@ Start with `client.go` for lifecycle operations and `connection.go` for a runnin
 tunnel, or `listener.go` for direct HTTP embedding. `cmd/otgo` and `examples/webapp` both consume the public package.
 
 The module is `github.com/darron/go-opentunnel`, requires Go 1.26 or newer, and
-is MIT licensed. The core client uses `github.com/coder/websocket v1.8.15`.
+is MIT licensed. The core client uses `github.com/coder/websocket v1.8.15` and Go’s maintained
+`golang.org/x/net/http/httpproxy` matcher for outbound proxy bypass rules.
 The optional `metrics` adapter and CLI use the official Prometheus Go client;
 the root package has no Prometheus imports. Optional `identity/` uses golang-jwt
 with standard-library Ed25519. CLI QR encoding uses go-qrcode and terminal
@@ -29,6 +30,7 @@ for JSON. `auth public-key` exports public PEM without network access.
 | File | Responsibility |
 | --- | --- |
 | `api.go` | HTTP endpoints, finite deadlines, 1 MiB response limit, escaped IDs, typed errors, redirect hardening, and response-body ownership |
+| `http_proxy.go` | Shared environment proxy policy, credential-free built-in diagnostics and transport ownership |
 | `ca_cert.go` | Bounded, strict PEM loading and cloned HTTP transport trust for API HTTPS and relay WSS |
 | `certificate.go` | Local P-256 keys/CSRs; certificate checks for key, validity, exact hostname, and wildcard SAN; material-only parsing for expired renewal attachment |
 | `storage.go` | Concurrent memory storage and compatible file layout; private temporary files, marker-scoped removal, metadata last, permissions, and symlink rejection |
@@ -77,7 +79,7 @@ explicitly: `json.Marshal` on an `Identity` intentionally omits them.
 | Pending inbound bytes per relay session | 64 MiB |
 | Queued events | 256 |
 | Outbound data queue | 32 messages |
-| Reader-reply queue | 32 messages; reader replies wait for capacity; heartbeat pings coalesce/skip when busy |
+| Reader-reply queue | 8,192 messages; reader replies never wait for capacity; saturation reconnects the bridge; heartbeats precede queued application data |
 | Teardown-control queue | 32 messages reserved; saturation closes the session |
 | Outbound payload per message | 32 KiB |
 | Per-channel idle timeout | Disabled unless `TransportOptions.IdleTimeout` is positive |

@@ -12,7 +12,7 @@ import (
 const DefaultAPI = "https://opentunnel.xyz"
 
 // Version is this module's protocol client version.
-const Version = "0.16.1"
+const Version = "0.16.2"
 
 var (
 	// ErrClosed reports an operation attempted after its Client, Connection, or Listener was closed.
@@ -135,8 +135,10 @@ type ClientOptions struct {
 	API string
 	// Storage persists identities. Nil selects XDG-backed storage.
 	Storage Storage
-	// HTTPClient performs API and bridge handshakes. Nil uses the default HTTP
-	// transport. Custom transport, cookie jar and hooks are trusted with secrets.
+	// HTTPClient performs API and bridge handshakes. A nil Transport uses a
+	// default-transport clone with per-client HTTP_PROXY/HTTPS_PROXY, ALL_PROXY
+	// fallback and NO_PROXY settings. An explicit Transport overrides that policy.
+	// Custom transport, cookie jar and hooks are trusted with secrets.
 	HTTPClient *http.Client
 	// CACertFile adds PEM certificates to the API and relay trust roots. Empty
 	// uses HTTPClient's existing trust. With a custom HTTPClient, its transport

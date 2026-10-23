@@ -71,7 +71,8 @@ unreadable, empty or malformed files fail construction/startup with `ErrInvalid`
 before any service request. Certificate errors remain non-retryable; there is
 no fallback to insecure TLS.
 
-This trust applies to control API HTTPS and relay WSS. It does not change:
+This trust applies to control API HTTPS, relay WSS and an HTTPS outbound proxy.
+See [outbound proxy configuration](OUTBOUND_PROXY.md). It does not change:
 
 - Certificate-chain or hostname verification, API redirect restrictions, or
   the browser's trust store.
