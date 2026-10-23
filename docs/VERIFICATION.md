@@ -11,6 +11,7 @@ failure diagnostics. The [adoption record](UPSTREAM_COMPATIBILITY.md) and
 | Real proxy transports | Authenticated HTTP/HTTPS CONNECT and SOCKS5/SOCKS5H carried verified TLS API provisioning/polling, bridge attachment/reconnect and visitor echo bytes; NO_PROXY bypass made zero proxy connections |
 | Failure handling | Invalid selected settings, CONNECT 403/407, malformed CONNECT/SOCKS, SOCKS auth/refusal, untrusted CA/wrong hostname and network deadlines passed; a transient reconnect 503 recovered and delivered bytes |
 | Retry safety | Get/Create/Remove preserve deadline errors after pre-request proxy dial failures; an origin that accepted Create and closed without a response received exactly one request |
+| Loopback boundary | A new real HTTP regression first exposed uppercase LOCALHOST going through the proxy, then passed with case-insensitive bypass: one origin request and zero proxy requests |
 | Ownership and credentials | Explicit transport overrides retained their callback/ownership; proxy credentials were absent at the origin and redacted from ordinary diagnostics |
 | Regression quality | Disabling ALL_PROXY made the real tunnel test fail; disabling redaction exposed the canary and failed; forcing ambiguous proxy errors to retry sent three creates and failed the no-replay assertion |
 | Repetition and review | Focused proxy regressions passed three race-enabled runs; independent review found the pre-request retry gap, confirmed its fix and the added recovery/SOCKS failure tests, and reported no remaining blockers |

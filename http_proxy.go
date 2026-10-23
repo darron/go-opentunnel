@@ -54,6 +54,10 @@ func environmentProxy(getenv func(string) string) func(*http.Request) (*url.URL,
 	httpURL, httpErr := parseEnvironmentProxy(httpValue, httpSource)
 	httpsURL, httpsErr := parseEnvironmentProxy(httpsValue, httpsSource)
 	return func(req *http.Request) (*url.URL, error) {
+		// Match API validation even when localhost uses mixed case.
+		if isLoopbackHTTPHost(req.URL.Hostname()) {
+			return nil, nil
+		}
 		selected, err := httpsURL, httpsErr
 		switch req.URL.Scheme {
 		case "http":

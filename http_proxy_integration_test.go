@@ -583,3 +583,26 @@ func TestProxySOCKSFailuresRedacted(t *testing.T) {
 		})
 	}
 }
+
+func TestProxyUppercaseLocalhostStaysDirect(t *testing.T) {
+	clearProxyEnvironment(t)
+	var proxyCalls, originCalls atomic.Int64
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		proxyCalls.Add(1)
+		w.WriteHeader(http.StatusProxyAuthRequired)
+	}))
+	defer proxy.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { originCalls.Add(1); w.WriteHeader(http.StatusNotFound) }))
+	defer server.Close()
+	t.Setenv("HTTP_PROXY", proxy.URL)
+	c, err := NewClient(ClientOptions{API: strings.Replace(server.URL, "127.0.0.1", "LOCALHOST", 1), Storage: NewMemoryStorage()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	_, err = c.API().Get(t.Context(), "demo", "local-token-canary")
+	var remote *APIError
+	if !errors.As(err, &remote) || remote.StatusCode != http.StatusNotFound || originCalls.Load() != 1 || proxyCalls.Load() != 0 {
+		t.Fatalf("error=%v origin=%d proxy=%d", err, originCalls.Load(), proxyCalls.Load())
+	}
+}

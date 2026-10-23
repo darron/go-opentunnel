@@ -24,7 +24,7 @@ Unused settings do not fail a bypassed request. As in Go's standard HTTP client,
 
 `NO_PROXY` supports comma-separated domains, IP addresses, CIDR ranges, optional
 ports and `*`. `example.com` matches that domain and its subdomains;
-`.example.com` matches only subdomains. Localhost and literal loopback IPs always
+`.example.com` matches only subdomains. Localhost (regardless of case) and literal loopback IPs always
 connect directly. Matching uses Go's maintained `x/net/httpproxy` package,
 including internationalized domain names.
 
@@ -39,8 +39,9 @@ also apply to an HTTPS proxy's certificate.
 
 Settings are captured when the default transport is created. Restart otgo, or
 construct a new Go client, after changing them. They are not saved in profiles.
-These settings govern the OpenTunnel API and bridge; they do not configure
-backend connections, GitHub authentication or your browser.
+The ALL_PROXY extension applies to the OpenTunnel API and bridge. Other HTTP
+clients, such as GitHub auth or backend clients, may independently honor Go’s
+HTTP_PROXY/HTTPS_PROXY/NO_PROXY rules. Your browser has its own proxy settings.
 
 ## Explicit Go transport
 

@@ -24,7 +24,9 @@ authentication failures.
 No personal profile or running proxy was changed. No live GitHub App grant was
 made; the full local regression suite covers GitHub auth. Local fixtures separately
 verify HTTPS proxies, SOCKS, bypasses, malformed replies and failure recovery.
-The hosted service's deployed source revision is not observable.
+The final case-insensitive localhost bypass was subsequently verified with a
+real local HTTP origin and a proxy asserting zero requests. The hosted service's
+deployed source revision is not observable.
 
 
 ## v0.16.0 SDK and auth regression check — 2026-10-22

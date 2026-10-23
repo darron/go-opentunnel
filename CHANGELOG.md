@@ -6,7 +6,8 @@
 
 - Add `ALL_PROXY`/`all_proxy` fallback for the OpenTunnel API and bridge, including
   reconnects. Keep scheme-specific precedence, uppercase/lowercase variables,
-  `NO_PROXY`, loopback bypasses and explicit HTTP transport overrides.
+  `NO_PROXY`, loopback bypasses and explicit HTTP transport overrides. Keep
+  localhost direct regardless of case so a loopback API token cannot reach a proxy.
 - Explain proxy configuration, CONNECT authentication/policy and network failures
   without exposing proxy credentials or arbitrary response text. Stop on invalid
   configuration and CONNECT 403/407; retain safe transient retries and deadlines
