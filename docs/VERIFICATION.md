@@ -1,5 +1,25 @@
 # Local verification record
 
+## v0.16.1 publication — 2026-10-23
+
+The [v0.16.1 release](https://github.com/darron/go-opentunnel/releases/tag/v0.16.1)
+points to `a1bc15b7ae96c89ac4a29316e939987240f73f8b`.
+
+| Check | Result |
+| --- | --- |
+| [Release-source CI](https://github.com/darron/go-opentunnel/actions/runs/40034201636) | All five jobs passed before tagging, including Linux/macOS, race, lint, vulnerability scan, upstream codec and six sustained fuzz targets |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/40034866635) | All four jobs passed, including macOS smoke checks and Homebrew dispatch |
+| Release downloads | All nine assets passed combined/individual SHA-256, archive contents/license/modes and target/revision/CGO checks; all four binaries use Go 1.27.3 |
+| Published module | A separate temporary consumer downloaded v0.16.1 through the public module proxy with checksum verification and passed its SDK smoke test |
+| Compiled CLI | Checkout, downloaded and installed executables each reported real OS lock contention during offline auth setup, then passed locking with the retained file after its owner exited; no credentials or hosted tunnel required |
+| [Homebrew](https://github.com/darron/homebrew-tap/actions/runs/40035133358) | Validation and publication passed; formula commit `c6ac985497f07d5668bc3146dd27d50c3ab3d317` |
+| Local installation | Upgraded 0.16.0 to 0.16.1; `brew test darron/tap/otgo` passed; installed executable equals the downloaded release binary byte for byte |
+
+The installed macOS arm64 executable has SHA-256
+`25e7b3e92db87da30d86437f6246e9673bcfec61fd2f5915f55db10477ebfc86`.
+Its version is `otgo 0.16.1 sha=a1bc15b7ae96c89ac4a29316e939987240f73f8b clean`.
+No existing profile was changed. Restart running otgo processes to use the update.
+
 ## v0.16.1 preparation — 2026-10-23
 
 This patch changes storage-lock diagnostics only. The two-second acquisition
