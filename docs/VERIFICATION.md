@@ -1,5 +1,28 @@
 # Local verification record
 
+## v0.16.0 publication — 2026-10-22
+
+The [v0.16.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.16.0)
+points to `5ce0ba4fcf5f00b0eacea8b5e36d9fe4979378c3`.
+
+| Check | Result |
+| --- | --- |
+| [Release-source CI](https://github.com/darron/go-opentunnel/actions/runs/39901824434) | All five jobs passed before tagging: Linux/macOS, Linux race tests, lint, vulnerability scan, exact v0.6.0 codec and six sustained fuzz targets |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/39902422592) | All four jobs passed, including native smoke checks and Homebrew dispatch |
+| Release downloads | All nine assets verified: combined/individual SHA-256, exact archive contents/license/modes, target, full source SHA and `CGO_ENABLED=0`; all four binaries report Go 1.27.3 |
+| Published Go module | A separate temporary consumer downloaded `github.com/darron/go-opentunnel@v0.16.0` through the public module proxy with checksum verification, compiled the new APIs and passed a URL-helper test |
+| [Homebrew](https://github.com/darron/homebrew-tap/actions/runs/39902600446) | Validation and publication passed; formula commit `3b425d5e02de2298a6e5aae7022cc40148b5e572` |
+| Local installation | Upgraded 0.15.0 to 0.16.0; `brew test darron/tap/otgo` passed; installed binary equals the downloaded release executable byte for byte |
+
+The installed macOS arm64 executable has SHA-256
+`233e9b7797171360563bcb892286923d872379566ae1dbc0e17f65190f55ee43`.
+Its version is `otgo 0.16.0 sha=5ce0ba4fcf5f00b0eacea8b5e36d9fe4979378c3 clean`.
+
+No existing profile was changed. Restart running otgo processes to use the new
+binary; embedded applications need their own rebuild. Hosted checks and cleanup
+are recorded in [LIVE_TESTING.md](LIVE_TESTING.md#v0160-sdk-and-auth-regression-check--2026-10-22).
+
+
 ## v0.16.0 preparation — 2026-10-22
 
 Reviewed upstream v0.5.5/v0.6.0 against v0.5.4; the
