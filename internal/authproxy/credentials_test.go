@@ -3,12 +3,14 @@ package authproxy
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -308,7 +310,7 @@ func TestTokenProcessHelper(t *testing.T) {
 }
 
 func TestTokenInterprocessSerializationAndCrashRelease(t *testing.T) {
-	path := filepath.Join(secureTempDir(t), "tokens.json")
+	path := filepath.Join(secureTempDir(t), "tokens\n.json")
 	var wg sync.WaitGroup
 	for range 5 {
 		wg.Add(1)
@@ -345,12 +347,58 @@ func TestTokenInterprocessSerializationAndCrashRelease(t *testing.T) {
 	if _, _, err = NewTokenStore(path, fixtureConfig()).Create(time.Hour); err == nil {
 		t.Fatal("did not time out waiting for lock")
 	}
+	for _, want := range []string{fmt.Sprintf("%q", path+".lock"), "2s", "might already be running", "do not delete the lock file"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("lock diagnostic missing %q: %v", want, err)
+		}
+	}
+	if !lockBusy(err) {
+		t.Errorf("lock diagnostic lost OS cause: %v", err)
+	}
+	if strings.ContainsAny(err.Error(), "\n\r\x1b") {
+		t.Errorf("unescaped control character in lock diagnostic: %q", err)
+	}
 	if err = cmd.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
 	_ = cmd.Wait()
 	if _, _, err = NewTokenStore(path, fixtureConfig()).Create(time.Hour); err != nil {
 		t.Fatalf("crash retained lock: %v", err)
+	}
+}
+
+func TestStorageLockRejectsUnsafeFileWithDiagnostic(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "profile\tname")
+	if err := os.WriteFile(path+".lock", nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G302 -- Deliberately unsafe, empty fixture verifies rejection regardless of the process umask.
+	if err := os.Chmod(path+".lock", 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := WithProfileLock(path, func() error {
+		t.Fatal("unsafe lock admitted operation")
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%q", path+".lock")) || !strings.Contains(err.Error(), "0600") {
+		t.Fatalf("missing lock path or permission diagnostic: %v", err)
+	}
+	if strings.Contains(err.Error(), "might already be running") || strings.ContainsAny(err.Error(), "\t\n\r\x1b") {
+		t.Fatalf("misleading or unescaped lock diagnostic: %q", err)
+	}
+}
+
+func TestStorageLockPathErrorPreservesCauseAndEscapesPath(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "\n"+strings.Repeat("x", 256))
+	err := WithProfileLock(path, func() error {
+		t.Fatal("invalid lock path admitted operation")
+		return nil
+	})
+	if !errors.Is(err, syscall.ENAMETOOLONG) || !strings.Contains(err.Error(), fmt.Sprintf("%q", path+".lock")) {
+		t.Fatalf("missing OS cause or quoted lock path: %v", err)
+	}
+	if strings.Contains(err.Error(), "might already be running") || strings.ContainsAny(err.Error(), "\n\r\x1b") {
+		t.Fatalf("misleading or unescaped path error: %q", err)
 	}
 }
 

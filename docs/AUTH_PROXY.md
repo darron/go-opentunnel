@@ -111,6 +111,14 @@ key, including leftover state when the auth configuration is missing. After
 replacing setup, export and pin its new public key. `auth reset` also removes the
 signing key. Lock files remain to prevent simultaneous lock owners.
 
+If startup reports `cannot acquire storage lock`, another otgo process might
+already be running for that profile. The error includes the quoted lock-file path,
+the two-second wait and the operating system's reason. Wait for setup to finish,
+or stop the proxy using that profile before retrying. Different profiles can run
+simultaneously. Do not delete the lock file: the operating system releases the
+lock when its owner exits, even after a crash. Other storage errors report their
+path and available cause without suggesting that another process is running.
+
 Auth storage is supported on macOS, Linux and BSD platforms with the required
 file/lock APIs. **Windows authentication setup/startup is refused** until private
 ACL validation is implemented; the SDK and other CLI commands remain available.

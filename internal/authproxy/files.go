@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -121,25 +122,34 @@ func writePrivate(path string, b []byte) error {
 }
 func withFileLock(path string, fn func() error) error {
 	if e := privateDir(filepath.Dir(path)); e != nil {
-		return e
+		return fmt.Errorf("cannot prepare storage lock for %q: %w", path, e)
 	}
 	lockPath := path + ".lock"
 	if _, e := checkPrivateFile(lockPath); e != nil && !os.IsNotExist(e) {
-		return e
+		// Quote the path once, including when Lstat returned a PathError.
+		var pathErr *os.PathError
+		if errors.As(e, &pathErr) {
+			e = pathErr.Err
+		}
+		return fmt.Errorf("cannot use storage lock %q: %w", lockPath, e)
 	}
 	f, e := openNoFollow(lockPath, os.O_CREATE|os.O_RDWR, 0600)
 	if e != nil {
-		return errors.New("cannot open storage lock")
+		return fmt.Errorf("cannot open storage lock %q: %w", lockPath, e)
 	}
 	defer func() { _ = f.Close() }()
-	deadline := time.Now().Add(2 * time.Second)
+	const timeout = 2 * time.Second
+	deadline := time.Now().Add(timeout)
 	for {
 		e = tryLock(f)
 		if e == nil {
 			break
 		}
-		if !lockBusy(e) || !time.Now().Before(deadline) {
-			return errors.New("cannot acquire storage lock")
+		if !lockBusy(e) {
+			return fmt.Errorf("cannot acquire storage lock %q: %w", lockPath, e)
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("cannot acquire storage lock %q after %s: %w; another otgo process might already be running; wait for it to finish or stop it before retrying (do not delete the lock file)", lockPath, timeout, e)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

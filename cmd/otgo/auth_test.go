@@ -208,7 +208,7 @@ func TestProxyProfileLockAndIndependentProfiles(t *testing.T) {
 	}()
 	<-entered
 	var out, errout bytes.Buffer
-	if err := run(t.Context(), append([]string{"proxy"}, flags...), strings.NewReader(""), &out, &errout); err == nil || !strings.Contains(err.Error(), "lock") {
+	if err := run(t.Context(), append([]string{"proxy"}, flags...), strings.NewReader(""), &out, &errout); err == nil || !strings.Contains(err.Error(), "might already be running") || !strings.Contains(err.Error(), lock+".lock") {
 		t.Fatalf("duplicate proxy: %v", err)
 	}
 	if err := authproxy.WithProfileLock(filepath.Join(paths.TunnelRoot, "dashboard", "otgo-proxy"), func() error { return nil }); err != nil {

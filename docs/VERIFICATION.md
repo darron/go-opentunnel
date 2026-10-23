@@ -1,5 +1,24 @@
 # Local verification record
 
+## v0.16.1 preparation — 2026-10-23
+
+This patch changes storage-lock diagnostics only. The two-second acquisition
+window, OS-backed exclusion, crash release and retained lock files are unchanged.
+
+| Check | Result |
+| --- | --- |
+| Regression proof | New diagnostic assertions failed against the old generic errors, then passed with the fix |
+| Real contention | Child-process contention preserves the OS busy error and shows the quoted path, wait and recovery guidance; killing the owner permits acquisition without deleting its lock file |
+| CLI and isolation | Duplicate proxy startup reports the hint and profile lock path; a different profile and token issuance remain usable |
+| Error safety | Unsafe lock permissions and overlong paths report context without the running-process hint; control characters are escaped and the filesystem errno remains inspectable |
+| Repetition | Five race-enabled runs of the focused contention/diagnostic tests passed |
+| Full checks | Full Go tests and race suite, vet, formatting, golangci-lint v2.15.0, CLI/example builds, all 18 release-tool tests and `actionlint` passed |
+| Independent review | No code blockers; narrowed a documentation claim about directory errors to match the existing implementation |
+
+No hosted tunnel or GitHub grant was created for this patch: local tests exercise
+the affected storage/CLI paths, and CI checks the pinned upstream codec. No auth,
+wire protocol, profile format or runtime dependency changed.
+
 ## v0.16.0 publication — 2026-10-22
 
 The [v0.16.0 release](https://github.com/darron/go-opentunnel/releases/tag/v0.16.0)

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v0.16.1 — Clearer storage lock errors — 2026-10-23
+
+- Explain that another otgo process might already be running when a storage lock
+  remains busy after the existing two-second wait. Include the lock-file path,
+  operating-system reason and safe recovery guidance; keep other storage failures
+  distinct from contention.
+- Preserve wrapped OS errors and quote paths safely in diagnostics. Add real
+  competing-process and duplicate-proxy regression checks, including automatic
+  lock release after a crash and independent profiles.
+- Locking, authentication, saved profiles and service compatibility are unchanged.
+
+[Compare v0.16.0 to v0.16.1](https://github.com/darron/go-opentunnel/compare/v0.16.0...v0.16.1)
+
 ## v0.16.0 — OpenTunnel v0.6.0 SDK features — 2026-10-22
 
 - Add opt-in `RouteConflictFail` to Connect and Listen for a typed fatal route
