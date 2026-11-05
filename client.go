@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -32,12 +33,17 @@ type Client struct {
 }
 
 // NewClient creates an owner for provisioning and running tunnels. Zero options
-// select the hosted API, persistent XDG storage, and documented transport defaults.
+// select OPENTUNNEL_API (or the hosted API when unset/empty), persistent XDG
+// storage, and documented transport defaults. A nonempty API option overrides
+// the environment; an invalid selected URL returns ErrInvalid without fallback.
 // Call Close when the application no longer needs the client.
 // NewClient does not contact the service or create a tunnel. Invalid API URLs,
 // CA bundles, negative resource limits/timeouts and inconsistent backoff limits
 // return ErrInvalid.
 func NewClient(options ClientOptions) (*Client, error) {
+	if options.API == "" {
+		options.API = os.Getenv("OPENTUNNEL_API")
+	}
 	if options.API == "" {
 		options.API = DefaultAPI
 	}

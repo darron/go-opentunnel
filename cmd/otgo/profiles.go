@@ -40,8 +40,8 @@ func (a authFlags) launchCommand() string {
 			a.tokenPath = paths.TokenFile
 		}
 	}
-	args := []string{"otgo", "proxy", "--profile", a.profile}
-	for _, pair := range [][2]string{{"--api", a.api}, {"--data-dir", a.dataDir}, {"--auth-config", a.configPath}, {"--token-file", a.tokenPath}} {
+	args := []string{"otgo", "proxy", "--profile", a.profile, "--api", a.apiURL()}
+	for _, pair := range [][2]string{{"--data-dir", a.dataDir}, {"--auth-config", a.configPath}, {"--token-file", a.tokenPath}} {
 		if pair[1] != "" {
 			args = append(args, pair[0], pair[1])
 		}

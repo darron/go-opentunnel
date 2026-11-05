@@ -31,11 +31,7 @@ func (a authFlags) paths() (authproxy.Paths, error) {
 	return authproxy.ResolvePaths(a.profile, a.dataDir, a.configPath, a.tokenPath)
 }
 func (a authFlags) apiOrigin() (string, error) {
-	api := a.api
-	if api == "" {
-		api = opentunnel.DefaultAPI
-	}
-	return authproxy.APIOrigin(api)
+	return authproxy.APIOrigin(a.apiURL())
 }
 func (a authFlags) profileLock(paths authproxy.Paths) string {
 	return filepath.Join(paths.TunnelRoot, a.profile, "otgo-proxy")
@@ -45,7 +41,7 @@ func (a authFlags) clientAt(paths authproxy.Paths) (*opentunnel.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return opentunnel.NewClient(opentunnel.ClientOptions{API: a.api, Storage: opentunnel.NewFileStorage(paths.TunnelRoot), RequestTimeout: a.requestTimeout, CACertFile: caCertFile})
+	return opentunnel.NewClient(opentunnel.ClientOptions{API: a.apiURL(), Storage: opentunnel.NewFileStorage(paths.TunnelRoot), RequestTimeout: a.requestTimeout, CACertFile: caCertFile})
 }
 func (a authFlags) binding(id opentunnel.Identity) (authproxy.Binding, error) {
 	origin, e := a.apiOrigin()

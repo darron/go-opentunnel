@@ -91,8 +91,14 @@ Discovery covers the current XDG directories and the selected `--data-dir`.
 Arbitrary custom files cannot be discovered: pass `--profile` and `--auth-config`
 for that profile, plus its `--token-file` override if used. Overrides apply only
 to the named profile. Other entries use their default auth/token paths. For a custom
-API, supply the original `--api` base URL. The saved binding contains only its
-origin, so the inventory reports `api-required` until that value is supplied.
+API, supply the original base URL with `--api` or `OPENTUNNEL_API`. An explicit
+nonempty flag wins over the environment; an empty flag uses the environment.
+An unset/empty environment variable selects the hosted service.
+The saved binding contains only its origin, so the inventory reports
+`api-required` until the custom base URL is supplied. A different selected origin
+reports `api-mismatch` and prevents proxy startup before any API request.
+Launch and resume commands pin the selected base URL, including the hosted default,
+so another terminal's environment cannot repoint them.
 Launch commands make explicit storage paths absolute, so they work from another
 directory. Default locations still assume the same XDG environment.
 

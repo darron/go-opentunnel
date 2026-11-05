@@ -23,10 +23,7 @@ func pendingProvisionError(client *opentunnel.Client, common commonFlags, err er
 	if loadErr != nil || pending == nil {
 		return err
 	}
-	args := []string{"otgo", "resume", "--profile", common.profile}
-	if common.api != "" {
-		args = append(args, "--api", common.api)
-	}
+	args := []string{"otgo", "resume", "--profile", common.profile, "--api", common.apiURL()}
 	if common.dataDir != "" {
 		path, e := filepath.Abs(common.dataDir)
 		if e != nil {

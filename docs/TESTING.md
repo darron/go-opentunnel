@@ -149,6 +149,20 @@ continued traffic, cancellation and the listener's TLS observation boundary.
 These checks supplement the full suite; they do not test the hosted relay's
 internal metrics or ACME retry policy. See [metric meanings](OBSERVABILITY.md).
 
+## API server selection
+
+```sh
+go test -race -count=3 -run 'TestClient.*APIEnvironment|TestClientEnvironmentAPI|TestNewAPIRetains' .
+go test -race -count=3 -run 'TestCLIAPIEnvironment|TestCLIRejectsInvalidAPI|TestCLIDefaultAPIInCopiedCommands' ./cmd/otgo
+```
+
+These checks cover API option/environment/default precedence, invalid values,
+redacted errors, and environment snapshots. A local API/relay provisions a tunnel,
+accepts its bridge and forwards visitor bytes. CLI fixtures verify API base paths,
+auth-origin rejection before network access, local inventory and copied launch/
+resume commands. Copied commands pin the API even when the hosted default was
+selected, so another terminal's environment cannot redirect pending credentials.
+
 ## Check Go API documentation
 
 Read the package overview and public contracts locally:

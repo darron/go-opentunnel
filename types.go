@@ -131,7 +131,8 @@ type Storage interface {
 
 // ClientOptions configures a Client.
 type ClientOptions struct {
-	// API is the control API base URL. Empty selects DefaultAPI.
+	// API is the control API base URL. Empty selects OPENTUNNEL_API, then
+	// DefaultAPI. The selection is captured when NewClient is called.
 	API string
 	// Storage persists identities. Nil selects XDG-backed storage.
 	Storage Storage

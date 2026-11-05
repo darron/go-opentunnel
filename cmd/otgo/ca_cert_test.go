@@ -235,7 +235,7 @@ func TestCACertPendingResumeHint(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		want := shellCommand([]string{"otgo", "resume", "--profile", "unit", "--ca-cert", absolute})
+		want := shellCommand([]string{"otgo", "resume", "--profile", "unit", "--api", "https://opentunnel.xyz", "--ca-cert", absolute})
 		if !strings.Contains(stderr.String(), want) || strings.Contains(stderr.String(), "canary") {
 			t.Fatalf("resume hint damaged: %s", stderr.String())
 		}

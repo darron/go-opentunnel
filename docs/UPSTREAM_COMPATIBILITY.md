@@ -1,9 +1,28 @@
 # Upstream compatibility
 
-Reviewed OpenTunnel v0.6.1 against v0.6.0 on 2026-10-23.
+Reviewed OpenTunnel v0.6.2 against v0.6.1 on 2026-11-05.
 Current source pin:
-[`de890fb77c8c5df6185504e7647d818ead517749`](https://github.com/anomalyco/opentunnel/tree/de890fb77c8c5df6185504e7647d818ead517749).
-See the [upstream comparison](https://github.com/anomalyco/opentunnel/compare/v0.6.0...v0.6.1).
+[`1ad859e17924ec3f6741cbc4cdb54ce381c9007c`](https://github.com/anomalyco/opentunnel/tree/1ad859e17924ec3f6741cbc4cdb54ce381c9007c).
+See the [upstream comparison](https://github.com/anomalyco/opentunnel/compare/v0.6.1...v0.6.2).
+
+## Adopted for the next release
+
+- Resolve an empty SDK API option from `OPENTUNNEL_API`, then the hosted default.
+  An explicit option wins, and invalid selected values fail existing validation.
+  The low-level `NewAPI` constructor still requires an explicit base URL.
+- Apply the same precedence to otgo. Capture the URL once for auth bindings,
+  client construction and generated launch/resume commands, including the hosted
+  default in copied commands. Protected profiles
+  still reject an API-origin mismatch before network access.
+- Pin the exact v0.6.2 Reader/Writer. Its SHA-256 is unchanged from v0.6.1.
+
+Fly connection soft limits and CPU-capacity guidance belong to the upstream
+deployment; agent markers and package version bumps require no Go runtime change.
+The unreleased server DNS-hook commit `36ffded615a22eaff17e1e1666104dd29decbb29`
+adds a self-hosted DNS provider without changing the client contract. It is not
+part of the v0.6.2 release and needs no client implementation.
+
+The v0.6.1 proxy adoption remains below.
 
 ## Adopted in v0.16.2
 
