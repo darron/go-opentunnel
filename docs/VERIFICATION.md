@@ -1,5 +1,30 @@
 # Local verification record
 
+## v0.16.3 publication — 2026-11-05
+
+The [v0.16.3 release](https://github.com/darron/go-opentunnel/releases/tag/v0.16.3)
+and its annotated tag point to `907e3df7c7d9e99ac88b8b979801d7fdb229a9cb`.
+
+| Check | Result |
+| --- | --- |
+| [Release-source CI](https://github.com/darron/go-opentunnel/actions/runs/42101961496) | All five jobs passed before tagging: Linux/macOS tests, race, lint, vulnerability scan, exact upstream codec and six sustained fuzz targets |
+| [Binary publication](https://github.com/darron/go-opentunnel/actions/runs/42102963144) | Builds, native Linux/macOS smoke checks, asset publication and Homebrew dispatch passed |
+| Release downloads | All nine assets passed combined/individual SHA-256, archive contents/license/modes and target/CGO checks; all four binaries use Go 1.27.3 and contain the expected revision |
+| Published module | A separate temporary consumer downloaded v0.16.3 with module checksum verification and passed race-enabled local API requests covering environment selection, capture, explicit override and invalid-value redaction |
+| Downloaded CLI | Native version/SHA/clean and help checks passed; credential-bearing OPENTUNNEL_API was rejected without disclosing the canary, using disposable XDG paths |
+| [Homebrew](https://github.com/darron/homebrew-tap/actions/runs/42103322740) | Validation and publication passed; formula commit `2fce5720046c979a5532cf28aac8e05b6790e329` |
+| Local installation | Upgraded 0.16.2 to 0.16.3; formula tests passed; installed executable equals the downloaded release binary byte for byte |
+
+The installed macOS arm64 executable has SHA-256
+`86615fbd41fff97067de414435a8d0715546b278a9d8a66cbd25f363241af47f`.
+It reports `otgo 0.16.3 sha=907e3df7c7d9e99ac88b8b979801d7fdb229a9cb clean`.
+Local release preparation also passed the full Go suite, vet, formatting,
+golangci-lint 2.15.0 (zero issues), CLI/example builds, 18 release-tool tests and
+actionlint. Existing saved profiles were not changed. These checks used local
+fixtures; no new hosted tunnel or GitHub grant was created. Restart running otgo
+processes to use the update; embedded applications need their own module upgrade
+and rebuild.
+
 ## OPENTUNNEL_API support — 2026-11-05
 
 Reviewed upstream v0.6.2 and adopted its API environment fallback. Explicit SDK
