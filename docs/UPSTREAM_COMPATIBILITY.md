@@ -5,7 +5,7 @@ Current source pin:
 [`1ad859e17924ec3f6741cbc4cdb54ce381c9007c`](https://github.com/anomalyco/opentunnel/tree/1ad859e17924ec3f6741cbc4cdb54ce381c9007c).
 See the [upstream comparison](https://github.com/anomalyco/opentunnel/compare/v0.6.1...v0.6.2).
 
-## Adopted for the next release
+## Adopted in v0.16.3
 
 - Resolve an empty SDK API option from `OPENTUNNEL_API`, then the hosted default.
   An explicit option wins, and invalid selected values fail existing validation.

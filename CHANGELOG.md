@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.16.3 — Self-hosted API selection — 2026-11-05
 
 - Support `OPENTUNNEL_API` in the SDK and CLI for self-hosted servers. Explicit
   `ClientOptions.API` / `--api` wins; an unset/empty environment variable uses the
@@ -11,6 +11,8 @@
   auth-boundary regressions.
 - Review upstream v0.6.2 and update the codec test pin; its codec is unchanged.
   No wire format, dependency or stored-profile migration changes.
+
+[Compare v0.16.2 to v0.16.3](https://github.com/darron/go-opentunnel/compare/v0.16.2...v0.16.3)
 
 ## v0.16.2 — Reliable outbound proxy support — 2026-10-23
 
