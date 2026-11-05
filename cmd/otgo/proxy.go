@@ -151,7 +151,7 @@ func runProxy(ctx context.Context, args []string, out, errout io.Writer) (result
 		if e != nil {
 			return e
 		}
-		client, e := opentunnel.NewClient(opentunnel.ClientOptions{API: a.api, Storage: storage, RequestTimeout: a.requestTimeout, Transport: opentunnel.TransportOptions{HalfCloseTimeout: runtime.halfCloseTimeout}, CACertFile: caCertFile})
+		client, e := opentunnel.NewClient(opentunnel.ClientOptions{API: a.apiURL(), Storage: storage, RequestTimeout: a.requestTimeout, Transport: opentunnel.TransportOptions{HalfCloseTimeout: runtime.halfCloseTimeout}, CACertFile: caCertFile})
 		if e != nil {
 			return e
 		}

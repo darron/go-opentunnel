@@ -15,8 +15,8 @@ see [backend verification](AUTH_PROXY.md#signed-backend-identity).
 
 ## Compatibility baseline
 
-Current client compatibility review: upstream v0.6.1 commit
-`de890fb77c8c5df6185504e7647d818ead517749`. See the
+Current client compatibility review: upstream v0.6.2 commit
+`1ad859e17924ec3f6741cbc4cdb54ce381c9007c`. See the
 [upstream review](UPSTREAM_COMPATIBILITY.md) for adopted changes and test scope.
 Core vectors retain their original v0.5.0 source pin; see [provenance](../testdata/vectors/PROVENANCE.md).
 The later server changes through `4b066b2ed40a4e0c325e60c68061599f2151d897`
@@ -108,8 +108,9 @@ New provisioning and pending/failed issuance use the existing progress stages.
 - An empty client profile option selects `default`. Storage validates explicit
   profile names.
 - `ClientOptions` accepts an API base URL, storage, HTTP client, request timeout,
-  and bounded transport settings. Defaults use `https://opentunnel.xyz` and XDG
-  storage. Request, handshake, local dial, and write timeouts are finite.
+  and bounded transport settings. An empty API option reads `OPENTUNNEL_API`,
+  then defaults to `https://opentunnel.xyz`; selection is captured at construction.
+  Storage defaults to XDG. Request, handshake, local dial, and write timeouts are finite.
   `TransportOptions.IdleTimeout` is optional and defaults to disabled.
   `HalfCloseTimeout` defaults to 60 seconds of inactivity after a half-close.
 - `Routes` maps names to `host:port`. `ConnectOptions.RouteOptions` enables local

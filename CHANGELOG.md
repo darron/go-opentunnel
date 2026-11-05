@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Support `OPENTUNNEL_API` in the SDK and CLI for self-hosted servers. Explicit
+  `ClientOptions.API` / `--api` wins; an unset/empty environment variable uses the
+  hosted default.
+  Capture the selection at construction/flag parsing, retain URL validation and
+  protected-profile API-origin checks, and preserve selected base URLs in copied
+  launch/resume commands, including the hosted default. Add SDK/CLI routing and
+  auth-boundary regressions.
+- Review upstream v0.6.2 and update the codec test pin; its codec is unchanged.
+  No wire format, dependency or stored-profile migration changes.
+
 ## v0.16.2 — Reliable outbound proxy support — 2026-10-23
 
 - Add `ALL_PROXY`/`all_proxy` fallback for the OpenTunnel API and bridge, including

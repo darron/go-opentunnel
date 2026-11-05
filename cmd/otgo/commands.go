@@ -54,7 +54,15 @@ type commonFlags struct {
 }
 
 func (c *commonFlags) bind(fs *flag.FlagSet) {
-	fs.StringVar(&c.api, "api", "", "OpenTunnel API base URL")
+	environmentAPI := os.Getenv("OPENTUNNEL_API")
+	c.api = environmentAPI
+	fs.Func("api", "OpenTunnel API base URL (default: OPENTUNNEL_API or hosted service)", func(value string) error {
+		c.api = value
+		if c.api == "" {
+			c.api = environmentAPI
+		}
+		return nil
+	})
 	c.caCertFile = os.Getenv("OPENTUNNEL_CA_CERT")
 	fs.Func("ca-cert", "PEM trust bundle for the API and relay (default: OPENTUNNEL_CA_CERT or saved auth config)", func(value string) error {
 		c.caCertFile, c.caCertExplicit = value, true
@@ -64,6 +72,15 @@ func (c *commonFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.profile, "profile", "default", "storage profile")
 	fs.BoolVar(&c.json, "json", false, "write JSON output")
 	fs.DurationVar(&c.requestTimeout, "request-timeout", 0, "per-request timeout (0 uses the client default)")
+}
+
+// Pass a concrete URL to the SDK so it cannot reread a changed environment
+// after CLI auth binding checks or launch-command construction.
+func (c commonFlags) apiURL() string {
+	if c.api != "" {
+		return c.api
+	}
+	return opentunnel.DefaultAPI
 }
 
 func (c commonFlags) effectiveCACert(saved string) (string, error) {
@@ -91,7 +108,7 @@ func (c commonFlags) clientWithTransport(transport opentunnel.TransportOptions) 
 			return nil, err
 		}
 	}
-	return opentunnel.NewClient(opentunnel.ClientOptions{API: c.api, Storage: store, RequestTimeout: c.requestTimeout, Transport: transport, CACertFile: caCertFile})
+	return opentunnel.NewClient(opentunnel.ClientOptions{API: c.apiURL(), Storage: store, RequestTimeout: c.requestTimeout, Transport: transport, CACertFile: caCertFile})
 }
 
 func newFlagSet(name string, errout io.Writer) *flag.FlagSet {

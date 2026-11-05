@@ -241,6 +241,28 @@ Set `HTTPS_PROXY` for the OpenTunnel API and bridge, or `ALL_PROXY` as a fallbac
 `NO_PROXY` bypasses matching destinations. Both uppercase and lowercase names
 work; settings are captured at startup. See [proxy configuration and diagnostics](docs/OUTBOUND_PROXY.md).
 
+## Select an OpenTunnel server
+
+The SDK and otgo use the hosted service by default. Set `OPENTUNNEL_API` to use a
+self-hosted server:
+
+```sh
+export OPENTUNNEL_API=https://tunnel.example.com
+otgo ensure --profile selfhosted
+```
+
+An explicit Go `ClientOptions.API` or CLI `--api` wins over the environment.
+An unset or empty variable selects `https://opentunnel.xyz`; invalid values fail.
+HTTPS is required except for loopback HTTP addresses. The selected base URL can
+include a path. It controls provisioning and bridge connections, not the local
+backend or visitor login. It contains no credentials.
+
+Use a separate profile/data directory for a different server: existing tunnel
+credentials belong to their original server. Protected profiles reject a changed
+API origin until explicitly reconfigured. Generated launch/resume commands include
+the selected API URL, including the hosted default, so another terminal's
+environment cannot repoint them.
+
 ## Build and validate
 
 `make build` builds only `bin/otgo`. `make build-example` builds the example.

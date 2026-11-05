@@ -1,5 +1,26 @@
 # Local verification record
 
+## OPENTUNNEL_API support — 2026-11-05
+
+Reviewed upstream v0.6.2 and adopted its API environment fallback. Explicit SDK
+options and CLI flags retain precedence. The selected URL is captured once;
+generated commands pin it, and protected profiles retain API-origin checks.
+
+| Check | Result |
+| --- | --- |
+| Selection and validation | Default, environment, explicit override, empty flag, invalid URL and environment changes before/after parsing passed; errors did not expose credential canaries |
+| Local integration | Environment-selected API provisioning, certificate submission, bridge attachment and real TLS visitor bytes passed; CLI requests retained the full API base path |
+| Auth boundary | A protected profile with a different API origin was rejected before any network attempt; inventory and copied commands retained the selected URL |
+| Copied commands | Launch/resume regressions failed when the hosted default was omitted, then passed after both generators pinned it explicitly |
+| Regression quality | Removing CLI environment selection through a temporary Go overlay failed both selection and pre-network auth-binding assertions |
+| Review | Independent correctness/security review found the copied-command issue and a documentation ambiguity; both fixes were confirmed with no remaining blockers |
+| Full checks | Tests, full race suite, vet, formatting, golangci-lint 2.15.0 (zero issues), CLI/example builds and all 18 release-tool tests passed |
+| Upstream codec | Exact v0.6.2 Rust codec at 1ad859e17924ec3f6741cbc4cdb54ce381c9007c passed its cross-language race test; source SHA-256 was unchanged |
+
+Focused CLI regressions passed three race-enabled repetitions. These checks used
+local fixtures; no hosted tunnel or GitHub grant was created for this change.
+Existing saved profiles were not modified. CI results belong to the PR checks.
+
 ## v0.16.2 publication — 2026-10-23
 
 The [v0.16.2 release](https://github.com/darron/go-opentunnel/releases/tag/v0.16.2)

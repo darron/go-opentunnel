@@ -4,8 +4,10 @@
 //
 // # Start a tunnel
 //
-// Create a [Client] with [NewClient]. Zero [ClientOptions] use the hosted
-// [DefaultAPI] and persistent [NewXDGStorage]. Choose [NewMemoryStorage] for
+// Create a [Client] with [NewClient]. An empty [ClientOptions].API selects
+// OPENTUNNEL_API, then the hosted [DefaultAPI]. The URL is captured at construction;
+// an explicit API overrides the environment. Zero options use persistent
+// [NewXDGStorage]. Choose [NewMemoryStorage] for
 // temporary identities or [NewFileStorage] for an application-owned directory.
 // A profile names one stored tunnel; an empty profile selects "default".
 //

@@ -89,7 +89,7 @@ func TestProfilesInventoryIsLocalRedactedAndIncludesPendingAndAuthOnly(t *testin
 	if err := json.Unmarshal(out.Bytes(), &rows); err != nil {
 		t.Fatal(err)
 	}
-	if rows[0].Status != "ready" || rows[0].Command != "otgo proxy --profile inbox" {
+	if rows[0].Status != "ready" || rows[0].Command != "otgo proxy --profile inbox --api https://opentunnel.xyz" {
 		t.Fatalf("missing launch command: %+v", rows[0])
 	}
 }
